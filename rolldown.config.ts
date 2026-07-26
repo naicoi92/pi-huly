@@ -12,7 +12,6 @@ const external = [
   /^@earendil-works\//,
   /^@hcengineering\//,
   "typebox",
-  /^@sinclair\//,
 ];
 
 export default defineConfig({
