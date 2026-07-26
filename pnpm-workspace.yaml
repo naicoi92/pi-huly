@@ -1,0 +1,11 @@
+# pnpm workspace config (single-package repo, KHÔNG có workspaces list).
+# Build script whitelist (R4 mitigation — pnpm 11+).
+# allowBuilds = explicit boolean map (pnpm 11 format); onlyBuiltDependencies = list (legacy compat).
+# Cả 2 cùng tồn tại: allowBuilds cho pnpm 11, onlyBuiltDependencies cho pnpm 10 + document intent.
+allowBuilds:
+  '@google/genai': false
+  '@hcengineering/api-client': true
+  '@hcengineering/platform': true
+  '@hcengineering/text-markdown': true
+  '@hcengineering/tracker': true
+  protobufjs: true

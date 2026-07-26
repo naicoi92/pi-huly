@@ -1,0 +1,83 @@
+{
+  "name": "pi-huly",
+  "version": "0.1.0",
+  "description": "Native Huly support cho pi-coding-agent — tools + skills + subagent (KHÔNG MCP, gọi thẳng WebSocket API)",
+  "type": "module",
+  "license": "MIT",
+  "author": "naicoi92",
+  "homepage": "https://github.com/naicoi92/pi-huly",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/naicoi92/pi-huly.git"
+  },
+  "bugs": {
+    "url": "https://github.com/naicoi92/pi-huly/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "huly",
+    "pi-coding-agent",
+    "project-management"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "pi": {
+    "extensions": [
+      "./dist/index.mjs"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "scripts": {
+    "fmt": "oxfmt --write 'src/**/*.ts' '*.ts'",
+    "fmt:check": "oxfmt --check 'src/**/*.ts' '*.ts'",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "lint:md": "markdownlint-cli2",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "build": "rolldown -c rolldown.config.ts"
+  },
+  "dependencies": {
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "^0.23.1",
+    "oxfmt": "^0.60.0",
+    "oxlint": "^1.75.0",
+    "rolldown": "^1.2.0",
+    "typebox": "^1.3.8",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "trustedDependencies": [
+    "@hcengineering/api-client",
+    "@hcengineering/platform",
+    "@hcengineering/text-markdown",
+    "@hcengineering/tracker"
+  ]
+}
