@@ -56,18 +56,32 @@ function validateWorkspace(id: string, entry: unknown): asserts entry is Workspa
     throw new Error(`credentials.json schema invalid: workspace "${id}" — workspace required`);
   }
   const hasToken = typeof e.token === "string" && e.token.length > 0;
-  const hasEmailPass =
-    typeof e.email === "string" &&
-    e.email.length > 0 &&
-    typeof e.password === "string" &&
-    e.password.length > 0;
-  // XOR: exactly one auth method
+  const hasEmail = typeof e.email === "string" && e.email.length > 0;
+  const hasPassword = typeof e.password === "string" && e.password.length > 0;
+  const hasEmailPass = hasEmail && hasPassword;
+  const hasAnyAuthField = hasToken || hasEmail || hasPassword;
+  // XOR: exactly one complete auth method, NO extra fields (mirror TS union).
+  // Reject cases:
+  // - BOTH complete methods (token + email+password)
+  // - partial email/password (one without the other) — field leak prevention
+  // - token + any email/password field — extra field alongside valid token
+  // - NEITHER method
   if (hasToken && hasEmailPass) {
     throw new Error(
       `credentials.json auth union XOR violated: workspace "${id}" has BOTH token and email+password`,
     );
   }
+  if (hasToken && (hasEmail || hasPassword)) {
+    throw new Error(
+      `credentials.json auth union XOR violated: workspace "${id}" has token alongside partial email/password fields`,
+    );
+  }
   if (!hasToken && !hasEmailPass) {
+    if (hasAnyAuthField) {
+      throw new Error(
+        `credentials.json auth union XOR violated: workspace "${id}" has partial email/password (both required if either present)`,
+      );
+    }
     throw new Error(
       `credentials.json auth union XOR violated: workspace "${id}" has NEITHER token nor email+password`,
     );

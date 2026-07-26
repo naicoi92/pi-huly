@@ -178,6 +178,100 @@ describe("saveCredentials", () => {
     const loaded = await loadCredentials(TEST_PATH);
     expect(loaded).toEqual(creds);
   });
+
+  it("uses atomic write (temp + rename) — no temp file left after success", async () => {
+    const creds: Credentials = { version: 1, workspaces: { myteam: tokenWs } };
+    await saveCredentials(creds, TEST_PATH);
+    // Sau save thành công, KHÔNG còn temp file `.credentials.json.tmp.*` trong dir
+    const dir = dirname(TEST_PATH);
+    const { readdir } = await import("node:fs/promises");
+    const files = await readdir(dir);
+    const temps = files.filter((f) => f.startsWith(".credentials.json.tmp"));
+    expect(temps).toEqual([]);
+  });
+
+  it("overwrites stale temp file from previous crashed process (same pid)", async () => {
+    // Simulate stale temp từ crash trước (cùng pid path)
+    const dir = dirname(TEST_PATH);
+    await mkdir(dir, { recursive: true });
+    const staleTmp = join(dir, `.credentials.json.tmp.${process.pid}`);
+    await writeFile(staleTmp, "stale data", "utf8");
+    await saveCredentials({ version: 1, workspaces: { myteam: tokenWs } }, TEST_PATH);
+    // Sau save: stale temp overwritten + renamed, file đích có content mới
+    const loaded = await loadCredentials(TEST_PATH);
+    expect(loaded.workspaces.myteam).toEqual(tokenWs);
+  });
+});
+
+describe("loadCredentials — strict mode enforcement", () => {
+  beforeEach(async () => {
+    await rm(TEST_DIR, { recursive: true, force: true });
+  });
+  afterEach(async () => {
+    await rm(TEST_DIR, { recursive: true, force: true });
+  });
+
+  it("rejects mode 700 (owner-only but != 600, strict equality)", async () => {
+    await writeCreds(TEST_PATH, JSON.stringify({ version: 1, workspaces: {} }), 0o700);
+    await expect(loadCredentials(TEST_PATH)).rejects.toThrow(/permissions too open|chmod|600/i);
+  });
+
+  it("rejects mode 666 (world-writable)", async () => {
+    await writeCreds(TEST_PATH, JSON.stringify({ version: 1, workspaces: {} }), 0o666);
+    await expect(loadCredentials(TEST_PATH)).rejects.toThrow(/permissions too open|chmod|600/i);
+  });
+
+  it("rejects mode 640 (group-readable)", async () => {
+    await writeCreds(TEST_PATH, JSON.stringify({ version: 1, workspaces: {} }), 0o640);
+    await expect(loadCredentials(TEST_PATH)).rejects.toThrow(/permissions too open|chmod|600/i);
+  });
+});
+
+describe("loadCredentials — partial auth field rejection", () => {
+  beforeEach(async () => {
+    await rm(TEST_DIR, { recursive: true, force: true });
+  });
+  afterEach(async () => {
+    await rm(TEST_DIR, { recursive: true, force: true });
+  });
+
+  it("rejects {token, email} without password (partial field leak prevention)", async () => {
+    await writeCreds(
+      TEST_PATH,
+      JSON.stringify({
+        version: 1,
+        workspaces: {
+          bad: {
+            url: "https://x.com",
+            workspace: "w",
+            token: "t",
+            email: "e@x.com",
+            // password missing → partial
+          } as unknown as WorkspaceCreds,
+        },
+      }),
+    );
+    await expect(loadCredentials(TEST_PATH)).rejects.toThrow(/partial email\/password|XOR/i);
+  });
+
+  it("rejects {email} without password (partial field leak prevention)", async () => {
+    await writeCreds(
+      TEST_PATH,
+      JSON.stringify({
+        version: 1,
+        workspaces: {
+          bad: {
+            url: "https://x.com",
+            workspace: "w",
+            email: "e@x.com",
+          } as unknown as WorkspaceCreds,
+        },
+      }),
+    );
+    await expect(loadCredentials(TEST_PATH)).rejects.toThrow(
+      /partial email\/password|XOR|neither/i,
+    );
+  });
 });
 
 describe("addWorkspace", () => {

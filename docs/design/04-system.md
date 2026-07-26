@@ -145,14 +145,19 @@ flowchart TD
 
 | Export | Signature (interface) | Responsibility |
 |---|---|---|
-| `loadCredentials` | `() => Promise<Credentials>` | Đọc `~/.pi/agent/huly/credentials.json` (global), chmod 600 verify |
-| `saveCredentials` | `(c: Credentials) => Promise<void>` | Write atomic + chmod 600 |
-| `addWorkspace` | `(id: string, { url, workspace, ...auth }: WorkspaceCreds) => Promise<void>` | Add/update entry. `id`=local handle (default=workspace name); `workspace`=Huly name **BẮT BUỘC**; `auth`=`{token}` XOR `{email,password}` |
-| `removeWorkspace` | `(id: string) => Promise<void>` | Remove entry (+ connection evict) |
-| `getWorkspace` | `(id: string) => WorkspaceCreds \| undefined` | Lookup by handle |
-| `findByName` | `(name: string) => Array<{ id, url, workspace, ...auth }>` | Tìm theo Huly workspace name → trả nhiều nếu same-name diff-URL (disambiguate) |
-| type `WorkspaceCreds` | `{ url: string, workspace: string } & ({ token: string } \| { email: string, password: string })` | workspace BẮT BUỘC; auth union |
+| `loadCredentials` | `(filePath?: string) => Promise<Credentials>` | Đọc `~/.pi/agent/huly/credentials.json` (global), chmod 600 verify. `filePath?` optional override cho test. |
+| `saveCredentials` | `(c: Credentials, filePath?: string) => Promise<void>` | Write atomic + chmod 600. `filePath?` optional override. |
+| `addWorkspace` | `(id: string \| undefined, { url, workspace, ...auth }: WorkspaceCreds, filePath?: string) => Promise<void>` | Add/update entry. `id`=local handle (default=workspace name khi `undefined`); `workspace`=Huly name **BẮT BUỘC**; `auth`=`{token}` XOR `{email,password}` (partial fields rejected). |
+| `removeWorkspace` | `(id: string, filePath?: string) => Promise<void>` | Remove entry (+ connection evict). No-op nếu id không tồn tại. |
+| `getWorkspace` | `(id: string, filePath?: string) => Promise<WorkspaceCreds \| undefined>` | Lookup by handle. Async (fs I/O). |
+| `findByName` | `(name: string, filePath?: string) => Promise<Array<WorkspaceCreds & { id }>>` | Tìm theo Huly workspace name → trả nhiều nếu same-name diff-URL (disambiguate). Async (fs I/O). |
+| type `WorkspaceCreds` | `{ url: string, workspace: string } & ({ token: string } \| { email: string, password: string })` | workspace BẮT BUỘC; auth union (XOR strict — partial fields rejected) |
 | type `Credentials` | `{ version: 1, workspaces: Record<string, WorkspaceCreds> }` | — |
+
+> **Impl note (T-02)**: Mọi function async (fs I/O non-blocking). `filePath?` optional
+> param để inject temp path cho test (dependency injection). Default `= CREDENTIALS_PATH`
+> constant. XOR strict: partial email/password (one without other) → rejected để tránh
+> silently persist thừa field.
 
 ### `config/config.ts` — ConfigStore (non-secret, global)
 
