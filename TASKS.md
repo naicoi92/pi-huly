@@ -10,11 +10,11 @@
 
 _DoD: build + lint + typecheck pass; config read/write; CI green._
 
-**Status: in-progress** _(slash goal complete-milestone M0, 2026-07-27)_
+**Status: ✅ completed** _(slash goal complete-milestone M0, 2026-07-27 — 3/3 tasks done, CI green, DoD pass)_
 
 - [x] [T-01] [M] Skeleton + tooling (package.json pi-manifest, tsconfig TS7, rolldown bundle, oxlint/oxfmt, vitest, CI workflow, .node-version=24) — high | blocks: T-02,T-03 | risks: R3,R4,R6 — ✅ done (PR #1 merged 6ae59e7, CI green ubuntu+macos)
 - [x] [T-02] [M] config/credentials.ts (auth union token|email+password, workspace-required, id-handle, findByName) + unit — high | blocked-by: T-01 | blocks: T-04 — ✅ done (PR #2 merged 515b7d2, 36 tests, coverage 90.54%)
-- [ ] [T-03] [M] config/config.ts + resolver.ts (transport ws|rest, projects cwd-map longest-prefix, same-name diff-URL disambiguate) + unit — high | blocked-by: T-01 | blocks: T-04,T-31
+- [x] [T-03] [M] config/config.ts + resolver.ts (transport ws|rest, projects cwd-map longest-prefix, same-name diff-URL disambiguate) + unit — high | blocked-by: T-01 | blocks: T-04,T-31 — ✅ done (PR #3 merged bcd9c92, 88 tests M0 total, coverage config 91.57% + resolver 100%)
 
 ## M1 Client core
 
