@@ -163,19 +163,24 @@ flowchart TD
 
 | Export | Signature | Responsibility |
 |---|---|---|
-| `loadConfig` | `() => Promise<Config>` | Đọc `~/.pi/agent/huly/config.json` (global) |
-| `saveConfig` | `(c: Config) => Promise<void>` | Write |
-| `bindProject` | `(cwd: string, { workspace, project }) => Promise<void>` | Set `projects[cwd]` (cho `/huly link`/`init`) |
-| `unbindProject` | `(cwd: string) => Promise<void>` | Remove `projects[cwd]` (`/huly unlink`) |
-| `resolveByCwd` | `(cwd: string) => { workspace, project } \| undefined` | Longest-prefix match cwd → binding |
-| type `Config` | `{ version: 1, projects: Record<string, { workspace: string, project: string }>, pool?: { maxSize?: number } }` | — |
+| `loadConfig` | `(filePath?: string) => Promise<Config>` | Đọc `~/.pi/agent/huly/config.json` (global). `filePath?` optional override cho test. |
+| `saveConfig` | `(c: Config, filePath?: string) => Promise<void>` | Write atomic. `filePath?` optional override. |
+| `bindProject` | `(cwd: string, { workspace, project }: ProjectBinding, filePath?: string) => Promise<void>` | Set `projects[cwd]` (cho `/huly link`/`init`). Upsert. |
+| `unbindProject` | `(cwd: string, filePath?: string) => Promise<void>` | Remove `projects[cwd]` (`/huly unlink`). No-op nếu không tồn tại. |
+| `resolveByCwd` | `(cwd: string, filePath?: string) => Promise<ProjectBinding \| undefined>` | Longest-prefix match cwd → binding (path normalized). Async. |
+| type `Transport` | `'ws' \| 'rest'` | Global toggle (D3). Default `'ws'`. |
+| type `ProjectBinding` | `{ workspace: string, project: string }` | cwd binding entry. `workspace` = id-handle (credentials key). |
+| type `Config` | `{ version: 1, transport?: Transport, projects: Record<string, ProjectBinding>, pool?: { maxSize?: number } }` | `transport` optional (default `'ws'` per D3). |
 
 ### `config/resolver.ts` — WorkspaceResolver + ProjectResolver
 
 | Export | Signature | Responsibility |
 |---|---|---|
-| `resolveWorkspace` | `(explicit?: string, ctx) => Promise<string>` | Chain (no env): explicit param > cwd-map (config.resolveByCwd) > interactive `/huly init`. `explicit`/lookup name → nếu 1 entry → dùng; nhiều (same-name diff-URL) → prompt chọn url. |
-| `resolveProject` | `(explicit?: string, ctx) => Promise<string \| undefined>` | Chain: explicit param > cwd-map (config.resolveByCwd). Undefined → tool yêu cầu project sẽ prompt chọn từ `list_projects`. |
+| `resolveWorkspace` | `(explicit?: string, ctx: ResolverCtx) => Promise<string>` | Chain (no env): explicit param > cwd-map (config.resolveByCwd) > throw `NeedsInitError`. `explicit`/lookup name → nếu 1 entry → dùng; nhiều (same-name diff-URL) → throw `NeedsDisambiguationError` với list (caller prompt chọn url). |
+| `resolveProject` | `(explicit?: string, ctx: ResolverCtx) => Promise<string \| undefined>` | Chain: explicit param > cwd-map (config.resolveByCwd). Undefined → return undefined (caller prompt chọn từ `list_projects`). |
+| type `ResolverCtx` | `{ cwd: string, credentialsPath?: string, configPath?: string }` | Inject paths cho testability (path-injection thay vì function-injection — ít mock boilerplate). Default: `CREDENTIALS_PATH` / `CONFIG_PATH`. |
+| class `NeedsDisambiguationError` | `extends Error { matches: Array<{id, url, workspace}> }` | Caller catch → prompt user chọn 1 trong matches (same-name diff-URL). |
+| class `NeedsInitError` | `extends Error` | Caller catch → run `/huly init` flow. |
 
 ### `client/pool.ts` — ConnectionPool (module singleton, shared subagents)
 
