@@ -7,9 +7,8 @@
 //
 // Same-name diff-URL disambiguation: findByName returns multiple → NeedsDisambiguationError.
 
-import { CREDENTIALS_PATH } from "./credentials.js";
+import { CREDENTIALS_PATH, findByName, getWorkspace } from "./credentials.js";
 import { CONFIG_PATH, resolveByCwd, type ProjectBinding } from "./config.js";
-import { findByName, getWorkspace } from "./credentials.js";
 
 /** Context injected vào resolver (testability + tránh hard coupling). */
 export type ResolverCtx = {
@@ -88,6 +87,9 @@ export async function resolveWorkspace(
   // 2. cwd-map
   const binding = await resolveByCwd(ctx.cwd, configPath);
   if (binding !== undefined) {
+    // NOTE: intentional — KHÔNG verify workspace còn tồn tại trong credentials
+    // ở đây. Credential staleness (binding tồn tại nhưng workspace bị remove)
+    // là trách nhiệm client/pool (T-05/T-06), không phải resolver.
     return binding.workspace;
   }
 

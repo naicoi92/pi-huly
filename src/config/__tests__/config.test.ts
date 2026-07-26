@@ -93,6 +93,58 @@ describe("loadConfig", () => {
     await writeConfig(TEST_PATH, JSON.stringify({ version: 1, transport: "grpc", projects: {} }));
     await expect(loadConfig(TEST_PATH)).rejects.toThrow(/transport must be/i);
   });
+
+  it("throws when projects not an object", async () => {
+    await writeConfig(TEST_PATH, JSON.stringify({ version: 1, projects: "not-object" }));
+    await expect(loadConfig(TEST_PATH)).rejects.toThrow(/projects must be an object/i);
+  });
+
+  it("throws when binding missing workspace field", async () => {
+    await writeConfig(
+      TEST_PATH,
+      JSON.stringify({ version: 1, projects: { "/a": { project: "p" } } }),
+    );
+    await expect(loadConfig(TEST_PATH)).rejects.toThrow(/workspace required/i);
+  });
+
+  it("throws when binding missing project field", async () => {
+    await writeConfig(
+      TEST_PATH,
+      JSON.stringify({ version: 1, projects: { "/a": { workspace: "ws" } } }),
+    );
+    await expect(loadConfig(TEST_PATH)).rejects.toThrow(/project required/i);
+  });
+
+  it("throws when pool.maxSize negative", async () => {
+    await writeConfig(
+      TEST_PATH,
+      JSON.stringify({ version: 1, projects: {}, pool: { maxSize: -1 } }),
+    );
+    await expect(loadConfig(TEST_PATH)).rejects.toThrow(/pool.maxSize must be positive/i);
+  });
+
+  it("throws when pool.maxSize not a number", async () => {
+    await writeConfig(
+      TEST_PATH,
+      JSON.stringify({ version: 1, projects: {}, pool: { maxSize: "big" } }),
+    );
+    await expect(loadConfig(TEST_PATH)).rejects.toThrow(/pool.maxSize must be positive/i);
+  });
+
+  it("throws when saveConfig called with invalid transport", async () => {
+    // @ts-expect-error — intentionally invalid
+    const bad: Config = { version: 1, transport: "grpc", projects: {} };
+    await expect(saveConfig(bad, TEST_PATH)).rejects.toThrow(/transport must be/i);
+  });
+
+  it("binds with ~ tilde path, resolves with same ~ cwd (E2E tilde expansion)", async () => {
+    // Bind với ~ path, resolve bằng ~ path — cả 2 expand qua homedir
+    await bindProject("~/pi-huly-test-tilde", { workspace: "ws", project: "p" }, TEST_PATH);
+    const result = await resolveByCwd("~/pi-huly-test-tilde/sub", TEST_PATH);
+    expect(result).toEqual({ workspace: "ws", project: "p" });
+    // Cleanup binding
+    await unbindProject("~/pi-huly-test-tilde", TEST_PATH);
+  });
 });
 
 describe("saveConfig", () => {

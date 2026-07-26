@@ -7,7 +7,7 @@
 // KHÔNG chmod 600 (non-secret, default perms OK — khác credentials.json).
 
 import { existsSync } from "node:fs";
-import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
@@ -37,7 +37,7 @@ export type Config = {
 export const CONFIG_DIR = join(homedir(), ".pi", "agent", "huly");
 export const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
-/** Default config khi file không tồn tại或缺 transport field. */
+/** Default config khi file không tồn tại hoặc thiếu transport field. */
 export const DEFAULT_CONFIG: Config = {
   version: 1,
   transport: "ws",
@@ -159,7 +159,13 @@ export async function saveConfig(config: Config, filePath: string = CONFIG_PATH)
   const json = `${JSON.stringify(config, null, 2)}\n`;
   const tmpPath = join(dir, `.config.json.tmp.${process.pid}`);
   await writeFile(tmpPath, json, "utf8");
-  await rename(tmpPath, filePath);
+  try {
+    await rename(tmpPath, filePath);
+  } catch (e) {
+    // Cleanup temp file nếu rename fail (cross-device, permission) — tránh leak
+    await rm(tmpPath, { force: true });
+    throw e;
+  }
 }
 
 /**

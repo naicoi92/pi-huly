@@ -178,7 +178,7 @@ flowchart TD
 |---|---|---|
 | `resolveWorkspace` | `(explicit?: string, ctx: ResolverCtx) => Promise<string>` | Chain (no env): explicit param > cwd-map (config.resolveByCwd) > throw `NeedsInitError`. `explicit`/lookup name → nếu 1 entry → dùng; nhiều (same-name diff-URL) → throw `NeedsDisambiguationError` với list (caller prompt chọn url). |
 | `resolveProject` | `(explicit?: string, ctx: ResolverCtx) => Promise<string \| undefined>` | Chain: explicit param > cwd-map (config.resolveByCwd). Undefined → return undefined (caller prompt chọn từ `list_projects`). |
-| type `ResolverCtx` | `{ cwd: string, loadCredentials?, loadConfig? }` | Inject dependencies cho testability. `loadCredentials`/`loadConfig` default tới real impl. |
+| type `ResolverCtx` | `{ cwd: string, credentialsPath?: string, configPath?: string }` | Inject paths cho testability (path-injection thay vì function-injection — ít mock boilerplate). Default: `CREDENTIALS_PATH` / `CONFIG_PATH`. |
 | class `NeedsDisambiguationError` | `extends Error { matches: Array<{id, url, workspace}> }` | Caller catch → prompt user chọn 1 trong matches (same-name diff-URL). |
 | class `NeedsInitError` | `extends Error` | Caller catch → run `/huly init` flow. |
 

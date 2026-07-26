@@ -123,6 +123,17 @@ describe("resolveWorkspace — explicit param", () => {
       }),
     ).rejects.toBeInstanceOf(NeedsInitError);
   });
+
+  it("empty-string explicit falls through to cwd-map", async () => {
+    await setupCreds({ myteam: tokenWs });
+    await bindProject("/a/b", { workspace: "myteam", project: "p" }, CONFIG_PATH);
+    const id = await resolveWorkspace("", {
+      cwd: "/a/b/sub",
+      credentialsPath: CRED_PATH,
+      configPath: CONFIG_PATH,
+    });
+    expect(id).toBe("myteam");
+  });
 });
 
 describe("resolveWorkspace — cwd-map fallback", () => {
