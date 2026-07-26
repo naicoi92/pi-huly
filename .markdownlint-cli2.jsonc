@@ -1,0 +1,23 @@
+{
+  "config": {
+    "default": true,
+    "line-length": {
+      "line_length": 120,
+      "code_blocks": false,
+      "tables": false
+    },
+    "no-inline-html": false,
+    "first-line-heading": false,
+    "table-column-style": false,
+    "blanks-around-headings": false,
+    "blanks-around-lists": false
+  },
+  "globs": ["docs/**/*.md", "README.md"],
+  "ignores": [
+    "node_modules",
+    "dist",
+    "CHANGELOG.md",
+    "TASKS.md",
+    "docs/design/plans/**"
+  ]
+}

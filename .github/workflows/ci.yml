@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# T-01 chỉ verify toolchain gate (Node×OS). Transport(ws/rest)×Auth(token/
+# email-pass)×pi-coding-agent matrix DEFER tới M1 (T-05/T-06 khi có pool/client
+# + integration mock test). Carry-forward note in TASKS.md T-05/T-06.
+
+jobs:
+  quality:
+    name: fmt+lint+typecheck+test+build (${{ matrix.os }}, node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node-version: ['24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@hcengineering'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: Format check
+        run: pnpm run fmt:check
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Lint markdown
+        run: pnpm run lint:md
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm run test:run
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}-node${{ matrix.node-version }}
+          path: dist/
+          if-no-files-found: error

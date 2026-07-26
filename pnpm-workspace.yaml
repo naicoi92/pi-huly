@@ -1,0 +1,7 @@
+allowBuilds:
+  '@google/genai': set this to true or false
+  protobufjs: set this to true or false
+# pnpm workspace config (single-package repo). onlyBuiltDependencies sẽ
+# whitelist build scripts — KHÔNG dùng allowBuilds interactive prompt.
+onlyBuiltDependencies:
+  - protobufjs
