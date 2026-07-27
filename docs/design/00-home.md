@@ -23,8 +23,6 @@ Non-Functional:
 
 - [08 - Non-Functional Deep-Dive](./08-non-functional.md)
 
-- [08 - Non-Functional Deep-Dive](./08-non-functional.md)
-
 - [09 - Implementation Roadmap](./09-roadmap.md)
 
 Release:
@@ -47,4 +45,3 @@ Release:
 | 10 | Release & Deploy Plan | ✅ done |
 
 **project-design skill HOÀN THÀNH — 10/10.** Phase implement: T-01..T-39 (TASKS.md) qua `milestone-implement`/`gitlab-development-workflow`.
-| 3-10 | — | pending |
