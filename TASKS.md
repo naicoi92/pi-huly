@@ -85,7 +85,7 @@ _DoD: e2e self-host smoke; npm publish; Bước 10 release._
 
 - [x] [T-36] [M] e2e self-host smoke (~10 critical tools: create_issue, list_issues, get_issue, create_document, edit_document, create_milestone, set_issue_milestone, add_comment, fulltext_search, /huly init) — medium | blocked-by: T-34,T-35 | blocks: T-38 — ✅ done (PR #18 merged 5e11700, 13 integration smoke tests invoke tool.execute() full builder seam, 365 tests total; RESCOPED: runtime real-Huly e2e DEFERRED — no self-host available, defer to post-deploy prod verify 10-release §D)
 - [x] [T-37] [M] docs (README, setup guide, /huly guide, Bước 10 deploy, @hcengineering GitHub token doc, R1 license audit) — medium | blocked-by: T-33 | blocks: T-38 | risks: R1 — ✅ done (PR #19 merged dcb2e34, README rewritten user-facing + NOTICE.md R1 license audit — verified 8/8 packages license metadata thật: @hcengineering/* EPL-2.0 bundled, ws/typebox/pi MIT external; R1 accept, no release block)
-- [ ] [T-38] [S] npm publish prep (prepack build, version, pi-package keyword, pi manifest final) — high | blocked-by: T-36,T-37 | blocks: T-39
+- [x] [T-38] [S] npm publish prep (prepack build, version, pi-package keyword, pi manifest final) — high | blocked-by: T-36,T-37 | blocks: T-39 — ✅ done (PR #20 merged 9e7c3a9, version 1.0.0, prepack script, CHANGELOG.md, .npmignore, doc-code sync fix — @hcengineering KHÔNG bundled mà là npm public dep; tarball clean: dist+skills+4docs+package.json)
 - [ ] [T-39] [M] release (Bước 10: deployment strategy, git tag v1.0.0, post-deploy prod verify, monitoring window) — high | blocked-by: T-38
 
 ---
