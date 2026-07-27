@@ -8,7 +8,7 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { SPACE_CLASS, DOCUMENT_CLASS, spaceRef } from "./_class-refs.js";
-import { workspaceParam, limitParam } from "./_common.js";
+import { workspaceParam, limitParam, escapeLikePattern, parseMarkupSafe } from "./_common.js";
 import { mdToMarkup, markupToMd } from "../../markup/markup.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -174,7 +174,7 @@ export const tools: HulyToolDefinition[] = [
       const limit = typeof params.limit === "number" ? params.limit : 50;
       const query: Record<string, unknown> = { space: params.teamspace };
       if (params.titleSearch !== undefined) {
-        query.title = { $like: `%${params.titleSearch}%` };
+        query.title = { $like: `%${escapeLikePattern(params.titleSearch)}%` };
       }
       const docs = await tctx.client.findAll(DOCUMENT_CLASS, query, { limit });
       const list = docs.map((d) => ({
@@ -213,9 +213,11 @@ export const tools: HulyToolDefinition[] = [
         modifiedOn?: number;
         createdOn?: number;
       };
-      // Convert Huly markup → markdown cho LLM (FR-13 R8)
+      // Convert Huly markup → markdown cho LLM (FR-13 R8). Guard JSON.parse
+      // (content cũ có thể là plain text HOẶC rỗng — KHÔNG crash).
+      const markupNode = parseMarkupSafe(fields.content);
       const contentMd =
-        typeof fields.content === "string" ? markupToMd(JSON.parse(fields.content)) : "";
+        markupNode !== null ? markupToMd(markupNode as never) : (fields.content ?? "");
       return {
         content: `# ${fields.title ?? ""}\n\n${contentMd}`,
         details: {
@@ -300,8 +302,9 @@ export const tools: HulyToolDefinition[] = [
           details: { reason: "missing_params" },
         };
       }
+      const currentMarkup = parseMarkupSafe(fields.content);
       const currentMd =
-        typeof fields.content === "string" ? markupToMd(JSON.parse(fields.content)) : "";
+        currentMarkup !== null ? markupToMd(currentMarkup as never) : (fields.content ?? "");
       const matches = currentMd.split(params.old_text).length - 1;
       if (matches === 0) {
         return {

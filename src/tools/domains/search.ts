@@ -3,7 +3,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { workspaceParam, limitParam } from "./_common.js";
+import { workspaceParam, limitParam, escapeLikePattern } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. fulltext_search — global (KHÔNG project-scoped)
@@ -25,7 +25,7 @@ export const tools: HulyToolDefinition[] = [
       const limit = typeof params.limit === "number" ? params.limit : 50;
       const issues = await tctx.client.findAll(
         "tracker:class:Issue" as never,
-        { title: { $like: `%${params.query}%` } },
+        { title: { $like: `%${escapeLikePattern(params.query)}%` } },
         { limit },
       );
       const list = issues.map((i) => ({

@@ -65,10 +65,47 @@ export function projectParams(): TObject {
 /**
  * Resolve issue identifier: "<PROJ>-<num>" → as-is; raw num → "<project>-<num>".
  * Huly identifier format. Vd "PD-123" hoặc "123" (project=PD).
+ *
+ * Cross-project guard: nếu input có prefix "<X>-<num>" mà X != project →
+ * throw Error (KHÔNG silently query sai project). Caller catch → isError.
  */
 export function resolveIdentifier(project: string, identifier: string): string {
   if (/^\d+$/.test(identifier)) {
     return `${project}-${identifier}`;
   }
+  // Check cross-project: input "FOO-5" nhưng tool scoped ở "PD"
+  const m = /^([A-Za-z]+)-(\d+)$/.exec(identifier);
+  if (m && m[1] !== project) {
+    throw new Error(
+      `Cross-project identifier not allowed: "${identifier}" (tool scoped to project "${project}")`,
+    );
+  }
   return identifier;
+}
+
+/**
+ * Escape SQL LIKE wildcards (% _ \) trong search pattern — tránh injection.
+ * Huly $like dùng PostgreSQL LIKE semantics.
+ */
+export function escapeLikePattern(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Parse Huly markup JSON safe — return null nếu content không phải JSON markup
+ * (plain text cũ HOẶC rỗng). Caller fallback về raw content.
+ *
+ * Huly content field có thể là:
+ *   - JSON markup string (mới): `'{"type":"doc",...}'`
+ *   - Plain text (cũ): `"hello"`
+ *   - Empty: `""`
+ */
+export function parseMarkupSafe(content: unknown): unknown {
+  if (typeof content !== "string" || content.length === 0) return null;
+  if (!content.startsWith("{")) return null;
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
 }

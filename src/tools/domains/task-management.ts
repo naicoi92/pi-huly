@@ -2,11 +2,11 @@
 // Design: 06-api.md §4 Task-mgmt. Project types + task types + status idempotent.
 //
 // Tools (5, FR-04 D4):
-//   1. huly_list_project_types    — list project types (vd tracker, recruiting)
-//   2. huly_get_project_type      — get by id
-//   3. huly_list_task_types       — list task types cho project type
-//   4. huly_create_task_type      — create task type
-//   5. huly_create_issue_status   — idempotent (normalized name)
+//   1. list_project_types    — list project types (vd tracker, recruiting)
+//   2. get_project_type      — get by id
+//   3. list_task_types       — list task types cho project type
+//   4. create_task_type      — create task type
+//   5. create_issue_status   — idempotent (exact name match)
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
@@ -133,10 +133,11 @@ export const tools: HulyToolDefinition[] = [
       ]),
     }),
     async handler(params, tctx) {
-      const normalized = params.name.toLowerCase().trim();
-      // Idempotent check — find existing với normalized name
+      // Idempotent: findOne exact name (raw, KHÔNG normalize — tránh mismatch
+      // giữa query normalized vs save raw). Huly status name theo convention
+      // lowercase, caller nên pass name đã normalize.
       const existing = await tctx.client.findOne(ISSUE_STATUS_CLASS, {
-        name: normalized,
+        name: params.name,
       });
       if (existing) {
         return {

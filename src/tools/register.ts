@@ -1,7 +1,9 @@
-// tools/register.ts — Register all 19 domain modules với pi.
+// tools/register.ts — Register all domain modules với pi.
 // Design: 04-system.md §6 (register.ts), 06-api.md §4 (catalog).
 //
-// T-30: collect tools từ 19 domain + registerTool each.
+// T-30: collect tools từ 21 domain files (19 domain theo spec FR-04, Issues
+// chia 3 files + Documents tách snapshots = 21 files) + registerTool each.
+// Total: 102 tools (FR-02).
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { HulyToolDefinition } from "./builder.js";

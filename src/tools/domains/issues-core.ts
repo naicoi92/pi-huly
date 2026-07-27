@@ -18,6 +18,8 @@ import {
   prioritySchema,
   statusCategorySchema,
   resolveIdentifier,
+  parseMarkupSafe,
+  escapeLikePattern,
 } from "./_common.js";
 import { mdToMarkup, markupToMd } from "../../markup/markup.js";
 
@@ -43,13 +45,20 @@ export const tools: HulyToolDefinition[] = [
     }),
     async handler(params, tctx) {
       const limit = typeof params.limit === "number" ? params.limit : 50;
-      const query: Record<string, unknown> = {};
+      const query: Record<string, unknown> = {
+        // Filter theo project prefix (vd "PD-%") — issue scoped theo project.
+        identifier: { $like: `${tctx.project!}-%` },
+      };
       if (params.status !== undefined) query.status = params.status;
       if (params.statusCategory !== undefined) query.statusCategory = params.statusCategory;
       if (params.assignee !== undefined) query.assignee = params.assignee;
       if (params.component !== undefined) query.component = params.component;
       if (params.parentIssue !== undefined) query.parentIssue = params.parentIssue;
-      if (params.titleSearch !== undefined) query.title = { $like: `%${params.titleSearch}%` };
+      if (params.titleSearch !== undefined) {
+        // Override identifier filter khi search title (KHÔNG combine $like)
+        delete query.identifier;
+        query.title = { $like: `%${escapeLikePattern(params.titleSearch)}%` };
+      }
       const issues = await tctx.client.findAll(ISSUE_CLASS, query, { limit });
       const list = issues.map((i) => ({
         identifier: (i as { identifier?: string }).identifier ?? "",
@@ -99,11 +108,9 @@ export const tools: HulyToolDefinition[] = [
         dueDate?: number;
         estimation?: number;
       };
-      // Description markup → markdown (FR-13 R8)
-      const descMd =
-        typeof f.description === "string" && f.description.startsWith("{")
-          ? markupToMd(JSON.parse(f.description))
-          : f.description;
+      // Description markup → markdown (FR-13 R8). Guard JSON.parse.
+      const descMarkup = parseMarkupSafe(f.description);
+      const descMd = descMarkup !== null ? markupToMd(descMarkup as never) : f.description;
       return {
         content: `${f.identifier}: ${f.title ?? ""}\n\nStatus: ${f.status ?? "?"} · Priority: ${f.priority ?? "?"} · Assignee: ${f.assignee ?? "?"}\n\n${descMd ?? ""}`,
         details: {
@@ -148,26 +155,29 @@ export const tools: HulyToolDefinition[] = [
       const project = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: tctx.project,
       });
+      if (!project) {
+        return {
+          content: `Project "${tctx.project}" not found. Run /huly init or check binding.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
       // Description markdown → markup (FR-13 R8)
       const descriptionMarkup =
         params.description !== undefined
           ? JSON.stringify(mdToMarkup(params.description))
           : undefined;
-      const id = await tctx.client.createDoc(
-        ISSUE_CLASS,
-        (project?.space ?? tctx.workspace) as never,
-        {
-          title: params.title,
-          description: descriptionMarkup,
-          priority: params.priority,
-          assignee: params.assignee,
-          status: params.status,
-          taskType: params.taskType,
-          parentIssue: params.parentIssue,
-          dueDate: params.dueDate,
-          estimation: params.estimation,
-        },
-      );
+      const id = await tctx.client.createDoc(ISSUE_CLASS, project.space as never, {
+        title: params.title,
+        description: descriptionMarkup,
+        priority: params.priority,
+        assignee: params.assignee,
+        status: params.status,
+        taskType: params.taskType,
+        parentIssue: params.parentIssue,
+        dueDate: params.dueDate,
+        estimation: params.estimation,
+      });
       return {
         content: `Created issue "${params.title}".`,
         details: { id, title: params.title },
