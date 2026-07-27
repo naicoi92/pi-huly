@@ -250,3 +250,26 @@ declare module "@hcengineering/core" {
     ): Promise<TxResult>;
   }
 }
+
+declare module "@hcengineering/text-core" {
+  export interface MarkupNode {
+    type: string;
+    marks?: unknown[];
+    content?: unknown[];
+    attrs?: Record<string, unknown>;
+    text?: string;
+    [key: string]: unknown;
+  }
+}
+
+declare module "@hcengineering/text-markdown" {
+  import type { MarkupNode } from "@hcengineering/text-core";
+
+  export interface MarkdownOptions {
+    refUrl?: string;
+    imageUrl?: string;
+  }
+
+  export function markdownToMarkup(markdown: string, options?: MarkdownOptions): MarkupNode;
+  export function markupToMarkdown(markup: MarkupNode, options?: MarkdownOptions): string;
+}
