@@ -84,7 +84,13 @@ describe("huly_list_workspaces", () => {
     const tool = tools.find((t) => t.name === "huly_list_workspaces")!;
     const result = await tool.execute("tc1", {}, undefined, undefined, ctx);
     expect(client.findAll).toHaveBeenCalledWith("contact:class:Person", {}, { limit: 50 });
-    expect(result.content[0]?.text).toBe("Found 2 workspace member(s).");
+    // T-40: non-TUI mode (hasUI=false) append details → content text để LLM thấy
+    // member list (trước đây chỉ thấy count string). Content gốc + array data.
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Found 2 workspace member(s).");
+    expect(text).toContain("Alice");
+    expect(text).toContain("Bob");
+    expect(text).toContain("p1");
   });
 
   it("limit param override default", async () => {

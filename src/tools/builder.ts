@@ -281,8 +281,18 @@ export function defineHulyTool<P extends ToolParams>(
         // 8. Convert HulyToolResult → AgentToolResult shape
         // Sanitize content (08 §A no-leak) — handler có thể return entity có
         // token user paste (vd issue description). Success path cũng strip.
+        const contentText = sanitize(result.content);
+        // Non-TUI mode (hasUI=false — json/print headless LLM-only): KHÔNG có
+        // render hook consumer → details (array list, id entity) bị mất khỏi
+        // context LLM. Append summary details → content để LLM thấy đủ data
+        // lifecycle (#22 list giấu array, #26 create giấu id). TUI mode giữ
+        // nguyên — render layer (render/*.ts) consume details trực tiếp.
+        const finalContent =
+          ctx.hasUI === false && result.isError !== true
+            ? appendDetailsForLLM(contentText, result.details)
+            : contentText;
         return {
-          content: [{ type: "text", text: sanitize(result.content) }],
+          content: [{ type: "text", text: finalContent }],
           details: result.details ?? {},
           isError: result.isError === true ? true : undefined,
         };
@@ -291,6 +301,111 @@ export function defineHulyTool<P extends ToolParams>(
       }
     },
   };
+}
+
+/**
+ * Số item tối đa khi serialize array details → content text (T-40).
+ * Tránh bloat context khi list trả nhiều (list_issues limit 50, có thể lớn hơn).
+ */
+const LLM_ARRAY_CAP = 30;
+
+/**
+ * Append summary của `details` vào content text cho non-TUI path (T-40 #22 #26).
+ *
+ * Heuristic shape-aware (KHÔNG schema per-tool — 1 seam generic):
+ * - Detect MỌI array field (vd `issues`, `members`, `attachments`, `tags`, ...)
+ *   KHÔNG whitelist — iterate toàn bộ keys, kiểm `Array.isArray`. Serialize
+ *   cap top `LLM_ARRAY_CAP` + đuôi "... và N khác". Lưu ý: handler nào đặt
+ *   array lớn binary/debug vào details (vd `chunks`) cũng sẽ serialize —
+ *   domain tránh pattern đó.
+ * - Detect field `id`/`_id`/`identifier` (entity vừa create) → append dạng
+ *   `id: <val>`.
+ * - Bỏ qua field meta trống/count trùng (count đã trong content gốc nhiều case).
+ *
+ * Return text đã append (content gốc + "\n" + summary). Nếu details rỗng/không
+ * có gì hữu ích → return content gốc y nguyên.
+ */
+function appendDetailsForLLM(content: string, details: unknown): string {
+  if (details === null || details === undefined) return content;
+  if (typeof details !== "object") return content;
+  const d = details as Record<string, unknown>;
+  const keys = Object.keys(d);
+  if (keys.length === 0) return content;
+
+  const lines: string[] = [];
+
+  // 1. Array fields: serialize cap top items
+  const seenArrays = new Set<string>();
+  for (const k of keys) {
+    const v = d[k];
+    if (Array.isArray(v) && v.length > 0) {
+      seenArrays.add(k);
+      const items = v.slice(0, LLM_ARRAY_CAP);
+      const remaining = v.length - items.length;
+      const serialized = items
+        .map((item, idx) => {
+          if (item !== null && typeof item === "object") {
+            const obj = item as Record<string, unknown>;
+            // Pick most useful fields cho LLM (identifier/id + title/name + status)
+            const ident = (obj.identifier ?? obj._id ?? obj.id) as string | undefined;
+            const title = (obj.title ?? obj.name ?? obj.label) as string | undefined;
+            const status = (obj.status ?? obj.priority) as string | undefined;
+            const parts: string[] = [];
+            // Sanitize mỗi field (08 §A NFR-04) — details có thể chứa token
+            // user paste (vd issue title có secret). Tránh leak qua non-TUI path.
+            if (ident !== undefined) parts.push(sanitize(String(ident)));
+            if (title !== undefined) parts.push(sanitize(String(title)));
+            if (status !== undefined) parts.push(`[${sanitize(String(status))}]`);
+            return parts.length > 0 ? `  ${idx + 1}. ${parts.join(" — ")}` : null;
+          }
+          return `  ${idx + 1}. ${sanitize(String(item))}`;
+        })
+        .filter((line): line is string => line !== null);
+      if (serialized.length > 0) {
+        lines.push(`${k} (${v.length}):`);
+        lines.push(...serialized);
+        if (remaining > 0) {
+          lines.push(`  ... và ${remaining} khác.`);
+        }
+      }
+    }
+  }
+
+  // 2. Scalar id-like fields (entity create): id/_id/identifier + title/name.
+  // CHỈ khi chưa có array nào chiếm chỗ (tránh lặp cho list). Hiển thị TẤT CẢ
+  // id-like field (LLM cần `_id` raw cho 1 số tool, `identifier` human-friendly cho
+  // tool khác — vd create_issue trả _id internal + identifier PD-42).
+  if (seenArrays.size === 0) {
+    const idCandidates: Array<[string, unknown]> = [
+      ["identifier", d.identifier],
+      ["_id", d._id],
+      ["id", d.id],
+    ];
+    const idFields = idCandidates.filter(
+      (pair): pair is [string, unknown] => pair[1] !== undefined && pair[1] !== null,
+    );
+    const parts: string[] = [];
+    for (const [k, v] of idFields) {
+      const sv = sanitize(String(v));
+      // Skip nếu id đã xuất hiện trong content (tránh duplicate)
+      if (!content.includes(sv)) {
+        parts.push(`${k}: ${sv}`);
+      }
+    }
+    const title = (d.title ?? d.name ?? d.label) as string | undefined;
+    if (title !== undefined) {
+      const st = sanitize(String(title));
+      if (!content.includes(st)) {
+        parts.push(`title: ${st}`);
+      }
+    }
+    if (parts.length > 0) {
+      lines.push(parts.join(" · "));
+    }
+  }
+
+  if (lines.length === 0) return content;
+  return `${content}\n${lines.join("\n")}`;
 }
 
 /**

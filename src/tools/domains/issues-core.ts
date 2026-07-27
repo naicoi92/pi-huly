@@ -178,9 +178,26 @@ export const tools: HulyToolDefinition[] = [
         dueDate: params.dueDate,
         estimation: params.estimation,
       });
+      // T-40 #26: identifier (vd "PD-42") được server gán sau createDoc.
+      // createDoc chỉ trả _id internal → lookup issue để lấy identifier cho LLM
+      // (90% tool khác như get/update/add_comment cần identifier, không _id).
+      // Lookup fail (server async index chậm) → vẫn trả id, identifier=undefined
+      // + hint content rõ ràng để LLM biết retry qua list_issues (tránh stuck
+      // khi LLM cố dùng _id internal cho get_issue — resolveIdentifier fail).
+      let identifier: string | undefined;
+      try {
+        const created = await tctx.client.findOne(ISSUE_CLASS, { _id: id });
+        identifier = (created as { identifier?: string } | null)?.identifier;
+      } catch {
+        // Lookup fail không block success — identifier optional, LLM có _id dự phòng
+      }
+      const contentMsg =
+        identifier !== undefined
+          ? `Created issue ${identifier}: "${params.title}".`
+          : `Created issue "${params.title}". Identifier pending (server indexing) — use huly_list_issues to find by title if needed.`;
       return {
-        content: `Created issue "${params.title}".`,
-        details: { id, title: params.title },
+        content: contentMsg,
+        details: { id, identifier, title: params.title },
       };
     },
   }),
