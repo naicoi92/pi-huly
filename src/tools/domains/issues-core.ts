@@ -10,7 +10,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { ISSUE_CLASS, PROJECT_CLASS, idRef } from "./_class-refs.js";
+import { ISSUE_CLASS, PROJECT_CLASS, LABEL_CLASS, idRef } from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -343,16 +343,21 @@ export const tools: HulyToolDefinition[] = [
   }),
 
   // 7. add_issue_label — GLOBAL labels (05-data-model §3)
+  // T-45 #27: validate label tồn tại + push TagReference object shape (audit §4).
+  // Trước đây push raw string → sai shape (TagReference extends AttachedDoc, có
+  // tag/title/color fields). Label không tồn tại vẫn "Added" → issue mang ref rác.
   defineHulyTool({
     name: "add_issue_label",
     label: "Add issue label",
-    description: "Add global label to issue.",
+    description:
+      "Add global label to issue. Accepts label title (human) or _id (raw ref). " +
+      "Validates label exists before push.",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
       identifier: identifierParam,
-      label: Type.String(),
+      label: Type.String({ description: "Label title or _id ref." }),
     }),
     async handler(params, tctx) {
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
@@ -365,34 +370,65 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      const labels = ((issue as { labels?: unknown[] }).labels ?? []) as unknown[];
-      if (labels.some((l) => l === params.label)) {
+      // T-45: validate label tồn tại — try by title first, fallback by _id.
+      const label =
+        (await tctx.client.findOne(LABEL_CLASS, {
+          title: params.label,
+        })) ?? (await tctx.client.findOne(LABEL_CLASS, { _id: idRef(params.label) }));
+      if (!label) {
         return {
-          content: `Label ${params.label} already on ${params.identifier} (no-op).`,
-          details: { added: false, idempotent: true },
+          content: `Label "${params.label}" not found. Create via create_label first.`,
+          isError: true,
+          details: { label: params.label, identifier: params.identifier },
         };
       }
+      const labelDoc = label as { _id: string; title?: string; color?: number };
+      // Idempotent: nếu label đã có trên issue (match tag ref) → no-op.
+      const labels = ((issue as { labels?: unknown[] }).labels ?? []) as Array<{
+        tag?: string;
+        title?: string;
+      }>;
+      if (labels.some((l) => l?.tag === labelDoc._id)) {
+        return {
+          content: `Label ${params.label} already on ${params.identifier} (no-op).`,
+          details: { added: false, idempotent: true, label: params.label },
+        };
+      }
+      // Push TagReference object shape (audit §4 — NOT raw string).
       await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
-        $push: { labels: idRef(params.label) },
+        $push: {
+          labels: {
+            tag: labelDoc._id,
+            title: labelDoc.title ?? params.label,
+            color: labelDoc.color ?? 0,
+          },
+        },
       });
       return {
         content: `Added label ${params.label} to ${params.identifier}.`,
-        details: { identifier: params.identifier, label: params.label },
+        details: {
+          added: true,
+          identifier: params.identifier,
+          label: params.label,
+          labelId: labelDoc._id,
+        },
       };
     },
   }),
 
-  // 8. remove_issue_label
+  // 8. remove_issue_label — symmetric with add (T-45)
   defineHulyTool({
     name: "remove_issue_label",
     label: "Remove issue label",
-    description: "Remove global label from issue.",
+    description:
+      "Remove global label from issue. Accepts label title or _id. " +
+      "No-op if label not present on issue (idempotent).",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
       identifier: identifierParam,
-      label: Type.String(),
+      label: Type.String({ description: "Label title or _id ref." }),
     }),
     async handler(params, tctx) {
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
@@ -405,12 +441,41 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
+      // Validate label exists (consistent with add — đừng remove label không tồn tại).
+      const label =
+        (await tctx.client.findOne(LABEL_CLASS, {
+          title: params.label,
+        })) ?? (await tctx.client.findOne(LABEL_CLASS, { _id: idRef(params.label) }));
+      if (!label) {
+        return {
+          content: `Label "${params.label}" not found. Cannot remove.`,
+          isError: true,
+          details: { label: params.label, identifier: params.identifier },
+        };
+      }
+      const labelDoc = label as { _id: string };
+      // Idempotent: nếu label không có trên issue → no-op (KHÔNG crash).
+      const labels = ((issue as { labels?: unknown[] }).labels ?? []) as Array<{
+        tag?: string;
+      }>;
+      if (!labels.some((l) => l?.tag === labelDoc._id)) {
+        return {
+          content: `Label ${params.label} not on ${params.identifier} (no-op).`,
+          details: { removed: false, idempotent: true, label: params.label },
+        };
+      }
+      // $pull bằng tag ref object (match shape khi push).
       await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
-        $pull: { labels: idRef(params.label) },
+        $pull: { labels: { tag: labelDoc._id } },
       });
       return {
         content: `Removed label ${params.label} from ${params.identifier}.`,
-        details: { identifier: params.identifier, label: params.label },
+        details: {
+          removed: true,
+          identifier: params.identifier,
+          label: params.label,
+          labelId: labelDoc._id,
+        },
       };
     },
   }),
