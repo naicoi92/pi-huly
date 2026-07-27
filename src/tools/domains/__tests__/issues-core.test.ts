@@ -197,3 +197,121 @@ describe("T-41: get_issue description ref → markdown (#23)", () => {
     expect(details.descriptionRef).toBe("stale-ref-123");
   });
 });
+
+// T-45: add_issue_label validate tồn tại + TagReference object shape (#27)
+describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
+  it("label KHÔNG tồn tại → isError + suggest create_label trước", async () => {
+    const client = makeClient();
+    // findOne: lần 1 = issue lookup, lần 2 = label lookup (not found)
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", labels: [] }) // issue
+      .mockResolvedValue(undefined); // label not found (cả 2 lần lookup)
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_add_issue_label");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", label: "nonexistent-label" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/not found/i);
+    expect(text).toMatch(/create_label/i);
+    // updateDoc KHÔNG gọi (validate failed)
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it("label tồn tại → push TagReference object shape { tag, title, color }", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", labels: [] }) // issue
+      .mockResolvedValueOnce({ _id: "label-1", title: "bug", color: 5 }); // label found
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_add_issue_label");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", label: "bug" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    // updateDoc được gọi với $push object (KHÔNG phải raw string)
+    expect(client.updateDoc).toHaveBeenCalledTimes(1);
+    const updateCall = client.updateDoc.mock.calls[0];
+    const ops = updateCall?.[3];
+    expect(ops).toMatchObject({
+      $push: {
+        labels: {
+          tag: "label-1", // Ref<TagElement> — KHÔNG phải title string
+          title: "bug",
+          color: 5,
+        },
+      },
+    });
+  });
+
+  it("label đã có trên issue (idempotent) → no-op, không duplicate", async () => {
+    const client = makeClient();
+    // findOne calls: issue lookup (1) + label lookup by title (2) → found.
+    // Code skip _id fallback khi title lookup thành công.
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "i1",
+        space: "sp1",
+        identifier: "PD-1",
+        labels: [{ tag: "label-1", title: "bug", color: 5 }], // đã có
+      })
+      .mockResolvedValueOnce({ _id: "label-1", title: "bug", color: 5 }); // label found by title
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_add_issue_label");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", label: "bug" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/already|no-op|idempotent/i);
+    // updateDoc KHÔNG gọi
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it("label param là _id (raw ref) → fallback lookup by _id khi title miss", async () => {
+    const client = makeClient();
+    // findOne: issue (1), label by title miss (2), label by _id found (3).
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", labels: [] })
+      .mockResolvedValueOnce(undefined) // title lookup miss
+      .mockResolvedValueOnce({ _id: "label-1", title: "bug", color: 5 }); // _id lookup hit
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_add_issue_label");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", label: "label-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    // findOne lần 3 query bằng _id (fallback sau title miss)
+    const thirdCall = client.findOne.mock.calls[2];
+    expect(thirdCall?.[1]).toMatchObject({ _id: "label-1" });
+  });
+});
