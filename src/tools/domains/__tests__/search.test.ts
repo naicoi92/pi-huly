@@ -132,13 +132,65 @@ describe("T-42 fulltext_search — expand query across domains", () => {
     const result = await tool.execute("tc1", { query: "x" }, undefined, undefined, ctx);
 
     expect(result.isError).toBe(true);
-    // Honest message — KHÔNG fake "Found 0 results" mà return error rõ ràng
-    expect(result.content[0]?.text ?? "").toMatch(/search failed|error/i);
+    // Honest message — KHÔNG fake "Found 0 results" mà return error rõ ràng.
+    // T-49: message đổi sang "All search domains failed: <reasons>" khi tất cả
+    // reject (Promise.allSettled → all rejected branch).
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/all search domains failed|search failed|error/i);
   });
 
   it("tool description honest về capability (KHÔNG overclaim fulltext)", () => {
     const tool = findTool();
     // Description phải mention substring search (KHÔNG claim "fulltext index")
     expect(tool.description.toLowerCase()).toMatch(/substring|title|content/);
+  });
+});
+
+// T-49 #38: defensive per-domain catch — 1 domain fail không kéo cả search fail.
+// Bug gốc: Promise.all reject nếu 1 domain throw (Document class sai runtime
+// → domain not found). Fix: Promise.allSettled → partial result + warning.
+describe("T-49 #38: defensive per-domain catch (Promise.allSettled)", () => {
+  it("1 domain reject (Document) → Issue + ChatMessage vẫn return + warning", async () => {
+    const client = makeClient();
+    // findAll mock theo thứ tự gọi: Issue, Document, ChatMessage
+    client.findAll = vi
+      .fn()
+      .mockResolvedValueOnce([{ _id: "i1", identifier: "PD-1", title: "Critical bug" }])
+      .mockRejectedValueOnce(new Error("domain not found: tracker:class:Document"))
+      .mockResolvedValueOnce([{ _id: "m1", content: "msg about bug" }]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool();
+    const result = await tool.execute("tc1", { query: "bug" }, undefined, undefined, ctx);
+
+    // KHÔNG isError (partial result vẫn success)
+    expect(result.isError).toBeUndefined();
+    // results = 2 (issue + message), KHÔNG phải 3 (document bị skip)
+    const details = result.details as {
+      results: Array<{ _id: string; type: string }>;
+    };
+    expect(details.results).toHaveLength(2);
+    expect(details.results.some((r) => r._id === "i1" && r.type === "issue")).toBe(true);
+    expect(details.results.some((r) => r._id === "m1" && r.type === "message")).toBe(true);
+    expect(details.results.some((r) => r.type === "document")).toBe(false);
+    // Content warning mention Document failed
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/document.*fail/i);
+  });
+
+  it("TẤT CẢ domain reject → isError + honest message (KHÔNG fake 0 results)", async () => {
+    const client = makeClient();
+    client.findAll = vi.fn().mockRejectedValue(new Error("connection refused"));
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool();
+    const result = await tool.execute("tc1", { query: "x" }, undefined, undefined, ctx);
+
+    // isError (tất cả fail → không có result nào)
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    // Honest message — KHÔNG fake "Found 0 results"
+    expect(text).toMatch(/all.*domain.*fail|search failed/i);
+    expect(text).not.toMatch(/found 0 result/i);
   });
 });

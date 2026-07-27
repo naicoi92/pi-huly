@@ -63,9 +63,10 @@ export const tools: HulyToolDefinition[] = [
     name: "fulltext_search",
     label: "Fulltext search",
     description:
-      "Substring search across Huly workspace: issue titles, document titles, message content. " +
-      "Uses $like pattern (case-insensitive substring). NOT a fulltext index — complex queries " +
-      "may miss partial matches. Global across workspace.",
+      "Substring search across Huly workspace: issue titles, document titles (if available), " +
+      "message content. Uses $like pattern (case-insensitive substring). NOT a fulltext index — " +
+      "complex queries may miss partial matches. Some domains may be unavailable — results " +
+      "show which succeeded. Global across workspace.",
     promptSnippet: "Search Huly issues, documents, messages by substring.",
     parameters: Type.Object({
       workspace: workspaceParam,
@@ -77,29 +78,85 @@ export const tools: HulyToolDefinition[] = [
       // Escape wildcards (% _ \) tránh injection / unintended pattern.
       const query = escapeLikePattern(params.query);
 
-      // T-42 #24: expand query across 3 domains. $like client-side predicate
-      // (audit §3). Server có thể reject → catch + honest error.
+      // T-49 #38: Promise.allSettled thay Promise.all — 1 domain fail (vd
+      // Document class sai runtime "domain not found") không kéo cả search fail.
+      // Filter fulfilled → partial result; collect rejected → warning log.
+      // Promise.allSettled KHÔNG throw (per-domain reject thành status value),
+      // nên outer catch chỉ còn safety net cho unexpected programming errors
+      // (vd .map throw trên doc shape bất thường, sync bug) — KHÔNG domain error.
+      const domainConfigs: Array<{
+        name: string;
+        type: SearchResult["type"];
+        _class: string;
+        field: string;
+      }> = [
+        { name: "issues", type: "issue", _class: ISSUE_CLASS, field: "title" },
+        { name: "documents", type: "document", _class: DOCUMENT_CLASS, field: "title" },
+        { name: "messages", type: "message", _class: CHAT_MESSAGE_CLASS, field: "content" },
+      ];
+
       try {
-        const [issues, documents, messages] = await Promise.all([
-          searchDomain(tctx.client, ISSUE_CLASS, "title", query, limit, "issue"),
-          searchDomain(tctx.client, DOCUMENT_CLASS, "title", query, limit, "document"),
-          searchDomain(tctx.client, CHAT_MESSAGE_CLASS, "content", query, limit, "message"),
-        ]);
-        const results = [...issues, ...documents, ...messages];
+        const settled = await Promise.allSettled(
+          domainConfigs.map((cfg) =>
+            searchDomain(tctx.client, cfg._class, cfg.field, query, limit, cfg.type),
+          ),
+        );
+
+        const results: SearchResult[] = [];
+        const counts: Record<string, number> = {};
+        const failedDomains: Array<{ name: string; reason: string }> = [];
+
+        settled.forEach((s, idx) => {
+          const cfg = domainConfigs[idx];
+          if (s.status === "fulfilled") {
+            results.push(...s.value);
+            counts[cfg.name] = s.value.length;
+          } else {
+            // Non-Error rejection (string/number/object) → String() fallback
+            const reason = s.reason instanceof Error ? s.reason.message : String(s.reason);
+            failedDomains.push({ name: cfg.name, reason });
+            counts[cfg.name] = 0;
+          }
+        });
+
+        // All domains failed → isError (KHÔNG fake "Found 0 results").
+        if (results.length === 0 && failedDomains.length === domainConfigs.length) {
+          const reasons = failedDomains.map((d) => `${d.name}: ${d.reason}`).join("; ");
+          return {
+            content: `All search domains failed: ${reasons}.`,
+            isError: true,
+            details: { query: params.query, failedDomains },
+          };
+        }
+
+        // Build content: partial result + warning nếu có domain fail.
+        const countSummary = domainConfigs
+          .map((cfg) => `${counts[cfg.name] ?? 0} ${cfg.name}`)
+          .join(", ");
+        let content = `Found ${results.length} result(s) for "${params.query}" (${countSummary}).`;
+        if (failedDomains.length > 0) {
+          // 1 dòng per failed domain, truncate reason tránh phình content.
+          const warnings = failedDomains
+            .map((d) => `${d.name} search failed: ${d.reason.slice(0, 100)}`)
+            .join(" | ");
+          content += ` Warning: ${warnings}.`;
+        }
+
         return {
-          content:
-            `Found ${results.length} result(s) for "${params.query}" ` +
-            `(${issues.length} issues, ${documents.length} documents, ${messages.length} messages).`,
-          details: { count: results.length, query: params.query, results },
+          content,
+          details: {
+            count: results.length,
+            query: params.query,
+            results,
+            failedDomains: failedDomains.length > 0 ? failedDomains : undefined,
+          },
         };
       } catch (e) {
-        // Server reject $like (vd platform:status:BadRequest) HOẶC network fail.
-        // Honest error — KHÔNG fake "Found 0 results" (LLM sẽ tưởng không có data).
+        // Safety net cho unexpected programming errors (vd .map throw trên
+        // doc shape bất thường, sync bug). KHÔNG catch domain error (đã settle).
         const msg = e instanceof Error ? e.message : String(e);
         return {
-          content:
-            `Search failed: ${msg}. Huly may not support $like on this field, ` +
-            `or query too complex. Try simpler query or use list_issues with titleSearch.`,
+          content: `Search failed unexpectedly: ${msg}.`,
           isError: true,
           details: { query: params.query, error: msg },
         };
