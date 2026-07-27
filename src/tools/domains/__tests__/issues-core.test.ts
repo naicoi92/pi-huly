@@ -543,4 +543,32 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     const ops = updateCall?.[3] as Record<string, unknown>;
     expect(ops.status).toBe("tracker:status:Done");
   });
+
+  it("findAll throw (transport/network) → isError rõ ràng + retry hint, KHÔNG uncaught", async () => {
+    const client = makeClient();
+    client.findAll = vi.fn().mockRejectedValue(new Error("connection refused"));
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", status: "Done" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    // isError rõ ràng (KHÔNG uncaught rejection propagate ra handler)
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/failed to load workflow statuses/i);
+    expect(text).toMatch(/connection refused/i);
+    // updateDoc KHÔNG gọi
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
 });

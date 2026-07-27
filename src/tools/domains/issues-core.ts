@@ -289,7 +289,23 @@ export const tools: HulyToolDefinition[] = [
       // - Input trim → match linh hoạt với " Done " / "Done" (caller LLM hay
       //   thêm whitespace). Exact case vẫn giữ (Huly status name verbatim).
       if (params.status !== undefined) {
-        const statuses = await tctx.client.findAll(ISSUE_STATUS_CLASS, {}, {});
+        // T-47 review: findAll có thể throw (transport/network/workspace-down).
+        // Wrap → isError rõ ràng + retry hint, KHÔNG để uncaught rejection
+        // propagate ra handler (generic transport error khó hiểu cho LLM).
+        let statuses: unknown[];
+        try {
+          statuses = await tctx.client.findAll(ISSUE_STATUS_CLASS, {}, {});
+        } catch (e) {
+          return {
+            content: `Failed to load workflow statuses: ${(e as Error).message}. Retry huly_update_issue.`,
+            isError: true,
+            details: {
+              identifier: params.identifier,
+              requestedStatus: params.status,
+              loadError: (e as Error).message,
+            },
+          };
+        }
         if (statuses.length === 0) {
           return {
             content:
