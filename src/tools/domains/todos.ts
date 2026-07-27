@@ -3,11 +3,8 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { ISSUE_CLASS } from "./_class-refs.js";
+import { ISSUE_CLASS, TODO_CLASS } from "./_class-refs.js";
 import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
-
-// Todo class ref (Huly core todo mixin)
-const TODO_CLASS = "task:class:Todo" as never;
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_todos
