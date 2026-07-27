@@ -69,6 +69,8 @@ export interface HulyToolResult<TDetails = unknown> {
  * - `params`: validated theo schema (typebox Static<P>)
  * - `toolCtx`: resolved binding (client + workspace + project + user)
  * - Return HulyToolResult (builder convert sang AgentToolResult)
+ *
+ * TDetails default `unknown` — caller KHÔNG cần khai báo, return type flexible.
  */
 export type HulyToolHandler<P extends ToolParams, TDetails = unknown> = (
   params: Static<P>,
@@ -83,6 +85,9 @@ export type { ResolverCtx, NeedsInitError, NeedsDisambiguationError } from "../c
 /**
  * defineHulyTool options — domain module chỉ khai báo này.
  * Builder wrap thành ToolDefinition cho pi.registerTool.
+ *
+ * TDetails default `unknown` — domain KHÔNG cần khai báo. Handler return type flexible
+ * (nhiều shape success/error/not-found → TDetails cố định gây union conflict).
  */
 export interface DefineHulyToolOptions<P extends ToolParams = ToolParams, TDetails = unknown> {
   /** Tool name KHÔNG có prefix `huly_` — builder tự thêm (D5). VD: "create_issue". */
@@ -98,7 +103,7 @@ export interface DefineHulyToolOptions<P extends ToolParams = ToolParams, TDetai
   /** Parameter schema (typebox Type.Object). */
   parameters: P;
   /** Handler thuần — nhận resolved binding, return HulyToolResult. */
-  handler: HulyToolHandler<P, TDetails>;
+  handler: (params: Static<P>, toolCtx: HulyToolContext) => Promise<HulyToolResult<TDetails>>;
   /** True → confirm gate (FR-09 D9). Builder call confirmDestructive trước handler. */
   destructive?: boolean;
   /**
@@ -167,9 +172,9 @@ export interface HulyToolDefinition<P extends ToolParams = ToolParams, TDetails 
  *   7. Handler throw → mapError → error result (FR-14, 08 §A no-leak)
  *   8. Handler return HulyToolResult → convert sang AgentToolResult shape
  */
-export function defineHulyTool<P extends ToolParams, TDetails = unknown>(
-  opts: DefineHulyToolOptions<P, TDetails>,
-): HulyToolDefinition<P, TDetails> {
+export function defineHulyTool<P extends ToolParams>(
+  opts: DefineHulyToolOptions<P, unknown>,
+): HulyToolDefinition<P, unknown> {
   const fullName = `huly_${opts.name}`;
   const assigneeField = opts.assigneeField ?? "assignee";
   const needsProject = opts.needsProject === true;
@@ -258,7 +263,7 @@ export function defineHulyTool<P extends ToolParams, TDetails = unknown>(
                 text: `Cancelled: ${opts.name} requires confirmation.`,
               },
             ],
-            details: { cancelled: true, tool: fullName } as unknown as TDetails,
+            details: { cancelled: true, tool: fullName },
             isError: true,
           };
         }
@@ -278,7 +283,7 @@ export function defineHulyTool<P extends ToolParams, TDetails = unknown>(
         // token user paste (vd issue description). Success path cũng strip.
         return {
           content: [{ type: "text", text: sanitize(result.content) }],
-          details: (result.details ?? {}) as TDetails,
+          details: result.details ?? {},
           isError: result.isError === true ? true : undefined,
         };
       } catch (e) {

@@ -1,0 +1,370 @@
+// tools/domains/issues-core.ts — Issues core domain (8 tools).
+// Design: 06-api.md §4 Issues (subset). List/get/create/update/delete/move + labels.
+//
+// Tools (8, FR-04 D4):
+//   1. list_issues      2. get_issue      3. create_issue
+//   4. update_issue     5. delete_issue   6. move_issue
+//   7. add_issue_label  8. remove_issue_label
+//
+// Assignee default: D15 FR-18 (currentUser email khi absent).
+
+import { Type } from "typebox";
+import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
+import { ISSUE_CLASS, PROJECT_CLASS, idRef } from "./_class-refs.js";
+import {
+  workspaceParam,
+  projectParam,
+  identifierParam,
+  prioritySchema,
+  statusCategorySchema,
+  resolveIdentifier,
+} from "./_common.js";
+import { mdToMarkup, markupToMd } from "../../markup/markup.js";
+
+export const tools: HulyToolDefinition[] = [
+  // 1. list_issues
+  defineHulyTool({
+    name: "list_issues",
+    label: "List issues",
+    description:
+      "List issues trong project. Filter by status, statusCategory, assignee, component, parentIssue, titleSearch.",
+    promptSnippet: "List Huly issues in a project.",
+    needsProject: true,
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      project: projectParam,
+      status: Type.Optional(Type.String()),
+      statusCategory: statusCategorySchema,
+      assignee: Type.Optional(Type.String()),
+      component: Type.Optional(Type.String()),
+      parentIssue: Type.Optional(Type.String()),
+      titleSearch: Type.Optional(Type.String()),
+      limit: Type.Optional(Type.Integer({ minimum: 1 })),
+    }),
+    async handler(params, tctx) {
+      const limit = typeof params.limit === "number" ? params.limit : 50;
+      const query: Record<string, unknown> = {};
+      if (params.status !== undefined) query.status = params.status;
+      if (params.statusCategory !== undefined) query.statusCategory = params.statusCategory;
+      if (params.assignee !== undefined) query.assignee = params.assignee;
+      if (params.component !== undefined) query.component = params.component;
+      if (params.parentIssue !== undefined) query.parentIssue = params.parentIssue;
+      if (params.titleSearch !== undefined) query.title = { $like: `%${params.titleSearch}%` };
+      const issues = await tctx.client.findAll(ISSUE_CLASS, query, { limit });
+      const list = issues.map((i) => ({
+        identifier: (i as { identifier?: string }).identifier ?? "",
+        title: (i as { title?: string }).title ?? "",
+        status: (i as { status?: string }).status,
+        priority: (i as { priority?: string }).priority,
+        assignee: (i as { assignee?: string }).assignee,
+      }));
+      return {
+        content: `Found ${list.length} issue(s).`,
+        details: { count: list.length, issues: list },
+      };
+    },
+  }),
+
+  // 2. get_issue
+  defineHulyTool({
+    name: "get_issue",
+    label: "Get issue",
+    description: "Get issue detail by identifier.",
+    needsProject: true,
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      project: projectParam,
+      identifier: identifierParam,
+    }),
+    async handler(params, tctx) {
+      const issue = await tctx.client.findOne(ISSUE_CLASS, {
+        identifier: resolveIdentifier(tctx.project!, params.identifier),
+      });
+      if (!issue) {
+        return {
+          content: `Issue "${params.identifier}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier },
+        };
+      }
+      const f = issue as {
+        identifier?: string;
+        title?: string;
+        description?: string;
+        status?: string;
+        priority?: string;
+        assignee?: string;
+        milestone?: string;
+        component?: string;
+        dueDate?: number;
+        estimation?: number;
+      };
+      // Description markup → markdown (FR-13 R8)
+      const descMd =
+        typeof f.description === "string" && f.description.startsWith("{")
+          ? markupToMd(JSON.parse(f.description))
+          : f.description;
+      return {
+        content: `${f.identifier}: ${f.title ?? ""}\n\nStatus: ${f.status ?? "?"} · Priority: ${f.priority ?? "?"} · Assignee: ${f.assignee ?? "?"}\n\n${descMd ?? ""}`,
+        details: {
+          identifier: f.identifier,
+          title: f.title,
+          description: descMd,
+          status: f.status,
+          priority: f.priority,
+          assignee: f.assignee,
+          milestone: f.milestone,
+          component: f.component,
+          dueDate: f.dueDate,
+          estimation: f.estimation,
+        },
+      };
+    },
+  }),
+
+  // 3. create_issue
+  defineHulyTool({
+    name: "create_issue",
+    label: "Create issue",
+    description:
+      "Create issue. Assignee absent → default currentUser email (D15). Description = markdown.",
+    promptSnippet: "Create a new Huly issue.",
+    needsProject: true,
+    needsAssignee: true,
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      project: projectParam,
+      title: Type.String(),
+      description: Type.Optional(Type.String()),
+      priority: prioritySchema,
+      assignee: Type.Optional(Type.String()),
+      status: Type.Optional(Type.String()),
+      taskType: Type.Optional(Type.String()),
+      parentIssue: Type.Optional(Type.String()),
+      dueDate: Type.Optional(Type.Integer()),
+      estimation: Type.Optional(Type.Integer()),
+    }),
+    async handler(params, tctx) {
+      const project = await tctx.client.findOne(PROJECT_CLASS, {
+        identifier: tctx.project,
+      });
+      // Description markdown → markup (FR-13 R8)
+      const descriptionMarkup =
+        params.description !== undefined
+          ? JSON.stringify(mdToMarkup(params.description))
+          : undefined;
+      const id = await tctx.client.createDoc(
+        ISSUE_CLASS,
+        (project?.space ?? tctx.workspace) as never,
+        {
+          title: params.title,
+          description: descriptionMarkup,
+          priority: params.priority,
+          assignee: params.assignee,
+          status: params.status,
+          taskType: params.taskType,
+          parentIssue: params.parentIssue,
+          dueDate: params.dueDate,
+          estimation: params.estimation,
+        },
+      );
+      return {
+        content: `Created issue "${params.title}".`,
+        details: { id, title: params.title },
+      };
+    },
+  }),
+
+  // 4. update_issue
+  defineHulyTool({
+    name: "update_issue",
+    label: "Update issue",
+    description: "Update issue fields.",
+    needsProject: true,
+    needsAssignee: true,
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      project: projectParam,
+      identifier: identifierParam,
+      title: Type.Optional(Type.String()),
+      description: Type.Optional(Type.String()),
+      priority: prioritySchema,
+      assignee: Type.Optional(Type.String()),
+      status: Type.Optional(Type.String()),
+      dueDate: Type.Optional(Type.Integer()),
+      estimation: Type.Optional(Type.Integer()),
+    }),
+    async handler(params, tctx) {
+      const issue = await tctx.client.findOne(ISSUE_CLASS, {
+        identifier: resolveIdentifier(tctx.project!, params.identifier),
+      });
+      if (!issue) {
+        return {
+          content: `Issue "${params.identifier}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier },
+        };
+      }
+      const ops: Record<string, unknown> = {};
+      if (params.title !== undefined) ops.title = params.title;
+      if (params.description !== undefined)
+        ops.description = JSON.stringify(mdToMarkup(params.description));
+      if (params.priority !== undefined) ops.priority = params.priority;
+      if (params.assignee !== undefined) ops.assignee = params.assignee;
+      if (params.status !== undefined) ops.status = params.status;
+      if (params.dueDate !== undefined) ops.dueDate = params.dueDate;
+      if (params.estimation !== undefined) ops.estimation = params.estimation;
+      if (Object.keys(ops).length === 0) {
+        return { content: "No fields to update.", details: { updated: false } };
+      }
+      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, ops);
+      return {
+        content: `Updated issue ${params.identifier}: ${Object.keys(ops).join(", ")}`,
+        details: { updated: true, identifier: params.identifier, fields: Object.keys(ops) },
+      };
+    },
+  }),
+
+  // 5. delete_issue — destructive
+  defineHulyTool({
+    name: "delete_issue",
+    label: "Delete issue",
+    description: "Delete issue (destructive — confirm gate).",
+    destructive: true,
+    needsProject: true,
+    destructiveContext: (p) => ({
+      type: "issue",
+      id: (p as { identifier?: string }).identifier ?? "<unknown>",
+    }),
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      project: projectParam,
+      identifier: identifierParam,
+    }),
+    async handler(params, tctx) {
+      const issue = await tctx.client.findOne(ISSUE_CLASS, {
+        identifier: resolveIdentifier(tctx.project!, params.identifier),
+      });
+      if (!issue) {
+        return {
+          content: `Issue "${params.identifier}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier },
+        };
+      }
+      await tctx.client.removeDoc(ISSUE_CLASS, issue.space as never, issue._id as never);
+      return {
+        content: `Deleted issue ${params.identifier}.`,
+        details: { deleted: true, identifier: params.identifier },
+      };
+    },
+  }),
+
+  // 6. move_issue — change parent OR project (simplified: parent)
+  defineHulyTool({
+    name: "move_issue",
+    label: "Move issue",
+    description: "Move issue to new parent (epic). parentIssue=null → promote top-level.",
+    needsProject: true,
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      project: projectParam,
+      identifier: identifierParam,
+      parentIssue: Type.Optional(
+        Type.String({ description: "New parent issue identifier. null = top-level." }),
+      ),
+    }),
+    async handler(params, tctx) {
+      const issue = await tctx.client.findOne(ISSUE_CLASS, {
+        identifier: resolveIdentifier(tctx.project!, params.identifier),
+      });
+      if (!issue) {
+        return {
+          content: `Issue "${params.identifier}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier },
+        };
+      }
+      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+        parentIssue: params.parentIssue === undefined ? null : idRef(params.parentIssue),
+      });
+      return {
+        content: `Moved ${params.identifier} → parent ${params.parentIssue ?? "top-level"}.`,
+        details: { identifier: params.identifier, parentIssue: params.parentIssue ?? null },
+      };
+    },
+  }),
+
+  // 7. add_issue_label — GLOBAL labels (05-data-model §3)
+  defineHulyTool({
+    name: "add_issue_label",
+    label: "Add issue label",
+    description: "Add global label to issue.",
+    needsProject: true,
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      project: projectParam,
+      identifier: identifierParam,
+      label: Type.String(),
+    }),
+    async handler(params, tctx) {
+      const issue = await tctx.client.findOne(ISSUE_CLASS, {
+        identifier: resolveIdentifier(tctx.project!, params.identifier),
+      });
+      if (!issue) {
+        return {
+          content: `Issue "${params.identifier}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier },
+        };
+      }
+      const labels = ((issue as { labels?: unknown[] }).labels ?? []) as unknown[];
+      if (labels.some((l) => l === params.label)) {
+        return {
+          content: `Label ${params.label} already on ${params.identifier} (no-op).`,
+          details: { added: false, idempotent: true },
+        };
+      }
+      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+        $push: { labels: idRef(params.label) },
+      });
+      return {
+        content: `Added label ${params.label} to ${params.identifier}.`,
+        details: { identifier: params.identifier, label: params.label },
+      };
+    },
+  }),
+
+  // 8. remove_issue_label
+  defineHulyTool({
+    name: "remove_issue_label",
+    label: "Remove issue label",
+    description: "Remove global label from issue.",
+    needsProject: true,
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      project: projectParam,
+      identifier: identifierParam,
+      label: Type.String(),
+    }),
+    async handler(params, tctx) {
+      const issue = await tctx.client.findOne(ISSUE_CLASS, {
+        identifier: resolveIdentifier(tctx.project!, params.identifier),
+      });
+      if (!issue) {
+        return {
+          content: `Issue "${params.identifier}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier },
+        };
+      }
+      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+        $pull: { labels: idRef(params.label) },
+      });
+      return {
+        content: `Removed label ${params.label} from ${params.identifier}.`,
+        details: { identifier: params.identifier, label: params.label },
+      };
+    },
+  }),
+];
