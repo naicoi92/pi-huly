@@ -196,18 +196,27 @@ flowchart TD
 
 ### `client/client.ts` — HulyClient (port, thin wrapper)
 
+> **Reconciled T-05 (evidence từ api-client@0.7.423 real API)**: api-client
+> export `connect(url, options)` / `connectRest(url, options)` — url tách riêng.
+> `getCurrentUser`/`get_user_profile` KHÔNG tồn tại → dùng `client.getAccount()`.
+> Types từ `@hcengineering/core` (Ref/Doc/Account/TxOperations), KHÔNG platform.
+> REST write cần `createRestTxOperations` riêng (RestClient chỉ read-only).
+
 | Export | Signature (subset) | Responsibility |
 |---|---|---|
-| `createHulyClient` | `(creds: AuthCreds, transport: 'ws'\|'rest') => Promise<HulyClient>` | api-client `connect` (ws) hoặc `connectRest` (rest) theo transport (D3). `AuthCreds` = `{url, workspace} & ({token} \| {email,password})` (D8 auth union, workspace BẮT BUỘC). |
-| `client.findOne` / `findAll` | `<T>(_class, query, opts?) => Promise<T[]>` | passthrough + markup on read fields |
-| `client.createDoc` / `updateDoc` / `removeDoc` | `(...)` | passthrough + markup on write fields |
-| `client.addCollection` / `createMixin` | `(...)` | cho comments/labels/relations |
-| domain methods | `createIssue(p): Promise<Ref>`, `listIssues(filter): Promise<Issue[]>`, ... | typed ops, 19 domain — generic CRUD + class refs |
-| `client.getCurrentUser` | `() => { id: string, name: string, email: string }` | cached sau connect (get_user_profile) — default assignee |
-| `close` | `() => Promise<void>` | api-client close |
+| `createHulyClient` | `(creds: HulyCredentials, transport?: 'ws'\|'rest') => Promise<HulyClient>` | `connect(url, options)` (ws) hoặc `connectRest` + `createRestTxOperations` (rest). `HulyCredentials = {url} & AuthOptions` (D8 auth union). Default `'ws'`. |
+| `client.findOne` / `findAll` | `<T extends Doc>(_class: Ref<Class<T>>, query: DocumentQuery<T>, options?) => Promise<...>` | delegate PlatformClient (ws) hoặc RestClient (rest) + markup on read fields (T-08a) |
+| `client.createDoc` / `updateDoc` / `removeDoc` | `(...)` | delegate PlatformClient (ws) hoặc TxOperations (rest) + markup on write fields |
+| `client.addCollection` / `createMixin` | `(...)` | cho comments/labels/relations (delegate ws hoặc TxOperations rest) |
+| domain methods | `createIssue(p): Promise<Ref>`, `listIssues(filter): Promise<Issue[]>`, ... | typed ops, 19 domain — generic CRUD + class refs (M2 tools layer) |
+| `client.getCurrentUser` | `() => Promise<{ id: string, name: string, email: string }>` | cached sau connect — wrap `client.getAccount()` (map Account → {id, name, email}) — default assignee (D15) |
+| `client.getAccount` | `() => Promise<Account>` | passthrough api-client getAccount |
+| `close` | `() => Promise<void>` | ws → PlatformClient.close(); rest → no-op (stateless) |
+| type `Transport` | `'ws' \| 'rest'` | Global toggle (D3). Default `'ws'`. |
+| type `HulyCredentials` | `{ url: string } & AuthOptions` | url tách + auth union (token \| email+password) + workspace BẮT BUỘC |
 
 > Domain methods (createIssue, getDocument, addComment, logTime...) = typed façade
-> trên generic CRUD. ~102 tool map 1:1 tới method. Markup convert auto cho
+> trên generic CRUD (M2). ~102 tool map 1:1 tới method. Markup convert auto cho
 > description/content fields.
 
 ### `client/assignee.ts` — AssigneeResolver (NEW, auto-resolve name)
