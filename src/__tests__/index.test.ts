@@ -3,7 +3,7 @@
 // invoke setup(), assert counts + hooks attached.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import setup from "../index.js";
+import setup, { __resetSetupGuardForTests } from "../index.js";
 import { allTools } from "../tools/register.js";
 import { closeAll } from "../client/pool.js";
 
@@ -42,6 +42,7 @@ function makePiStub() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  __resetSetupGuardForTests(); // reset module guard (test isolation)
 });
 
 describe("setup() factory — T-33", () => {
@@ -70,7 +71,8 @@ describe("setup() factory — T-33", () => {
     const { pi, eventHandlers } = makePiStub();
     setup(pi);
     const handler = eventHandlers.get("session_shutdown")![0]!;
-    await handler();
+    // Truyền event/ctx thực-ish để anchor contract (handler ignore nhưng test rõ shape)
+    await handler({ type: "session_shutdown" } as never, {} as never);
     expect(closeAll).toHaveBeenCalledTimes(1);
   });
 
@@ -80,7 +82,9 @@ describe("setup() factory — T-33", () => {
     setup(pi);
     const handler = eventHandlers.get("session_shutdown")![0]!;
     // KHÔNG throw — shutdown cleanup không block exit
-    await expect(handler()).resolves.toBeUndefined();
+    await expect(
+      handler({ type: "session_shutdown" } as never, {} as never),
+    ).resolves.toBeUndefined();
     expect(closeAll).toHaveBeenCalledTimes(1);
   });
 
@@ -103,6 +107,14 @@ describe("setup() factory — T-33", () => {
     expect(noHook.length).toBe(102 - 3);
   });
 
+  it("does NOT mutate module-level allTools (shallow copy in factory)", () => {
+    // attachRenderHooks dùng shallow copy → allTools global KHÔNG bị attach renderResult
+    const { pi } = makePiStub();
+    setup(pi);
+    const mutated = allTools.filter((t) => "renderResult" in t && t.renderResult !== undefined);
+    expect(mutated).toHaveLength(0);
+  });
+
   it("all tool names prefixed huly_ (FR-02 D5)", () => {
     const { pi, registeredTools } = makePiStub();
     setup(pi);
@@ -111,12 +123,17 @@ describe("setup() factory — T-33", () => {
     }
   });
 
-  it("idempotent: setup() twice registers tools twice (pi guard ngoài)", () => {
-    // Factory KHÔNG tự guard — caller (pi) đảm bảo load 1 lần. Verify behavior rõ.
-    const { pi, registeredTools } = makePiStub();
-    setup(pi);
-    setup(pi);
-    // 2 lần → 204 registrations (pi thực guard load 1 lần ngoài factory)
-    expect(registeredTools).toHaveLength(102 * 2);
+  it("idempotent: setup() twice → 2nd call no-op (guard tránh dev-reload leak)", () => {
+    // Factory có module-level guard: setup() lần 2 return 0, KHÔNG register thêm.
+    // Tránh leak session_shutdown handler + /huly command khi dev-reload.
+    const { pi, registeredTools, eventHandlers, registeredCommands } = makePiStub();
+    const first = setup(pi);
+    const second = setup(pi);
+    expect(first).toBe(102);
+    expect(second).toBe(0); // no-op
+    // Chỉ 1 lần registration (KHÔNG nhân đôi)
+    expect(registeredTools).toHaveLength(102);
+    expect(registeredCommands).toHaveLength(1);
+    expect(eventHandlers.get("session_shutdown")).toHaveLength(1);
   });
 });

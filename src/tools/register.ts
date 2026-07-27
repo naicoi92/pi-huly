@@ -64,11 +64,13 @@ export const allTools: HulyToolDefinition[] = [
  * Called từ index.ts factory (T-33).
  *
  * @param pi Pi ExtensionAPI
+ * @param tools Override tool list (default: allTools). Cho phép factory attach
+ *              render hooks qua shallow copy KHÔNG mutate module global.
  * @returns number of tools registered
  */
-export function registerAllTools(pi: ExtensionAPI): number {
+export function registerAllTools(pi: ExtensionAPI, tools: HulyToolDefinition[] = allTools): number {
   let count = 0;
-  for (const tool of allTools) {
+  for (const tool of tools) {
     // Cast HulyToolDefinition → pi ToolDefinition (compatible shape).
     // pi.registerTool expects full ToolDefinition; HulyToolDefinition subset.
     pi.registerTool(tool as never);
