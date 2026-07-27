@@ -171,6 +171,7 @@ giữ current — cần runtime server verify khi có self-host)_
 
 - [ ] [T-53] [M] investigate: verify 3 class refs UNVERIFIED runtime (Label, TsRelation, DocumentSnapshot) trên self-host thật — gộp #39 bug + #43 investigation (issues #39,#43) — high | blocked-by: (none code, cần user cung cấp self-host URL+auth) | blocks: (none, unblock confirm #38/#39) | issues: #39,#43 — [detail](./docs/tasks/T-53.md) — **Open (investigate)**
 
+
 ---
 
 ## Size / priority distribution

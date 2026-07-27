@@ -19,7 +19,8 @@
     "CHANGELOG.md",
     "TASKS.md",
     "docs/design/plans/**",
-    "docs/plans/**"
+    "docs/plans/**",
+    "docs/tasks/T-53-runtime-verify-guide.md"
   ],
   "overrides": [
     {
