@@ -134,16 +134,52 @@ giữ current — cần runtime server verify khi có self-host)_
 
 ---
 
+## beta.2 follow-up hotfixes (post-beta.2 — không thuộc milestone)
+
+> **Context**: Sau khi beta.2 shipped (fix 7 bug #22-#28 qua T-40..T-46), smoke
+> test tiếp tục phát hiện **8 bug mới** (GitHub issues #36-#43). Phân tích cho thấy:
+>
+> - **3 bug là root cause mới chưa được address** (#36 update_issue status drop +
+>   assignee leak, #40 space param sai, #41 silent space fallback).
+> - **3 bug liên quan class registry vẫn UNVERIFIED** (audit §7 Known limitations
+>   — Label/TsRelation/DocumentSnapshot): #38 Document class runtime lỗi, #39 +
+>   #43 TsRelation runtime lỗi.
+> - **1 bug là generalization** của pattern T-45 (validate FK ref): #42 mở rộng ra
+>   7 tool khác cùng pattern.
+> - **1 bug có thể là duplicate** của #22 đã fix T-40: #37 (list_* count) — cần
+>   investigate xem user có chạy beta.2 hay chưa.
+>
+> **Nhóm theo bản chất**:
+> - **Validation/space layer** (#40 + #41 + #42) — cùng root cause: write với
+>   ref/space sai không validate → TxUpdateDoc skip lan truyền. Pattern chuẩn đã
+>   ship ở PR #34 (T-45).
+> - **Class registry remaining** (#38 + #39 + #43) — 3 class UNVERIFIED runtime,
+>   cần server verify (T-53).
+> - **Tool-specific bug** (#36 update_issue) — D15 leak + status không map enum.
+> - **Investigate duplicate** (#37) — có thể close as duplicate #22.
+>
+> Chi tiết mỗi task ở [`docs/tasks/T-XX.md`](./docs/tasks/).
+> Theo dõi: [GitHub issues #36-#43](https://github.com/naicoi92/pi-huly/issues).
+
+- [ ] [T-47] [M] fix(update_issue): status persist + stop auto-assignee leak (D15 rule không apply cho update) (issue #36) — critical | blocked-by: (none) | blocks: (none) | issue: #36 — [detail](./docs/tasks/T-47.md) — **Open**
+- [ ] [T-48] [S] investigate: list_* có còn chỉ trả count sau T-40 không? (có thể duplicate #22 đã fix) (issue #37) — high | blocked-by: (none) | blocks: (none) | issue: #37 — [detail](./docs/tasks/T-48.md) — **Open (investigate)**
+- [ ] [T-49] [S] fix(fulltext_search): Document class sai runtime + defensive per-domain catch (issue #38) — high | blocked-by: (none, pair T-53 nếu cần server) | blocks: (none) | issue: #38 — [detail](./docs/tasks/T-49.md) — **Open**
+- [ ] [T-50] [S] fix(update_user_profile): space param sai → TxUpdateDoc skip (issue #40) — high | blocked-by: (none) | blocks: (none) | issue: #40 — [detail](./docs/tasks/T-50.md) — **Open**
+- [ ] [T-51] [M] fix(create_*): silent space fallback tạo document mồ côi khi project null (4 call site) (issue #41) — high | blocked-by: (none) | blocks: (none) | issue: #41 — [detail](./docs/tasks/T-51.md) — **Open**
+- [ ] [T-52] [L] fix(*): validate foreign-key ref tồn tại trước write (7 tool: add_issue_relation, set_issue_component/milestone, move_issue, link/unlink_document, attach_tag) (issue #42) — critical | blocked-by: (none, pattern có sẵn PR #34) | blocks: (none) | issue: #42 — [detail](./docs/tasks/T-52.md) — **Open**
+- [ ] [T-53] [M] investigate: verify 3 class refs UNVERIFIED runtime (Label, TsRelation, DocumentSnapshot) trên self-host thật — gộp #39 bug + #43 investigation (issues #39,#43) — high | blocked-by: (none code, cần user cung cấp self-host URL+auth) | blocks: (none, unblock confirm #38/#39) | issues: #39,#43 — [detail](./docs/tasks/T-53.md) — **Open (investigate)**
+
+---
+
 ## Size / priority distribution
 
-- Size: S ~24 · M ~25 · **L 1** (T-43 rescoped M → L sau comment #25 mở rộng scope 2 → 6+ class broken; thực tế fix hết).
-- Priority: 🔴 high 30 · 🟡 medium 19 · 🟢 low 1 (T-22).
+- Size: S ~27 · M ~27 · **L 2** (T-43 fix xong; T-52 mới — 7 tool validate FK ref).
+- Priority: 🔴 critical 2 (T-47, T-52) · 🔴 high 33 · 🟡 medium 19 · 🟢 low 1 (T-22).
 - Critical path: T-01→02/03→04→05→06→09→domains→30→31→33→34→36→38→39.
-- Post-release hotfix chain (M6 — all done):
-  - **T-40** (#22+#26 surface) — independent, no blocker → done PR #29.
-  - **T-44** (audit runtime qua npm source map) → unblocks T-41/T-42/T-43/T-45/T-46 → done PR #30.
-  - **T-43** (class-refs fix, 6+ class) → done PR #31.
-  - **T-41/T-42/T-45/T-46** → done PR #32/#33/#34/#35.
-  - Tổng: 7 bug GitHub (#22-#28, #25 đã update scope) → 7 task (T-40..T-46) all done.
+- **beta.1 hotfix chain (M6 — all done)**: T-40..T-46 fix #22-#28, PR #29-#35.
+- **beta.2 follow-up chain (T-47..T-53)**:
+  - **Independent, start ngay** (no blocker): T-47 (update_issue), T-50 (space param), T-51 (silent fallback), T-52 (FK validate).
+  - **Investigate**: T-48 (list_* có duplicate #22 không?), T-53 (verify 3 class runtime — cần self-host).
+  - **Pair với T-53 nếu cần server**: T-49 (Document class runtime).
 - Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
 - Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).
