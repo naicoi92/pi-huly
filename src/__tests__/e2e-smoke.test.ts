@@ -375,6 +375,12 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
       title: "Issue to milestone",
       space: "space-pd",
     });
+    // T-52 #42: validate milestone tồn tại trước khi set ref.
+    store.seed("tracker:class:Milestone", {
+      _id: "ms-99",
+      label: "MVP",
+      space: "space-pd",
+    });
     const tool = findTool(milestoneTools, "huly_set_issue_milestone");
     const result = await tool.execute(
       "call-7",

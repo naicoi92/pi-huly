@@ -3,7 +3,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { COMPONENT_CLASS, ISSUE_CLASS, PROJECT_CLASS, idRef } from "./_class-refs.js";
+import { COMPONENT_CLASS, ISSUE_CLASS, PROJECT_CLASS } from "./_class-refs.js";
 import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -77,15 +77,19 @@ export const tools: HulyToolDefinition[] = [
       const project = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: tctx.project,
       });
-      const id = await tctx.client.createDoc(
-        COMPONENT_CLASS,
-        (project?.space ?? tctx.workspace) as never,
-        {
-          label: params.label,
-          description: params.description,
-          lead: params.lead,
-        },
-      );
+      // T-51 #41: project null → isError rõ ràng, KHÔNG fallback workspace.
+      if (!project) {
+        return {
+          content: `Project "${tctx.project}" not found. Run /huly init or check binding.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const id = await tctx.client.createDoc(COMPONENT_CLASS, project.space as never, {
+        label: params.label,
+        description: params.description,
+        lead: params.lead,
+      });
       return {
         content: `Created component "${params.label}".`,
         details: { id, label: params.label },
@@ -154,8 +158,17 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
+      // T-52 #42: validate component tồn tại trước khi set ref (tránh ref rác).
+      const component = await tctx.client.findOne(COMPONENT_CLASS, { _id: params.component });
+      if (!component) {
+        return {
+          content: `Component "${params.component}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier, component: params.component },
+        };
+      }
       await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
-        component: idRef(params.component),
+        component: component._id as never,
       });
       return {
         content: `Set ${params.identifier} → component ${params.component}.`,

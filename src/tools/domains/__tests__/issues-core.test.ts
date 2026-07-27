@@ -326,17 +326,24 @@ describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
   });
 });
 
+<<<<<<< HEAD
 // T-47: update_issue status persist + assignee leak (#36)
 // Root cause 1: needsAssignee=true leak từ create → update auto-fill assignee.
 // Root cause 2: ops.status push raw string ("Done") — Huly cần full ref
 // ("tracker:status:Done"). Status không verify enum → server reject silent.
 describe("T-47: update_issue status persist + assignee leak (#36)", () => {
   it("update_issue KHÔNG auto-fill assignee khi caller KHÔNG truyền (D15 chỉ cho create)", async () => {
+=======
+// T-52 #42: move_issue parentIssue validate (Option A: KHÔNG truyền = top-level)
+describe("T-52 #42: move_issue parentIssue validate (Option A)", () => {
+  it("KHÔNG truyền parentIssue → top-level promotion (parentIssue=null), KHÔNG validate", async () => {
+>>>>>>> e48edaa (T-52 fix(*): validate FK ref tồn tại trước write (6/7 tool) + attach_tag shape (#42))
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValueOnce({
       _id: "i1",
       space: "sp1",
       identifier: "PD-1",
+<<<<<<< HEAD
       title: "Old",
       assignee: "existing@x.com", // assignee cũ
     });
@@ -405,6 +412,37 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     const result = await tool.execute(
       "tc1",
       { identifier: "PD-1", status: "InvalidStatus" },
+=======
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_move_issue");
+    const result = await tool.execute("tc1", { identifier: "PD-1" }, undefined, undefined, ctx);
+
+    expect(result.isError).toBeUndefined();
+    // findOne gọi 1 lần (issue) — KHÔNG validate parent (undefined)
+    expect(client.findOne).toHaveBeenCalledTimes(1);
+    // updateDoc với parentIssue=null
+    const call = client.updateDoc.mock.calls[0];
+    const ops = call?.[3] as { parentIssue: null };
+    expect(ops.parentIssue).toBeNull();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/top-level/i);
+  });
+
+  it("parentIssue KHÔNG tồn tại → isError + updateDoc KHÔNG gọi", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
+      .mockResolvedValueOnce(undefined); // parent not found
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_move_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", parentIssue: "PD-999" },
+>>>>>>> e48edaa (T-52 fix(*): validate FK ref tồn tại trước write (6/7 tool) + attach_tag shape (#42))
       undefined,
       undefined,
       ctx,
@@ -412,6 +450,7 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
 
     expect(result.isError).toBe(true);
     const text = result.content[0]?.text ?? "";
+<<<<<<< HEAD
     // Message list valid statuses để LLM biết chọn
     expect(text).toMatch(/Done|Todo|Backlog/i);
     expect(text).toMatch(/InvalidStatus/i);
@@ -434,12 +473,31 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     const result = await tool.execute(
       "tc1",
       { identifier: "PD-1", status: "tracker:status:Done" },
+=======
+    expect(text).toMatch(/parent.*not found/i);
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it("parentIssue tồn tại → updateDoc với _id resolved", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
+      .mockResolvedValueOnce({ _id: "epic-1", identifier: "PD-2", space: "sp1" }); // parent
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_move_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", parentIssue: "PD-2" },
+>>>>>>> e48edaa (T-52 fix(*): validate FK ref tồn tại trước write (6/7 tool) + attach_tag shape (#42))
       undefined,
       undefined,
       ctx,
     );
 
     expect(result.isError).toBeUndefined();
+<<<<<<< HEAD
     const updateCall = client.updateDoc.mock.calls[0];
     const ops = updateCall?.[3] as Record<string, unknown>;
     expect(ops.status).toBe("tracker:status:Done");
@@ -570,5 +628,10 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     expect(text).toMatch(/connection refused/i);
     // updateDoc KHÔNG gọi
     expect(client.updateDoc).not.toHaveBeenCalled();
+=======
+    const call = client.updateDoc.mock.calls[0];
+    const ops = call?.[3] as { parentIssue: string };
+    expect(ops.parentIssue).toBe("epic-1"); // resolved _id, KHÔNG raw "PD-2"
+>>>>>>> e48edaa (T-52 fix(*): validate FK ref tồn tại trước write (6/7 tool) + attach_tag shape (#42))
   });
 });

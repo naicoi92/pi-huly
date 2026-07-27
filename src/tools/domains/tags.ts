@@ -179,19 +179,43 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      const existing = ((issue as { tags?: unknown[] }).tags ?? []) as unknown[];
-      if (existing.includes(params.tag)) {
+      // T-52 #42: validate tag tồn tại (tránh ref rác).
+      // T-52 bonus shape fix: idempotent check + $push dùng ref resolved (KHÔNG
+      // raw string). Bug cũ: existing.includes(params.tag) so sánh raw string
+      // với mảng ref → luôn false → re-push duplicate (giống T-45 add_issue_label).
+      const tag = await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.tag) });
+      if (!tag) {
+        return {
+          content: `Tag "${params.tag}" not found. Create via create_tag first.`,
+          isError: true,
+          details: { identifier: params.identifier, tag: params.tag },
+        };
+      }
+      const tagDoc = tag as { _id: string; title?: string; color?: string };
+      // Idempotent: match by ref resolved (KHÔNG raw string).
+      const existingTags = ((issue as { tags?: Array<{ tag?: string }> }).tags ?? []) as Array<{
+        tag?: string;
+      }>;
+      if (existingTags.some((t) => t?.tag === tagDoc._id)) {
         return {
           content: `Tag ${params.tag} already attached (no-op).`,
           details: { attached: true, tag: params.tag, idempotent: true },
         };
       }
+      // $push TagReference object shape (audit §4 — NOT raw string, giống
+      // add_issue_label T-45 nhưng color string thay vì number).
       await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
-        $push: { tags: idRef(params.tag) },
+        $push: {
+          tags: {
+            tag: tagDoc._id,
+            title: tagDoc.title ?? params.tag,
+            color: tagDoc.color ?? "",
+          },
+        },
       });
       return {
         content: `Attached tag ${params.tag} to ${params.identifier}.`,
-        details: { identifier: params.identifier, tag: params.tag },
+        details: { identifier: params.identifier, tag: params.tag, tagId: tagDoc._id },
       };
     },
   }),

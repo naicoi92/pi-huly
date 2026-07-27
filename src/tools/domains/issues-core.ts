@@ -404,17 +404,22 @@ export const tools: HulyToolDefinition[] = [
   }),
 
   // 6. move_issue — change parent OR project (simplified: parent)
+  // T-52 #42: KHÔNG truyền parentIssue = top-level promotion (Option A user chốt).
+  // Trước description nói "null = top-level" sai (schema Optional<String>).
+  // T-52 #42: validate parentIssue tồn tại khi truyền (tránh ref rác).
   defineHulyTool({
     name: "move_issue",
     label: "Move issue",
-    description: "Move issue to new parent (epic). parentIssue=null → promote top-level.",
+    description: "Move issue to new parent (epic). KHÔNG truyền parentIssue → promote top-level.",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
       identifier: identifierParam,
       parentIssue: Type.Optional(
-        Type.String({ description: "New parent issue identifier. null = top-level." }),
+        Type.String({
+          description: "New parent issue identifier. KHÔNG truyền = top-level promotion.",
+        }),
       ),
     }),
     async handler(params, tctx) {
@@ -428,12 +433,32 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
+      // T-52 #42: KHÔNG truyền parentIssue → top-level (null). Có truyền → validate.
+      if (params.parentIssue === undefined) {
+        await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+          parentIssue: null,
+        });
+        return {
+          content: `Moved ${params.identifier} → top-level.`,
+          details: { identifier: params.identifier, parentIssue: null },
+        };
+      }
+      const parent = await tctx.client.findOne(ISSUE_CLASS, {
+        identifier: resolveIdentifier(tctx.project!, params.parentIssue),
+      });
+      if (!parent) {
+        return {
+          content: `Parent issue "${params.parentIssue}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier, parentIssue: params.parentIssue },
+        };
+      }
       await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
-        parentIssue: params.parentIssue === undefined ? null : idRef(params.parentIssue),
+        parentIssue: parent._id as never,
       });
       return {
-        content: `Moved ${params.identifier} → parent ${params.parentIssue ?? "top-level"}.`,
-        details: { identifier: params.identifier, parentIssue: params.parentIssue ?? null },
+        content: `Moved ${params.identifier} → parent ${params.parentIssue}.`,
+        details: { identifier: params.identifier, parentIssue: params.parentIssue },
       };
     },
   }),

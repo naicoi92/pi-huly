@@ -39,6 +39,21 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
+      // T-52 #42: validate targetIssue tồn tại + resolve identifier → _id.
+      // KHÔNG route qua resolveIdentifier (DAG native cross-project — design §3,
+      // resolveIdentifier throw cross-project). Query trực tiếp by identifier.
+      // Bug cũ: idRef(params.targetIssue) raw = double bug (no validate +
+      // identifier cast thành _id → relation ref rác, TxUpdateDoc skip).
+      const target = await tctx.client.findOne(ISSUE_CLASS, {
+        identifier: params.targetIssue,
+      });
+      if (!target) {
+        return {
+          content: `Target issue "${params.targetIssue}" not found. Check identifier.`,
+          isError: true,
+          details: { targetIssue: params.targetIssue, identifier: params.identifier },
+        };
+      }
       await tctx.client.addCollection(
         TS_RELATION_CLASS,
         issue.space as never,
@@ -46,7 +61,7 @@ export const tools: HulyToolDefinition[] = [
         ISSUE_CLASS,
         "relations",
         {
-          targetIssue: idRef(params.targetIssue),
+          targetIssue: target._id as never,
           relationType: params.relationType,
         },
       );
@@ -55,6 +70,7 @@ export const tools: HulyToolDefinition[] = [
         details: {
           identifier: params.identifier,
           targetIssue: params.targetIssue,
+          targetIssueId: target._id,
           relationType: params.relationType,
         },
       };
@@ -146,10 +162,18 @@ export const tools: HulyToolDefinition[] = [
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
         identifier: resolveIdentifier(tctx.project!, params.identifier),
       });
-      const doc = await tctx.client.findOne(DOCUMENT_CLASS, { _id: params.document });
-      if (!issue || !doc) {
+      // T-52 #42: check issue first (clear message), then doc.
+      if (!issue) {
         return {
-          content: `Issue or document not found.`,
+          content: `Issue "${params.identifier}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier },
+        };
+      }
+      const doc = await tctx.client.findOne(DOCUMENT_CLASS, { _id: params.document });
+      if (!doc) {
+        return {
+          content: `Document "${params.document}" not found.`,
           isError: true,
           details: { identifier: params.identifier, document: params.document },
         };
