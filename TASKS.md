@@ -20,6 +20,8 @@ _DoD: build + lint + typecheck pass; config read/write; CI green._
 
 _DoD: mock Huly WS+REST integration pass; markup round-trip fixtures green (R8)._
 
+**Status: in-progress** _(slash goal complete-milestone M1, 2026-07-27)_
+
 - [ ] [T-04] [S] client/errors.ts (HulyError taxonomy Auth/Connection/NotFound/Conflict/Internal/External, mapError, toToolResult no-leak) + unit — high | blocked-by: T-02,T-03 | blocks: T-05,T-08a,T-09
 - [ ] [T-05] [M] client/client.ts (createHulyClient ws connect / rest connectRest, generic CRUD findOne/findAll/createDoc/updateDoc/removeDoc/addCollection/createMixin, getCurrentUser) + integration mock — high | blocked-by: T-04 | blocks: T-06,T-07 | risks: R2
 - [ ] [T-06] [M] client/pool.ts (transport-aware getClient, LRU evict ≤8 ws, auto-reconnect backoff, closeAll session_shutdown, health) + integration — high | blocked-by: T-05 | blocks: T-09 | risks: R2
