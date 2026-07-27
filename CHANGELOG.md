@@ -3,6 +3,83 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.3] - 2026-07-27
+
+Hotfix canary #2. Fix 8 runtime bug phát hiện qua smoke test tiếp theo sau
+beta.2 (GitHub issues #36-#43). Install: `pi install npm:pi-huly@beta` (hoặc
+`pi update npm:pi-huly` nếu đã pin beta).
+
+Mỗi fix pass **đầy đủ workflow `task-implement`**: audit (reality-checker) →
+plan review (code-review-mentor) → TDD implement → review đa nguồn (code-review +
+reality-checker integrity) → **independent audit cuối** phát hiện + fix thêm
+blocker mà review trước bỏ sót.
+
+### Fixed
+
+- **#36** — `update_issue` status KHÔNG persist + assignee bị auto-claim:
+  2 root cause. (1) `needsAssignee: true` leak từ `create_issue` (D15 FR-18 chỉ
+  cho create) → builder auto-fill assignee = currentUser cho mọi update. Remove.
+  (2) `ops.status = params.status` push raw short name ("Done") → server cần
+  full ref ("tracker:status:Done"). Thêm `findAll(ISSUE_STATUS_CLASS)` resolve
+  short → full ref, validate enum, isError + list valid statuses khi invalid.
+  Edge cases: empty statuses, schema drift (_id missing), whitespace trim,
+  findAll throw (transport) → isError rõ ràng + retry hint. (T-47, PR #44)
+- **#37** — `list_*` chỉ trả "Found N item(s)": **duplicate của #22** đã fix T-40
+  (beta.2). Defensive consistency fix: `builder.ts` `hasUI === false` → `!== true`
+  (align với `confirm.ts`/`huly.ts`, insurance khi runtime omit field). (T-48, PR #45)
+- **#38** — `fulltext_search` fail `domain not found: tracker:class:Document`:
+  `Promise.all` reject nếu 1 domain throw (Document class UNVERIFIED runtime).
+  Đổi `Promise.allSettled` → 1 domain fail KHÔNG kéo cả search fail. Partial
+  result + warning log per failed domain. All-fail → isError honest. Root cause
+  Document class deferred T-53 (cần runtime verify). (T-49, PR #46)
+- **#40** — `update_user_profile` warning `no document found... TxUpdateDoc`:
+  `updateDoc(PERSON_CLASS, currentUser.id, currentUser.id, ...)` — cả space +
+  objectId = Person._id (space sai). Lookup Person record → resolve `person.space`
+  thật. Schema drift guard: Person record tồn tại nhưng space/_id missing →
+  isError. (T-50, PR #47)
+- **#41** — `create_*` silent space fallback tạo document mồ côi: 4 tool
+  (`create_component`, `create_milestone`, `create_template`,
+  `create_issue_from_template`) dùng `project?.space ?? tctx.workspace` — khi
+  project lookup null, fallback sang workspace → orphan document. Đổi:
+  project null → isError rõ ràng "Run /huly init", KHÔNG tiếp tục createDoc.
+  (T-51, PR #48)
+- **#42** — Ref rác khi write FK không validate: 6 tool (`add_issue_relation`,
+  `set_issue_component`, `set_issue_milestone`, `move_issue`,
+  `link_document_to_issue`, `attach_tag`) cast `idRef(params.xxx)` raw không
+  validate entity tồn tại. Thêm `findOne(TARGET_CLASS)` → if null → isError →
+  KHÔNG write. Bonus `attach_tag` shape fix (TagReference object thay raw string,
+  idempotent ref resolved) + `detach_tag` symmetric `$pull` object. `add_issue_relation`
+  resolve identifier cross-project (KHÔNG route resolveIdentifier throw).
+  `move_issue` Option A: KHÔNG truyền parentIssue = top-level promotion.
+  `unlink_document_to_issue` skip per spec §3 ($pull idempotent). (T-52, PR #49 + #52 follow-up)
+
+### Added
+
+- `docs/tasks/T-53-runtime-verify-guide.md` — hướng dẫn user tự test runtime
+  verify 3 class UNVERIFIED (Label, TsRelation, DocumentSnapshot) trên self-host.
+- `docs/plans/T-49-implement-plan.md`, `T-51-implement-plan.md`,
+  `T-52-implement-plan.md` — plan docs cho task L-size.
+
+### Known limitations
+
+- **3 class refs UNVERIFIED** (kế thừa beta.2): `view:class:Label`,
+  `core:class:TsRelation`, `document:class:DocumentSnapshot` — cần runtime
+  server verify. Guide tạo (T-53), pending user self-host test.
+- T-49 defensive fix (Promise.allSettled) che root cause Document class —
+  cần T-53 runtime verify để resolve hẳn.
+- `add_issue_relation` idempotency (duplicate relation khi gọi 2 lần) —
+  follow-up, không block.
+- T-47 multi-project status filter (findAll ISSUE_STATUS_CLASS không filter
+  theo project/taskType) — follow-up.
+
+### Stats
+
+- 454 tests pass (+43 từ beta.2 baseline 411)
+- CI green cả ubuntu + macos (node 24)
+- 9 PRs merged (#44-#52)
+
+Feedback: <https://github.com/naicoi92/pi-huly/issues>
+
 ## [1.0.0-beta.2] - 2026-07-27
 
 Hotfix canary. Fix 7 runtime bug phát hiện qua smoke test beta.1 trên self-host
