@@ -572,3 +572,73 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     expect(client.updateDoc).not.toHaveBeenCalled();
   });
 });
+
+// T-52 #42: move_issue parentIssue validate (Option A: KHÔNG truyền = top-level)
+describe("T-52 #42: move_issue parentIssue validate (Option A)", () => {
+  it("KHÔNG truyền parentIssue → top-level promotion (parentIssue=null), KHÔNG validate", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_move_issue");
+    const result = await tool.execute("tc1", { identifier: "PD-1" }, undefined, undefined, ctx);
+
+    expect(result.isError).toBeUndefined();
+    expect(client.findOne).toHaveBeenCalledTimes(1);
+    const call = client.updateDoc.mock.calls[0];
+    const ops = call?.[3] as { parentIssue: null };
+    expect(ops.parentIssue).toBeNull();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/top-level/i);
+  });
+
+  it("parentIssue KHÔNG tồn tại → isError + updateDoc KHÔNG gọi", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
+      .mockResolvedValueOnce(undefined);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_move_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", parentIssue: "PD-999" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/parent.*not found/i);
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it("parentIssue tồn tại → updateDoc với _id resolved", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
+      .mockResolvedValueOnce({ _id: "epic-1", identifier: "PD-2", space: "sp1" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_move_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", parentIssue: "PD-2" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const call = client.updateDoc.mock.calls[0];
+    const ops = call?.[3] as { parentIssue: string };
+    expect(ops.parentIssue).toBe("epic-1");
+  });
+});

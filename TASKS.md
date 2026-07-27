@@ -167,7 +167,7 @@ giữ current — cần runtime server verify khi có self-host)_
 - [x] [T-50] [S] fix(update_user_profile): space param sai → TxUpdateDoc skip (issue #40) — high | blocked-by: (none) | blocks: (none) | issue: #40 — [detail](./docs/tasks/T-50.md) — ✅ done (lookup Person.space trước updateDoc + schema drift guard; 413 tests, +2 regression +1 schema drift; replace test固化 bug cũ)
 
 - [ ] [T-51] [M] fix(create_*): silent space fallback tạo document mồ côi khi project null (4 call site) (issue #41) — high | blocked-by: (none) | blocks: (none) | issue: #41 — [detail](./docs/tasks/T-51.md) — **Open**
-- [ ] [T-52] [L] fix(*): validate foreign-key ref tồn tại trước write (7 tool: add_issue_relation, set_issue_component/milestone, move_issue, link/unlink_document, attach_tag) (issue #42) — critical | blocked-by: (none, pattern có sẵn PR #34) | blocks: (none) | issue: #42 — [detail](./docs/tasks/T-52.md) — **Open**
+- [x] [T-52] [L] fix(*): validate foreign-key ref tồn tại trước write (7 tool: add_issue_relation, set_issue_component/milestone, move_issue, link/unlink_document, attach_tag) (issue #42) — critical | blocked-by: (none, pattern có sẵn PR #34) | blocks: (none) | issue: #42 — [detail](./docs/tasks/T-52.md) — ✅ done (6/7 tool FK validate + attach_tag shape bonus; unlink_document skip per spec §3 idempotent; move_issue Option A; 435 tests, +24 across 4 new + 1 extend test files)
 - [ ] [T-53] [M] investigate: verify 3 class refs UNVERIFIED runtime (Label, TsRelation, DocumentSnapshot) trên self-host thật — gộp #39 bug + #43 investigation (issues #39,#43) — high | blocked-by: (none code, cần user cung cấp self-host URL+auth) | blocks: (none, unblock confirm #38/#39) | issues: #39,#43 — [detail](./docs/tasks/T-53.md) — **Open (investigate)**
 
 ---

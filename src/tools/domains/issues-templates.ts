@@ -75,15 +75,22 @@ export const tools: HulyToolDefinition[] = [
       const project = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: tctx.project,
       });
+      // T-51 #41: project null → isError rõ ràng, KHÔNG fallback workspace.
+      if (!project) {
+        return {
+          content: `Project "${tctx.project}" not found. Run /huly init or check binding.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
       const descMarkup =
         params.description !== undefined
           ? JSON.stringify(mdToMarkup(params.description))
           : undefined;
-      const id = await tctx.client.createDoc(
-        ISSUE_TEMPLATE_CLASS,
-        (project?.space ?? tctx.workspace) as never,
-        { title: params.title, description: descMarkup },
-      );
+      const id = await tctx.client.createDoc(ISSUE_TEMPLATE_CLASS, project.space as never, {
+        title: params.title,
+        description: descMarkup,
+      });
       return {
         content: `Created template "${params.title}".`,
         details: { id, title: params.title },
@@ -115,15 +122,19 @@ export const tools: HulyToolDefinition[] = [
       const project = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: tctx.project,
       });
+      // T-51 #41: project null → isError rõ ràng, KHÔNG fallback workspace.
+      if (!project) {
+        return {
+          content: `Project "${tctx.project}" not found. Run /huly init or check binding.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
       const title = params.title ?? (tpl as { title?: string }).title ?? "Untitled";
-      const id = await tctx.client.createDoc(
-        ISSUE_CLASS,
-        (project?.space ?? tctx.workspace) as never,
-        {
-          title,
-          description: (tpl as { description?: string }).description,
-        },
-      );
+      const id = await tctx.client.createDoc(ISSUE_CLASS, project.space as never, {
+        title,
+        description: (tpl as { description?: string }).description,
+      });
       return {
         content: `Created issue "${title}" from template.`,
         details: { id, title, template: params.template },

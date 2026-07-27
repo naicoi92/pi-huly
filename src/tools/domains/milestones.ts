@@ -11,7 +11,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { MILESTONE_CLASS, ISSUE_CLASS, PROJECT_CLASS, idRef } from "./_class-refs.js";
+import { MILESTONE_CLASS, ISSUE_CLASS, PROJECT_CLASS } from "./_class-refs.js";
 import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -88,16 +88,20 @@ export const tools: HulyToolDefinition[] = [
       const project = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: tctx.project,
       });
-      const id = await tctx.client.createDoc(
-        MILESTONE_CLASS,
-        (project?.space ?? tctx.workspace) as never,
-        {
-          label: params.label,
-          description: params.description,
-          targetDate: params.targetDate,
-          status: "planned",
-        },
-      );
+      // T-51 #41: project null → isError rõ ràng, KHÔNG fallback workspace.
+      if (!project) {
+        return {
+          content: `Project "${tctx.project}" not found. Run /huly init or check binding.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const id = await tctx.client.createDoc(MILESTONE_CLASS, project.space as never, {
+        label: params.label,
+        description: params.description,
+        targetDate: params.targetDate,
+        status: "planned",
+      });
       return {
         content: `Created milestone "${params.label}".`,
         details: { id, label: params.label },
@@ -175,8 +179,17 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
+      // T-52 #42: validate milestone tồn tại trước khi set ref.
+      const milestone = await tctx.client.findOne(MILESTONE_CLASS, { _id: params.milestone });
+      if (!milestone) {
+        return {
+          content: `Milestone "${params.milestone}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier, milestone: params.milestone },
+        };
+      }
       await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
-        milestone: idRef(params.milestone),
+        milestone: milestone._id as never,
       });
       return {
         content: `Set ${params.identifier} → milestone ${params.milestone}.`,
