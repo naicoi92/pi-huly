@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { Text } from "@earendil-works/pi-tui";
 import { formatDocumentPreview, renderDocumentResult, type RenderTheme } from "../document.js";
 
+// Theme stub: CHỈ fg/bg/bold — match runtime pi Theme (KHÔNG có dim/muted methods).
 function makeTheme(): RenderTheme {
   return {
     fg(color, text) {
@@ -15,12 +16,6 @@ function makeTheme(): RenderTheme {
     },
     bold(text) {
       return `[bold]${text}[/bold]`;
-    },
-    dim(text) {
-      return `[dim]${text}[/dim]`;
-    },
-    muted(text) {
-      return `[muted]${text}[/muted]`;
     },
   };
 }
@@ -36,11 +31,26 @@ describe("formatDocumentPreview", () => {
       makeTheme(),
     );
     expect(out).toContain("[bold][fg:mdHeading]My Doc[/fg][/bold]");
-    expect(out).toContain("[dim]─── Content (preview) ───[/dim]");
+    expect(out).toContain("[fg:dim]─── Content (preview) ───[/fg]");
     expect(out).toContain("Para 1");
     expect(out).toContain("Para 2");
-    // modified: wrap markers (date colorize trong [fg:warning])
-    expect(out).toContain("[dim]modified: [fg:warning]2025-01-01[/fg][/dim]");
+    // modified: wrap fg:dim, date colorize warning (nested markers, closing [/fg])
+    expect(out).toContain("[fg:dim]modified: [fg:warning]2025-01-01[/fg][/fg]");
+  });
+
+  it("ANSI escape sequences trong title/content → stripped (code-review #5)", () => {
+    // CSI color + OSC set-title (payload giữa ] và BEL bị strip cùng sequence)
+    const evil = "\x1b[31mRED\x1b[0m clean\x1b]0;bad-title\x07OSC";
+    const out = formatDocumentPreview({ title: evil, content: evil }, makeTheme());
+    // KHÔNG còn escape sequences (CSI + OSC stripped)
+    expect(out).not.toContain("\x1b[");
+    expect(out).not.toContain("\x1b]");
+    expect(out).not.toContain("\x07");
+    // Printable text ngoài OSC payload kept
+    expect(out).toContain("RED");
+    expect(out).toContain("clean");
+    // OSC payload "bad-title" bị strip cùng sequence (intended — tránh terminal title injection)
+    expect(out).not.toContain("bad-title");
   });
 
   it("no title → (untitled document)", () => {

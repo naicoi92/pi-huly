@@ -6,25 +6,19 @@
 // colorize → wrap vào Text component (reuse context.lastComponent khi có).
 //
 // Pure function testable KHÔNG cần pi types (chỉ cần theme stub có fg/bg/bold).
+// Shared helpers + RenderTheme/RenderContext ở render/util.ts.
 
-import { Text } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
 import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
-
-/**
- * Minimal render context (ToolRenderContext của pi KHÔNG re-export public).
- * Structurally compatible subset — chỉ cần lastComponent để reuse Text component.
- * Pi truyền full context khi gọi renderResult; ta chỉ dùng field này.
- */
-export interface RenderContext {
-  /** Previously returned component for this render slot, if any (reuse để avoid flicker). */
-  lastComponent?: Component;
-}
-
-/** Get-or-create Text component (reuse lastComponent nếu là Text, else create new). */
-function getOrCreateText(ctx: RenderContext): Text {
-  return ctx.lastComponent instanceof Text ? ctx.lastComponent : new Text("", 0, 0);
-}
+import {
+  fmtDate,
+  getOrCreateText,
+  joinLines,
+  opt,
+  sanitize,
+  type RenderContext,
+  type RenderTheme,
+} from "./util.js";
 
 /** Issue shape từ huly_get_issue details (xem domains/issues-core.ts get_issue). */
 export interface IssueDetails {
@@ -55,67 +49,56 @@ export interface IssueListDetails {
   issues?: IssueListItem[];
 }
 
-/** Minimal theme surface mà render dùng (injectable test). */
-export interface RenderTheme {
-  fg(color: string, text: string): string;
-  bg?(color: string, text: string): string;
-  bold(text: string): string;
-  dim?(text: string): string;
-  muted?(text: string): string;
-}
+// Re-export shared types cho consumer single-import.
+export type { RenderTheme, RenderContext } from "./util.js";
 
-/** Optional label row nếu giá trị tồn tại. */
-function opt(label: string, value: string | undefined, theme: RenderTheme): string {
-  if (value === undefined || value === null || value.length === 0) return "";
-  return `${theme.bold(label)}: ${value}`;
-}
-
-/** Join non-empty lines. */
-function joinLines(lines: string[]): string {
-  return lines.filter((l) => l.length > 0).join("\n");
-}
-
-/** Format timestamp (Unix ms) → YYYY-MM-DD; undefined → "". */
-function fmtDate(ms: number | undefined, theme: RenderTheme): string {
+/** Due line: skip nếu dueDate undefined HOẶC invalid (fmtDate trả ""). */
+function dueLine(ms: number | undefined, t: RenderTheme): string {
   if (ms === undefined || ms === null) return "";
-  const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return "";
-  return theme.fg("warning", d.toISOString().slice(0, 10));
+  const d = fmtDate(ms, t);
+  return d.length > 0 ? `Due: ${d}` : "";
 }
 
 /**
  * Format issue card (single issue). Pure function — testable.
  * Layout:
- *   ┌ PD-123: Title (bold)
- *     Status: X · Priority: Y · Assignee: Z
- *     Milestone: M · Component: C · Due: 2026-01-01
- *     ─── Description ───
- *     <description preview>
+ *   PD-123: Title (bold)
+ *   Status: X · Priority: Y · Assignee: Z
+ *   Milestone: M · Component: C · Due: 2026-01-01
+ *   ─── Description ─── (dim)
+ *   <description preview>
+ *
+ * Mọi string từ server qua sanitize() (code-review-mentor #5 ANSI injection).
  */
 export function formatIssueCard(details: IssueDetails, theme: RenderTheme): string {
-  const id = details.identifier ?? "?";
-  const title = details.title ?? "(no title)";
+  const id = sanitize(details.identifier ?? "?");
+  const title = sanitize(details.title ?? "(no title)");
   const header = `${theme.fg("accent", id)}: ${theme.bold(title)}`;
 
   const meta1 = joinLines([
-    opt("Status", details.status ? theme.fg("success", details.status) : undefined, theme),
-    opt("Priority", details.priority, theme),
-    opt("Assignee", details.assignee, theme),
+    opt(
+      "Status",
+      details.status ? theme.fg("success", sanitize(details.status)) : undefined,
+      theme,
+    ),
+    opt("Priority", details.priority !== undefined ? sanitize(details.priority) : undefined, theme),
+    opt("Assignee", details.assignee !== undefined ? sanitize(details.assignee) : undefined, theme),
   ]).replace(/\n/g, " · ");
 
   const meta2 = joinLines([
-    opt("Milestone", details.milestone, theme),
-    opt("Component", details.component, theme),
+    opt(
+      "Milestone",
+      details.milestone !== undefined ? sanitize(details.milestone) : undefined,
+      theme,
+    ),
+    opt(
+      "Component",
+      details.component !== undefined ? sanitize(details.component) : undefined,
+      theme,
+    ),
     dueLine(details.dueDate, theme),
     details.estimation !== undefined ? `Estimation: ${details.estimation}m` : "",
   ]).replace(/\n/g, " · ");
-
-  /** Due line: skip nếu dueDate undefined HOẶC invalid (fmtDate trả ""). */
-  function dueLine(ms: number | undefined, t: RenderTheme): string {
-    if (ms === undefined || ms === null) return "";
-    const d = fmtDate(ms, t);
-    return d.length > 0 ? `Due: ${d}` : "";
-  }
 
   const lines = [header];
   if (meta1.length > 0) lines.push(meta1);
@@ -123,8 +106,8 @@ export function formatIssueCard(details: IssueDetails, theme: RenderTheme): stri
 
   // Description preview (KHÔNG full — pi truncate tự). Giới hạn 8 dòng đầu.
   if (details.description !== undefined && details.description.length > 0) {
-    const descLines = details.description.split("\n").slice(0, 8);
-    lines.push(theme.dim ? theme.dim("─── Description ───") : "─── Description ───");
+    const descLines = sanitize(details.description).split("\n").slice(0, 8);
+    lines.push(theme.fg("dim", "─── Description ───"));
     lines.push(...descLines);
   }
 
@@ -137,25 +120,26 @@ export function formatIssueCard(details: IssueDetails, theme: RenderTheme): stri
  *   N issue(s)
  *   PD-123  [Status]  Title                          @assignee
  *   PD-124  [Status]  Another title
+ *
+ * Empty list: theme.fg("muted", "No issues found (N total).") — luôn include count
+ * (code-review-mentor #2: trước đây dùng theme.muted method KHÔNG tồn tại runtime).
  */
 export function formatIssueList(details: IssueListDetails, theme: RenderTheme): string {
   const count = details.count ?? details.issues?.length ?? 0;
   const issues = details.issues ?? [];
   if (issues.length === 0) {
-    return theme.muted ? theme.muted(`No issues found (${count} total).`) : `No issues found.`;
+    return theme.fg("muted", `No issues found (${count} total).`);
   }
   const header = `${count} issue(s)`;
   // Column widths: identifier (max 10), status (max 12), title (flex), assignee (suffix)
-  const idWidth = Math.max(8, ...issues.map((i) => (i.identifier ?? "").length));
+  const idWidth = Math.max(8, ...issues.map((i) => sanitize(i.identifier ?? "").length));
   const rows = issues.map((i) => {
-    const id = theme.fg("accent", (i.identifier ?? "?").padEnd(idWidth));
-    const status = theme.fg("success", `[${i.status ?? "?"}]`.padEnd(12));
-    const title = i.title ?? "(no title)";
-    const assignee =
-      i.assignee !== undefined && i.assignee.length > 0
-        ? ` ${theme.dim ? theme.dim(`@${i.assignee}`) : `@${i.assignee}`}`
-        : "";
-    return `${id}  ${status}  ${title}${assignee}`;
+    const id = theme.fg("accent", sanitize(i.identifier ?? "?").padEnd(idWidth));
+    const status = theme.fg("success", `[${sanitize(i.status ?? "?")}]`.padEnd(12));
+    const title = sanitize(i.title ?? "(no title)");
+    const assignee = sanitize(i.assignee ?? "");
+    const assigneeSuffix = assignee.length > 0 ? ` ${theme.fg("dim", `@${assignee}`)}` : "";
+    return `${id}  ${status}  ${title}${assigneeSuffix}`;
   });
   return [header, ...rows].join("\n");
 }

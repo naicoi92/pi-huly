@@ -15,6 +15,7 @@ import {
 } from "../issue.js";
 
 // Theme stub: wrap text với marker để assert colorize được gọi đúng color.
+// CHỈ có fg/bg/bold — match runtime pi Theme (KHÔNG có method dim/muted).
 function makeTheme(): RenderTheme & { calls: Array<[string, string]> } {
   const calls: Array<[string, string]> = [];
   return {
@@ -28,12 +29,6 @@ function makeTheme(): RenderTheme & { calls: Array<[string, string]> } {
     },
     bold(text) {
       return `[bold]${text}[/bold]`;
-    },
-    dim(text) {
-      return `[dim]${text}[/dim]`;
-    },
-    muted(text) {
-      return `[muted]${text}[/muted]`;
     },
   };
 }
@@ -105,6 +100,31 @@ describe("formatIssueCard", () => {
     expect(out).not.toContain("line8");
   });
 
+  it("description separator wrap fg:dim (KHÔNG method dim — runtime-safe)", () => {
+    const out = formatIssueCard({ identifier: "PD-1", title: "T", description: "X" }, makeTheme());
+    expect(out).toContain("[fg:dim]─── Description ───[/fg]");
+  });
+
+  it("ANSI escape sequences trong server data → stripped (code-review #5)", () => {
+    const evil = "\x1b[31mRED\x1b[0m\x1b[2;0;0tEVIL";
+    const out = formatIssueCard(
+      {
+        identifier: "PD-1",
+        title: evil,
+        status: evil,
+        description: evil,
+        assignee: evil,
+      },
+      makeTheme(),
+    );
+    // KHÔNG còn escape sequences (CSI/OSC stripped)
+    expect(out).not.toContain("\x1b[");
+    expect(out).not.toContain("\x1b]");
+    // Content còn lại: "RED" + "EVIL" (text printable kept)
+    expect(out).toContain("RED");
+    expect(out).toContain("EVIL");
+  });
+
   it("skips description section when empty", () => {
     const out = formatIssueCard({ identifier: "PD-1", title: "T", description: "" }, makeTheme());
     expect(out).not.toContain("Description");
@@ -131,13 +151,13 @@ describe("formatIssueCard", () => {
 // === formatIssueList ===
 
 describe("formatIssueList", () => {
-  it("empty list → muted no issues", () => {
+  it("empty list → fg:muted no issues (count luôn include)", () => {
     const theme = makeTheme();
     const out = formatIssueList({ count: 0, issues: [] }, theme);
-    expect(out).toContain("[muted]No issues found (0 total).[/muted]");
+    expect(out).toContain("[fg:muted]No issues found (0 total).[/fg]");
   });
 
-  it("list with items → count header + rows", () => {
+  it("list with items → count header + rows + assignee dim suffix", () => {
     const theme = makeTheme();
     const d: IssueListDetails = {
       count: 2,
@@ -151,7 +171,8 @@ describe("formatIssueList", () => {
     expect(out).toContain("[fg:accent]PD-1");
     expect(out).toContain("[fg:success][Done]");
     expect(out).toContain("First");
-    expect(out).toContain("@nai");
+    // assignee suffix wrap fg:dim (KHÔNG phải method dim — runtime-safe)
+    expect(out).toContain("[fg:dim]@nai[/fg]");
     expect(out).toContain("Second");
     // Second no assignee → no @
     const lines = out.split("\n");
