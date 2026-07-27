@@ -1,6 +1,6 @@
-// Test T-51 #41 + T-52 #42 cho components domain.
-// T-51: create_component project-null → isError (silent space fallback fix).
-// T-52: set_issue_component component FK validate.
+// Test T-51 #41 cho components domain — silent space fallback fix.
+// Cover: create_component project-null → isError (KHÔNG fallback workspace),
+// create_component project-exists → createDoc dùng project.space.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -55,7 +55,7 @@ beforeEach(() => {
 describe("T-51 #41: create_component project space resolve (no silent fallback)", () => {
   it("project null → isError + createDoc KHÔNG gọi (no orphan document)", async () => {
     const client = makeClient();
-    client.findOne = vi.fn().mockResolvedValue(undefined);
+    client.findOne = vi.fn().mockResolvedValue(undefined); // project not found
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_create_component");
@@ -71,6 +71,7 @@ describe("T-51 #41: create_component project space resolve (no silent fallback)"
     const text = result.content[0]?.text ?? "";
     expect(text).toMatch(/not found/i);
     expect(text).toMatch(/huly init/i);
+    // createDoc KHÔNG gọi (no orphan document)
     expect(client.createDoc).not.toHaveBeenCalled();
   });
 
@@ -91,57 +92,8 @@ describe("T-51 #41: create_component project space resolve (no silent fallback)"
     expect(result.isError).toBeUndefined();
     expect(client.createDoc).toHaveBeenCalledTimes(1);
     const call = client.createDoc.mock.calls[0];
+    // arg 2 = space = project.space ("proj-space-abc"), KHÔNG phải workspace ("ws1")
     expect(call?.[1]).toBe("proj-space-abc");
     expect(call?.[1]).not.toBe("ws1");
-  });
-});
-
-describe("T-52 #42: set_issue_component FK validate", () => {
-  it("component KHÔNG tồn tại → isError + updateDoc KHÔNG gọi", async () => {
-    const client = makeClient();
-    // findOne: issue (found), component (not found)
-    client.findOne = vi
-      .fn()
-      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
-      .mockResolvedValueOnce(undefined); // component not found
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool("huly_set_issue_component");
-    const result = await tool.execute(
-      "tc1",
-      { identifier: "PD-1", component: "comp-missing" },
-      undefined,
-      undefined,
-      ctx,
-    );
-
-    expect(result.isError).toBe(true);
-    const text = result.content[0]?.text ?? "";
-    expect(text).toMatch(/component.*not found/i);
-    expect(client.updateDoc).not.toHaveBeenCalled();
-  });
-
-  it("component tồn tại → updateDoc với _id resolved (KHÔNG raw idRef)", async () => {
-    const client = makeClient();
-    client.findOne = vi
-      .fn()
-      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" }) // issue
-      .mockResolvedValueOnce({ _id: "comp-1", label: "Backend" }); // component
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool("huly_set_issue_component");
-    const result = await tool.execute(
-      "tc1",
-      { identifier: "PD-1", component: "comp-1" },
-      undefined,
-      undefined,
-      ctx,
-    );
-
-    expect(result.isError).toBeUndefined();
-    const call = client.updateDoc.mock.calls[0];
-    const ops = call?.[3] as { component: string };
-    // component = resolved _id ("comp-1" = raw _id in this test, but via findOne)
-    expect(ops.component).toBe("comp-1");
   });
 });

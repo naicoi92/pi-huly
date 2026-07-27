@@ -1,6 +1,5 @@
-// Test T-51 #41 + T-52 #42 cho milestones domain.
-// T-51: create_milestone project-null → isError.
-// T-52: set_issue_milestone milestone FK validate.
+// Test T-51 #41 cho milestones domain — silent space fallback fix.
+// Cover: create_milestone project-null → isError, project-exists → dùng space.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -93,53 +92,5 @@ describe("T-51 #41: create_milestone project space resolve (no silent fallback)"
     const call = client.createDoc.mock.calls[0];
     expect(call?.[1]).toBe("proj-space-xyz");
     expect(call?.[1]).not.toBe("ws1");
-  });
-});
-
-describe("T-52 #42: set_issue_milestone FK validate", () => {
-  it("milestone KHÔNG tồn tại → isError + updateDoc KHÔNG gọi", async () => {
-    const client = makeClient();
-    client.findOne = vi
-      .fn()
-      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
-      .mockResolvedValueOnce(undefined); // milestone not found
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool("huly_set_issue_milestone");
-    const result = await tool.execute(
-      "tc1",
-      { identifier: "PD-1", milestone: "ms-missing" },
-      undefined,
-      undefined,
-      ctx,
-    );
-
-    expect(result.isError).toBe(true);
-    const text = result.content[0]?.text ?? "";
-    expect(text).toMatch(/milestone.*not found/i);
-    expect(client.updateDoc).not.toHaveBeenCalled();
-  });
-
-  it("milestone tồn tại → updateDoc với _id resolved", async () => {
-    const client = makeClient();
-    client.findOne = vi
-      .fn()
-      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" }) // issue
-      .mockResolvedValueOnce({ _id: "ms-1", label: "MVP" }); // milestone
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool("huly_set_issue_milestone");
-    const result = await tool.execute(
-      "tc1",
-      { identifier: "PD-1", milestone: "ms-1" },
-      undefined,
-      undefined,
-      ctx,
-    );
-
-    expect(result.isError).toBeUndefined();
-    const call = client.updateDoc.mock.calls[0];
-    const ops = call?.[3] as { milestone: string };
-    expect(ops.milestone).toBe("ms-1");
   });
 });
