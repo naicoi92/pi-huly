@@ -2,7 +2,7 @@
 
 > Native Huly support cho pi-coding-agent — ~102 tools + skills + subagent (KHÔNG MCP, gọi thẳng WebSocket API).
 
-**Status:** M1 Client core (in-progress). Design docs: [`docs/design/`](./docs/design/). Tasks: [`TASKS.md`](./TASKS.md).
+**Status:** M3 Commands + render + factory (completed). Design docs: [`docs/design/`](./docs/design/). Tasks: [`TASKS.md`](./TASKS.md).
 
 ## Build requirements
 

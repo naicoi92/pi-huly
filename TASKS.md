@@ -64,9 +64,11 @@ _DoD: ~102 tool đăng ký; typebox schema valid; confirm gate; mock CRUD pass._
 
 _DoD: `/huly init` bind cwd; 3 tool render; session_shutdown cleanup._
 
-- [ ] [T-31] [M] commands/huly.ts (unified: no-arg smart, init flow w/ auth choice, status diagnostics, workspace list/add/remove, link, unlink) + unit — high | blocked-by: T-03,T-30 | blocks: T-33
-- [ ] [T-32] [M] render/issue.ts + render/document.ts (huly_get_issue card, huly_list_issues table, huly_get_document preview) — medium | blocked-by: T-30 | blocks: T-33
-- [ ] [T-33] [S] index.ts factory (register tools+commands, session_shutdown→pool.closeAll, skills via package manifest) — high | blocked-by: T-31,T-32 | blocks: T-34,T-35
+**Status: ✅ completed** _(slash goal hoàn thành công M3, 2026-07-27 — 3/3 tasks done, 349 tests, CI green, DoD pass)_
+
+- [x] [T-31] [M] commands/huly.ts (unified: no-arg smart, init flow w/ auth choice, status diagnostics, workspace list/add/remove, link, unlink) + unit — high | blocked-by: T-03,T-30 | blocks: T-33 — ✅ done (PR #13 merged 2ca649b, 34 tests, version.ts tách tránh circular import, non-TUI fail-safe)
+- [x] [T-32] [M] render/issue.ts + render/document.ts (huly_get_issue card, huly_list_issues table, huly_get_document preview) — medium | blocked-by: T-30 | blocks: T-33 — ✅ done (PR #14 merged a07e40b, 28 tests, render/util.ts shared, ANSI sanitize chống terminal injection)
+- [x] [T-33] [S] index.ts factory (register tools+commands, session_shutdown→pool.closeAll, skills via package manifest) — high | blocked-by: T-31,T-32 | blocks: T-34,T-35 — ✅ done (PR #15 merged 46f1786, 10 tests, render hooks wire 3 tools, setup() guard tránh dev-reload leak, bundle 149.71 kB)
 
 ## M4 Skills
 
