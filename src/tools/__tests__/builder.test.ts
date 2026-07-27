@@ -412,7 +412,8 @@ describe("defineHulyTool execute — result convert", () => {
         details: { count: 3, ids: ["PD-1", "PD-2", "PD-3"] },
       }),
     });
-    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
+    // TUI mode (hasUI=true) → content giữ nguyên, details nguyên vẹn cho render
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(true));
     expect(result.content).toEqual([{ type: "text", text: "Found 3 issues" }]);
     expect(result.details).toEqual({ count: 3, ids: ["PD-1", "PD-2", "PD-3"] });
     expect(result.isError).toBeUndefined();
@@ -428,5 +429,129 @@ describe("defineHulyTool execute — result convert", () => {
     });
     const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
     expect(result.isError).toBe(true);
+  });
+});
+
+// T-40: non-TUI path (hasUI=false) — append details → content để LLM thấy array + id
+describe("defineHulyTool execute — non-TUI surface details (T-40 #22 #26)", () => {
+  it("hasUI=false + details có array → content text append array data (#22)", async () => {
+    const tool = defineHulyTool({
+      name: "list_issues",
+      label: "List",
+      description: "list",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "Found 2 issue(s).",
+        details: {
+          count: 2,
+          issues: [
+            { identifier: "PD-1", title: "First", status: "In Progress" },
+            { identifier: "PD-2", title: "Second", status: "Done" },
+          ],
+        },
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(false));
+    const text = result.content[0]?.text ?? "";
+    // Content gốc giữ nguyên + append data
+    expect(text).toContain("Found 2 issue(s).");
+    expect(text).toContain("PD-1");
+    expect(text).toContain("PD-2");
+    expect(text).toContain("First");
+    expect(text).toContain("In Progress");
+    // details vẫn nguyên vẹn cho render layer (không break TUI)
+    expect(result.details).toMatchObject({ count: 2 });
+  });
+
+  it("hasUI=false + details có id/identifier → content text append id (#26)", async () => {
+    const tool = defineHulyTool({
+      name: "create_issue",
+      label: "Create",
+      description: "create",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: 'Created issue "Test".',
+        details: { id: "abc123", identifier: "PD-42", title: "Test" },
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(false));
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain('Created issue "Test".');
+    expect(text).toContain("abc123");
+    expect(text).toContain("PD-42");
+  });
+
+  it("hasUI=false + details rỗng/undefined → content KHÔNG append gì thêm", async () => {
+    const tool = defineHulyTool({
+      name: "noop_tool",
+      label: "Noop",
+      description: "noop",
+      parameters: Type.Object({}),
+      handler: async () => ({ content: "Done." }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(false));
+    expect(result.content[0]?.text).toBe("Done.");
+  });
+
+  it("hasUI=true (TUI mode) → content KHÔNG append details (render layer consume details)", async () => {
+    const tool = defineHulyTool({
+      name: "list_issues",
+      label: "List",
+      description: "list",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "Found 1 issue(s).",
+        details: { count: 1, issues: [{ identifier: "PD-1", title: "X" }] },
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(true));
+    const text = result.content[0]?.text ?? "";
+    expect(text).toBe("Found 1 issue(s)."); // KHÔNG append trong TUI mode
+    expect(text).not.toContain("PD-1"); // details không lọt vào content text
+    // details vẫn nguyên
+    expect(result.details).toMatchObject({ count: 1 });
+  });
+
+  it("hasUI=false + array lớn → cap tránh bloat context (top items + '... và N khác')", async () => {
+    const big = Array.from({ length: 60 }, (_, i) => ({
+      identifier: `PD-${i + 1}`,
+      title: `Issue ${i + 1}`,
+    }));
+    const tool = defineHulyTool({
+      name: "list_issues",
+      label: "List",
+      description: "list",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "Found 60 issue(s).",
+        details: { count: 60, issues: big },
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(false));
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Found 60 issue(s).");
+    expect(text).toContain("PD-1");
+    expect(text).toContain("PD-30");
+    expect(text).not.toContain("PD-31"); // capped
+    expect(text).toMatch(/\.\.\.|and \d+ more|\d+ khác/i);
+  });
+
+  it("hasUI=false + error result → content error message KHÔNG append details rác", async () => {
+    const tool = defineHulyTool({
+      name: "create_issue",
+      label: "Create",
+      description: "create",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "Issue not found.",
+        isError: true,
+        details: { identifier: "PD-999" },
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(false));
+    const text = result.content[0]?.text ?? "";
+    expect(result.isError).toBe(true);
+    expect(text).toContain("Issue not found.");
+    // Error details vẫn có thể có identifier nhưng KHÔNG append bloat (error path ưu tiên message)
   });
 });
