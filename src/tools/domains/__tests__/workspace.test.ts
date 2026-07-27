@@ -112,7 +112,7 @@ describe("huly_list_workspace_members", () => {
 
     const tool = tools.find((t) => t.name === "huly_list_workspace_members")!;
     const result = await tool.execute("tc1", {}, undefined, undefined, ctx);
-    expect(client.findAll).toHaveBeenCalledWith("contact:class:Employee", {}, { limit: 50 });
+    expect(client.findAll).toHaveBeenCalledWith("contact:mixin:Employee", {}, { limit: 50 });
     expect(result.details).toMatchObject({ count: 1 });
   });
 });

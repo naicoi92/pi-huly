@@ -332,7 +332,7 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
 
   // 5. huly_edit_document (full content replace mode)
   it("edit_document: full content replace", async () => {
-    const docId = store.seed("document:class:Document", {
+    const docId = store.seed("tracker:class:Document", {
       title: "Edit me",
       content: "{}",
     });

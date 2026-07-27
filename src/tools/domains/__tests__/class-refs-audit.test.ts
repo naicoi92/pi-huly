@@ -30,6 +30,7 @@ import {
   LABEL_CLASS,
   TIME_SPEND_REPORT_CLASS,
   TS_RELATION_CLASS,
+  TODO_CLASS,
 } from "../_class-refs.js";
 
 /**
@@ -70,27 +71,51 @@ describe("T-44 §1 class registry truth (audit 11-runtime-audit.md)", () => {
     });
   });
 
-  describe("class refs needing FIX (audit findings — verify pending T-43)", () => {
-    // NOTE: sau T-43 merge, các expect này sẽ đổi sang giá trị đúng.
-    // Trước T-43: giữ audit snapshot hiện tại (broken state) để track change.
+  describe("class refs FIXED (T-43 — verified from audit 11-runtime-audit.md)", () => {
+    // T-43 (2026-07-27): fixed per audit findings.
+    // Verify each ref matches source map truth from @hcengineering/*@0.7.423.
 
-    it("audit SNAPSHOT pre-T-43: broken class refs documented", () => {
-      // These are WRONG per audit — T-43 will fix.
-      // Snapshot locked tại audit date 2026-07-27.
-      expect(raw(EMPLOYEE_CLASS)).toBe("contact:class:Employee"); // → contact:mixin:Employee
-      expect(raw(TASK_TYPE_CLASS)).toBe("tracker:class:TaskType"); // → task:class:TaskType
-      expect(raw(PROJECT_TYPE_CLASS)).toBe("tracker:class:ProjectType"); // → task:class:ProjectType
-      expect(raw(DOCUMENT_CLASS)).toBe("document:class:Document"); // → tracker:class:Document
-      expect(raw(SPACE_CLASS)).toBe("document:class:Space"); // → core:class:Space
-      expect(raw(TAG_CLASS)).toBe("tags:class:Tag"); // → tags:class:TagElement
-      // NOTE: TODO_CLASS defined local trong todos.ts (KHÔNG trong _class-refs.ts)
-      // hiện là "task:class:Todo" → "time:class:ToDo" sau T-46.
+    it("Employee: class → mixin (contact:mixin:Employee)", () => {
+      expect(raw(EMPLOYEE_CLASS)).toBe("contact:mixin:Employee");
     });
 
-    it("TimeSpendReport hiện ở activity pkg (audit cần verify — có thể tracker)", () => {
-      // Audit §1: tracker source define TimeSpendReport interface, nhưng pi-huly
-      // dùng activity pkg. Cần verify runtime — UNVERIFIED.
-      expect(raw(TIME_SPEND_REPORT_CLASS)).toBe("activity:class:TimeSpendReport");
+    it("TaskType + ProjectType: tracker → task pkg (cross-package imports)", () => {
+      expect(raw(TASK_TYPE_CLASS)).toBe("task:class:TaskType");
+      expect(raw(PROJECT_TYPE_CLASS)).toBe("task:class:ProjectType");
+    });
+
+    it("Document: document → tracker pkg (Document define trong tracker source)", () => {
+      expect(raw(DOCUMENT_CLASS)).toBe("tracker:class:Document");
+    });
+
+    it("Space: document → core pkg (base abstract class)", () => {
+      expect(raw(SPACE_CLASS)).toBe("core:class:Space");
+    });
+
+    it("Tag: Tag → TagElement (entity rename)", () => {
+      expect(raw(TAG_CLASS)).toBe("tags:class:TagElement");
+    });
+
+    it("TimeSpendReport: activity → tracker (interface define trong tracker source)", () => {
+      expect(raw(TIME_SPEND_REPORT_CLASS)).toBe("tracker:class:TimeSpendReport");
+    });
+
+    it("TODO_CLASS: task:Todo → time:ToDo (cross-pkg time + chữ viết hoa D)", () => {
+      expect(raw(TODO_CLASS)).toBe("time:class:ToDo");
+    });
+  });
+
+  describe("UNVERIFIED (audit §7 — cần runtime server hoặc audit sâu hơn)", () => {
+    it("LABEL_CLASS giữ view:class:Label (chưa tìm thấy trong audited packages)", () => {
+      expect(raw(LABEL_CLASS)).toBe("view:class:Label");
+    });
+
+    it("TS_RELATION_CLASS giữ core:class:TsRelation (Issue relations có thể stored inline)", () => {
+      expect(raw(TS_RELATION_CLASS)).toBe("core:class:TsRelation");
+    });
+
+    it("DOCUMENT_SNAPSHOT_CLASS giữ document:class:DocumentSnapshot (chưa confirm)", () => {
+      expect(raw(DOCUMENT_SNAPSHOT_CLASS)).toBe("document:class:DocumentSnapshot");
     });
   });
 
@@ -117,6 +142,7 @@ describe("T-44 §1 class registry truth (audit 11-runtime-audit.md)", () => {
       LABEL_CLASS,
       TIME_SPEND_REPORT_CLASS,
       TS_RELATION_CLASS,
+      TODO_CLASS,
     ];
 
     it("mọi class ref match pattern <plugin>:class:<Name> hoặc <plugin>:mixin:<Name>", () => {
@@ -124,15 +150,6 @@ describe("T-44 §1 class registry truth (audit 11-runtime-audit.md)", () => {
         const s = raw(ref);
         expect(s).toMatch(/^[a-z]+:(class|mixin):[A-Za-z]+$/);
       }
-    });
-
-    it("LABEL_CLASS + TS_RELATION_CLASS + DOCUMENT_SNAPSHOT_CLASS — UNVERIFIED (audit §7)", () => {
-      // Audit §7: chưa tìm thấy class thật trong audited packages.
-      // Cần runtime verify hoặc audit sâu hơn (T-43 implementation).
-      // Snapshot hiện tại:
-      expect(raw(LABEL_CLASS)).toBe("view:class:Label");
-      expect(raw(TS_RELATION_CLASS)).toBe("core:class:TsRelation");
-      expect(raw(DOCUMENT_SNAPSHOT_CLASS)).toBe("document:class:DocumentSnapshot");
     });
   });
 });
