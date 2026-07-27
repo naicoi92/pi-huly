@@ -29,13 +29,6 @@ tools thiết yếu** chạy native trong pi process, kèm sẵn skills `huly-do
 
 </details>
 
-| Vấn đề | pi-huly giải quyết |
-|---|---|
-| MCP server riêng (process phụ thuộc, env vars) | 1 package native, cùng lifecycle session |
-| ~470 tools nhiễu LLM | **~102 tools** full-CRUD-per-domain, không gap lifecycle |
-| Skills phụ thuộc MCP server runtime | Skills đi kèm, tools cùng process |
-| Hosted Huly SaaS shutdown 2026-07-20 | Target **self-hosted Huly** từ đầu |
-
 ## Features
 
 - 🔑 **Native, không MCP** — tools chạy trong pi process, không spawn process ngoài.
