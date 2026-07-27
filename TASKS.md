@@ -161,7 +161,7 @@ giữ current — cần runtime server verify khi có self-host)_
 > Chi tiết mỗi task ở [`docs/tasks/T-XX.md`](./docs/tasks/).
 > Theo dõi: [GitHub issues #36-#43](https://github.com/naicoi92/pi-huly/issues).
 
-- [ ] [T-47] [M] fix(update_issue): status persist + stop auto-assignee leak (D15 rule không apply cho update) (issue #36) — critical | blocked-by: (none) | blocks: (none) | issue: #36 — [detail](./docs/tasks/T-47.md) — **Open**
+- [x] [T-47] [M] fix(update_issue): status persist + stop auto-assignee leak (D15 rule không apply cho update) (issue #36) — critical | blocked-by: (none) | blocks: (none) | issue: #36 — [detail](./docs/tasks/T-47.md) — ✅ done (5 tests, 416 total; remove needsAssignee leak + resolve status short→full ref)
 - [ ] [T-48] [S] investigate: list_* có còn chỉ trả count sau T-40 không? (có thể duplicate #22 đã fix) (issue #37) — high | blocked-by: (none) | blocks: (none) | issue: #37 — [detail](./docs/tasks/T-48.md) — **Open (investigate)**
 - [ ] [T-49] [S] fix(fulltext_search): Document class sai runtime + defensive per-domain catch (issue #38) — high | blocked-by: (none, pair T-53 nếu cần server) | blocks: (none) | issue: #38 — [detail](./docs/tasks/T-49.md) — **Open**
 - [ ] [T-50] [S] fix(update_user_profile): space param sai → TxUpdateDoc skip (issue #40) — high | blocked-by: (none) | blocks: (none) | issue: #40 — [detail](./docs/tasks/T-50.md) — **Open**

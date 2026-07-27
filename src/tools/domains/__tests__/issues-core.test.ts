@@ -1,7 +1,8 @@
-// Test T-40 bonus + T-41 + T-45 cho issues-core domain (8 tools).
+// Test T-40 bonus + T-41 + T-45 + T-47 cho issues-core domain (8 tools).
 // Cover: create_issue identifier lookup sau createDoc (T-40 bonus #26),
 // get_issue description ref resolution (T-41 #23 — khi T-44 xong),
-// add_issue_label validation (T-45 #27 — khi T-44 xong).
+// add_issue_label validation (T-45 #27 — khi T-44 xong),
+// update_issue status persist + assignee leak (T-47 #36).
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -49,6 +50,15 @@ function makeClient() {
     fetchMarkup: vi.fn(),
   };
 }
+
+// IssueStatus fixture cho T-47 status validation. Huly trả status dạng
+// full ref (vd "tracker:status:Done"); IssueStatus.name = short ("Done").
+const ISSUE_STATUSES = [
+  { name: "Backlog", _id: "tracker:status:Backlog", category: "UnStarted" },
+  { name: "Todo", _id: "tracker:status:Todo", category: "ToDo" },
+  { name: "In Progress", _id: "tracker:status:InProgress", category: "Active" },
+  { name: "Done", _id: "tracker:status:Done", category: "Won" },
+];
 
 function findTool(name: string) {
   return tools.find((t) => t.name === name)!;
@@ -313,5 +323,144 @@ describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
     // findOne lần 3 query bằng _id (fallback sau title miss)
     const thirdCall = client.findOne.mock.calls[2];
     expect(thirdCall?.[1]).toMatchObject({ _id: "label-1" });
+  });
+});
+
+// T-47: update_issue status persist + assignee leak (#36)
+// Root cause 1: needsAssignee=true leak từ create → update auto-fill assignee.
+// Root cause 2: ops.status push raw string ("Done") — Huly cần full ref
+// ("tracker:status:Done"). Status không verify enum → server reject silent.
+describe("T-47: update_issue status persist + assignee leak (#36)", () => {
+  it("update_issue KHÔNG auto-fill assignee khi caller KHÔNG truyền (D15 chỉ cho create)", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+      title: "Old",
+      assignee: "existing@x.com", // assignee cũ
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    // Caller CHỈ update title, KHÔNG truyền assignee
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", title: "New title" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    // ops KHÔNG chứa assignee → server giữ assignee cũ
+    const updateCall = client.updateDoc.mock.calls[0];
+    const ops = updateCall?.[3] as Record<string, unknown>;
+    expect(ops.assignee).toBeUndefined();
+    // assignee cũ KHÔNG bị override thành current user email
+    expect(ops.assignee).not.toBe("u@x.com");
+  });
+
+  it("update_issue với status hợp lệ → resolve short name → full ref trước khi gửi", async () => {
+    const client = makeClient();
+    client.findAll = vi.fn().mockResolvedValue(ISSUE_STATUSES);
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+      status: "tracker:status:Todo",
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", status: "Done" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    // findAll được gọi để load valid statuses
+    expect(client.findAll).toHaveBeenCalledWith("tracker:class:IssueStatus", {}, {});
+    // ops.status = full ref (KHÔNG phải raw "Done")
+    const updateCall = client.updateDoc.mock.calls[0];
+    const ops = updateCall?.[3] as Record<string, unknown>;
+    expect(ops.status).toBe("tracker:status:Done");
+  });
+
+  it("update_issue với status SAI → isError + suggest valid statuses", async () => {
+    const client = makeClient();
+    client.findAll = vi.fn().mockResolvedValue(ISSUE_STATUSES);
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+      status: "tracker:status:Todo",
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", status: "InvalidStatus" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    // Message list valid statuses để LLM biết chọn
+    expect(text).toMatch(/Done|Todo|Backlog/i);
+    expect(text).toMatch(/InvalidStatus/i);
+    // updateDoc KHÔNG gọi (validation failed)
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it("update_issue với status dạng full ref ('tracker:status:Done') → accept as-is", async () => {
+    const client = makeClient();
+    client.findAll = vi.fn().mockResolvedValue(ISSUE_STATUSES);
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+      status: "tracker:status:Todo",
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", status: "tracker:status:Done" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const updateCall = client.updateDoc.mock.calls[0];
+    const ops = updateCall?.[3] as Record<string, unknown>;
+    expect(ops.status).toBe("tracker:status:Done");
+  });
+
+  it("update_issue KHÔNG truyền status → KHÔNG gọi findAll status (skip validation)", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    await tool.execute("tc1", { identifier: "PD-1", title: "New" }, undefined, undefined, ctx);
+
+    // findAll KHÔNG gọi (status không phải field update)
+    const statusCalls = client.findAll.mock.calls.filter(
+      (c) => c[0] === "tracker:class:IssueStatus",
+    );
+    expect(statusCalls).toHaveLength(0);
   });
 });

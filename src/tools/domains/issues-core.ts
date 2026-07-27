@@ -10,7 +10,13 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { ISSUE_CLASS, PROJECT_CLASS, LABEL_CLASS, idRef } from "./_class-refs.js";
+import {
+  ISSUE_CLASS,
+  PROJECT_CLASS,
+  LABEL_CLASS,
+  ISSUE_STATUS_CLASS,
+  idRef,
+} from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -223,12 +229,17 @@ export const tools: HulyToolDefinition[] = [
   }),
 
   // 4. update_issue
+  // T-47 #36: KHÔNG dùng needsAssignee (D15 chỉ cho create). Update KHÔNG
+  // auto-fill assignee → caller muốn đổi assignee phải truyền rõ. Trước đây
+  // leak sang update → mọi update tự claim current user (silent overwrite).
+  // T-47 #36: status phải validate workflow enum — server reject raw short
+  // name ("Done") mà cần full ref ("tracker:status:Done"). Trước đây push raw
+  // → silent reject, status không persist. Giờ lookup IssueStatus → resolve.
   defineHulyTool({
     name: "update_issue",
     label: "Update issue",
     description: "Update issue fields.",
     needsProject: true,
-    needsAssignee: true,
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
@@ -258,9 +269,36 @@ export const tools: HulyToolDefinition[] = [
         ops.description = JSON.stringify(mdToMarkup(params.description));
       if (params.priority !== undefined) ops.priority = params.priority;
       if (params.assignee !== undefined) ops.assignee = params.assignee;
-      if (params.status !== undefined) ops.status = params.status;
       if (params.dueDate !== undefined) ops.dueDate = params.dueDate;
       if (params.estimation !== undefined) ops.estimation = params.estimation;
+      // T-47 #36: resolve status short name ("Done") → full ref
+      // ("tracker:status:Done") trước khi push. Huly IssueStatus có _id = full
+      // ref, name = short human. Match cả 2 (caller có thể truyền short hoặc
+      // full ref). Invalid → isError + list valid statuses cho LLM retry.
+      if (params.status !== undefined) {
+        const statuses = await tctx.client.findAll(ISSUE_STATUS_CLASS, {}, {});
+        const match = statuses.find((s) => {
+          const sn = (s as { name?: string }).name;
+          const sid = (s as { _id?: string })._id;
+          return sn === params.status || sid === params.status;
+        });
+        if (match === undefined) {
+          const valid = statuses
+            .map((s) => (s as { name?: string }).name ?? "")
+            .filter((n) => n.length > 0)
+            .join(", ");
+          return {
+            content: `Invalid status "${params.status}". Valid statuses: ${valid}.`,
+            isError: true,
+            details: {
+              identifier: params.identifier,
+              invalidStatus: params.status,
+              validStatuses: statuses.map((s) => (s as { name?: string }).name),
+            },
+          };
+        }
+        ops.status = (match as { _id?: string })._id ?? params.status;
+      }
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
