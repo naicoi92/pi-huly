@@ -221,3 +221,80 @@ describe("integration: getClient + closeAll round-trip", () => {
     expect(__poolSizeForTests()).toBe(0);
   });
 });
+
+// T-35 — R7 subagent smoke (precondition for D14 shared-pool hypothesis).
+//
+// R7 STATUS: UNVERIFIED — pi-subagent dispatch runtime chưa verifiable trong CI.
+// Audit T-35 (2026-07-27) xác nhận:
+//   - `pi-subagents` KHÔNG trong peerDependencies.
+//   - KHÔNG có package pi-subagents trong node_modules (chỉ pi-agent-core/ai/
+//     coding-agent/tui @ 0.82.1).
+//   - pi-agent-core + pi-coding-agent dist KHÔNG export dispatchSubagent/
+//     spawn/createSubagent API.
+//
+// UC-04 hypothesis: "subagent tool = in-process AgentSession → likely same
+// process, D14 probably holds". Spec 08-non-functional §"Subagent Smoke (R7)"
+// dùng conditional language "[IF same-process verified]".
+//
+// → Test block này verify PRECONDITION cho D14: nếu subagent = in-process
+// (AgentSession hypothesis đúng) thì module-level pool share works. Nó KHÔNG
+// verify actual pi-subagent dispatch runtime (defer tới T-36 e2e HOẶC task mới
+// sau khi pi-subagents package confirmed available).
+describe("R7 subagent smoke (in-process precondition for D14)", () => {
+  beforeEach(() => {
+    __clearPoolForTests();
+    vi.clearAllMocks();
+    vi.mocked(getWorkspace).mockResolvedValue(wsCreds);
+    vi.mocked(loadConfig).mockResolvedValue({ version: 1, transport: "ws", projects: {} });
+  });
+
+  it("main agent + subagent (in-process) share 1 pool connection", async () => {
+    // Simulate: main agent getClient trước, subagent (in-process callback)
+    // getClient sau — cùng workspace. D14 precondition: pool share, no reconnect.
+    const mock = makeMockClient("ws");
+    vi.mocked(createHulyClient).mockResolvedValueOnce(mock);
+
+    const mainClient = await getClient("myteam");
+    // Subagent dispatch (in-process AgentSession hypothesis) — reuse pool entry
+    const subagentClient = await getClient("myteam");
+
+    // Precondition assertions (D14 nếu same-process):
+    expect(__poolSizeForTests()).toBe(1); // 1 connection, NOT 2
+    expect(createHulyClient).toHaveBeenCalledTimes(1); // no reconnect
+    expect(subagentClient).toBe(mainClient); // same instance (===)
+  });
+
+  it("concurrent main + subagent getClient does NOT double-connect (happy path)", async () => {
+    // Concurrent dispatch (Promise.all) — verify pool share under interleaving.
+    // NOTE: pool.ts hiện sequential-safe (Map.get→set), KHÔNG có pending-request
+    // dedup. Test này verify happy-path precondition; race-edge (2 getClient
+    // hit cache miss simultaneously → 2 creates) là known limitation, out of
+    // scope T-35 (size S). Sequential await bên dưới tránh race.
+    const mock = makeMockClient("ws");
+    vi.mocked(createHulyClient).mockResolvedValue(mock);
+
+    // Main bind trước (giống UC-04: main ensure binding TRƯỚC dispatch)
+    await getClient("myteam");
+    // Subagent concurrent dispatch (2 callers, pool đã có entry)
+    const [c1, c2] = await Promise.all([getClient("myteam"), getClient("myteam")]);
+
+    expect(__poolSizeForTests()).toBe(1);
+    expect(c1).toBe(mock);
+    expect(c2).toBe(mock);
+    // createHulyClient chỉ 1 (từ main bind) — subagent reuse
+    expect(createHulyClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("different workspaces do NOT share (correctness boundary)", async () => {
+    // Sanity: pool share CHỈ cho same workspace. Cross-workspace = separate
+    // connections (KHÔNG phải subagent sharing bug).
+    vi.mocked(createHulyClient)
+      .mockResolvedValueOnce(makeMockClient("ws"))
+      .mockResolvedValueOnce(makeMockClient("ws"));
+
+    await getClient("ws-a");
+    await getClient("ws-b");
+
+    expect(__poolSizeForTests()).toBe(2); // 2 separate connections
+  });
+});
