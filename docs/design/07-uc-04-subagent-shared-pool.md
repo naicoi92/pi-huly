@@ -59,12 +59,16 @@ sequenceDiagram
 
 ## Notes (audit findings)
 
-- **pi-subagents process model UNVERIFIED (R7)**: "fresh/forked context" +
-  worktree = **conversation/git isolation**, KHÔNG confirm same-process. D14
-  (shared module-level pool) contingent.
-- Lean: subagent tool = in-process AgentSession → likely same process, D14
-  probably holds. **MUST verify Bước 4**: dispatch subagent gọi huly tool,
-  confirm 1 connection (no reconnect).
+- **pi-subagents process model PARTIALLY VERIFIED (T-35, 2026-07-27)**: D14
+  precondition verified in-process — `pool.ts` module singleton shares across
+  logical callers (3 unit tests pass: main+subagent share 1 connection, concurrent
+  no double-connect, cross-workspace boundary). **Dispatch runtime STILL
+  UNVERIFIED** — audit T-35 xác nhận `pi-subagents` package KHÔNG trong
+  peerDependencies, KHÔNG trong node_modules, pi-agent-core/coding-agent @0.82.1
+  KHÔNG export dispatch API. Defer actual dispatch smoke tới T-36 e2e (khi
+  pi-subagents available) HOẶC manual runtime verify.
+- Lean hypothesis (GIỮ): subagent tool = in-process AgentSession → likely same
+  process, D14 probably holds. T-35 verify precondition cho hypothesis này.
 - **Binding precondition**: main ensure binding trước dispatch — subagent
   KHÔNG onboard (no UI). Orchestrator pattern.
 - currentUser cache per-connection → shared IF same-process.

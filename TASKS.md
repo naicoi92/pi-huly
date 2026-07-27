@@ -74,10 +74,10 @@ _DoD: `/huly init` bind cwd; 3 tool render; session_shutdown cleanup._
 
 _DoD: skill load, huly_ prefixed names, no MCP refs._
 
-**Status: 🚧 in-progress** _(slash goal complete-milestone M4, 2026-07-27)_
+**Status: ✅ completed** _(slash goal complete-milestone M4, 2026-07-27 — 2/2 tasks done, 352 tests, CI green, DoD pass; R7 precondition verified, dispatch smoke deferred T-36)_
 
-- [x] [T-34] [M] skills/huly-docs + skills/huly-tasks adapted (substitute huly_ prefix, drop "@firfi/huly-mcp MCP" refs, keep structure) — high | blocked-by: T-33 | blocks: T-36 — ✅ done (7 skill files: 2 SKILL.md + 5 references/, 46 huly_ tool refs all resolve to bundle, 0 MCP positive refs, markdownlint 0 issues, 5 automated DoD checks pass)
-- [x] [T-35] [S] R7 subagent smoke test (dispatch pi-subagent gọi huly tool → assert 1 connection; fallback if separate process) — medium | blocked-by: T-33 | blocks: T-36 | risks: R7 — ✅ done (rescoped: 3 precondition tests added to pool.test.ts verifying D14 same-process pool sharing — main+subagent share 1 connection, concurrent dispatch no double-connect, cross-workspace boundary; R7 dispatch runtime UNVERIFIED in CI — pi-subagents package unavailable in node_modules, deferred to T-36 e2e; 352 tests pass)
+- [x] [T-34] [M] skills/huly-docs + skills/huly-tasks adapted (substitute huly_ prefix, drop "@firfi/huly-mcp MCP" refs, keep structure) — high | blocked-by: T-33 | blocks: T-36 — ✅ done (PR #16 merged 245d424, 7 skill files: 2 SKILL.md + 5 references/, 46 huly_ tool refs all resolve to bundle, 0 MCP positive refs, markdownlint 0 issues, 5 automated DoD checks pass)
+- [x] [T-35] [S] R7 subagent smoke test (dispatch pi-subagent gọi huly tool → assert 1 connection; fallback if separate process) — medium | blocked-by: T-33 | blocks: T-36 | risks: R7 — ✅ done (PR #17 merged 30d5fd8, rescoped: 3 precondition tests added to pool.test.ts verifying D14 same-process pool sharing — main+subagent share 1 connection, concurrent dispatch no double-connect, cross-workspace boundary; R7 dispatch runtime UNVERIFIED in CI — pi-subagents package unavailable in node_modules, deferred to T-36 e2e; 352 tests pass)
 
 ## M5 Hardening + release
 
