@@ -1,5 +1,6 @@
-// Test T-51 #41 cho issues-templates domain (silent space fallback fix).
-// T-52 không touch tool này FK-wise (chỉ space fallback).
+// Test T-51 #41 cho issues-templates domain — silent space fallback fix.
+// Cover: create_template + create_issue_from_template. Tool sau có 2 findOne
+// (template + project) → 2 error paths khác nhau cần test riêng.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -24,7 +25,7 @@ vi.mock("../../../client/errors.js", () => ({
 }));
 vi.mock("../../../markup/markup.js", () => ({
   mdToMarkup: vi.fn((s: string) => `markup(${s})`),
-  markupToMd: vi.fn(),
+  markupToMd: vi.fn((s: unknown) => `md(${JSON.stringify(s).slice(0, 20)})`),
 }));
 
 import { getClient } from "../../../client/pool.js";
@@ -87,8 +88,9 @@ describe("T-51 #41: create_template project space resolve", () => {
 });
 
 describe("T-51 #41: create_issue_from_template (2 lookup paths)", () => {
-  it("template not found → isError (regression)", async () => {
+  it("template not found → isError (regression — KHÔNG regress existing behavior)", async () => {
     const client = makeClient();
+    // findOne lần 1 (template) trả undefined
     client.findOne = vi.fn().mockResolvedValue(undefined);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
@@ -105,8 +107,8 @@ describe("T-51 #41: create_issue_from_template (2 lookup paths)", () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({ _id: "tpl-123", title: "Bug" })
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ _id: "tpl-123", title: "Bug" }) // template OK
+      .mockResolvedValueOnce(undefined); // project not found
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_create_issue_from_template");
@@ -123,8 +125,8 @@ describe("T-51 #41: create_issue_from_template (2 lookup paths)", () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({ _id: "tpl-123", title: "Bug", description: "{}" })
-      .mockResolvedValueOnce({ _id: "proj-1", space: "happy-space" });
+      .mockResolvedValueOnce({ _id: "tpl-123", title: "Bug", description: "{}" }) // template
+      .mockResolvedValueOnce({ _id: "proj-1", space: "happy-space" }); // project
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_create_issue_from_template");
