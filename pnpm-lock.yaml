@@ -23,6 +23,9 @@ importers:
       '@hcengineering/api-client':
         specifier: ^0.7.423
         version: 0.7.423(prosemirror-inputrules@1.5.1)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.2)
+      '@hcengineering/core':
+        specifier: ^0.7.423
+        version: 0.7.423
       '@hcengineering/platform':
         specifier: ^0.7.423
         version: 0.7.423
