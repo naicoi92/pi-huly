@@ -18,7 +18,8 @@
     "dist",
     "CHANGELOG.md",
     "TASKS.md",
-    "docs/design/plans/**"
+    "docs/design/plans/**",
+    "docs/plans/**"
   ],
   "overrides": [
     {
