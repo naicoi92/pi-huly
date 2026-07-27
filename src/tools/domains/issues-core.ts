@@ -238,7 +238,8 @@ export const tools: HulyToolDefinition[] = [
   defineHulyTool({
     name: "update_issue",
     label: "Update issue",
-    description: "Update issue fields.",
+    description:
+      "Update issue fields. Status must match exact IssueStatus name (case-sensitive) or _id full ref.",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
@@ -273,15 +274,41 @@ export const tools: HulyToolDefinition[] = [
       if (params.estimation !== undefined) ops.estimation = params.estimation;
       // T-47 #36: resolve status short name ("Done") → full ref
       // ("tracker:status:Done") trước khi push. Huly IssueStatus có _id = full
-      // ref, name = short human. Match cả 2 (caller có thể truyền short hoặc
-      // full ref). Invalid → isError + list valid statuses cho LLM retry.
+      // ref, name = short human. Match _id exact trước (caller truyền full ref
+      // → match chắc), fallback name (caller truyền short → heuristic; có thể
+      // ambiguous nếu multi-project workspace có cùng status name — documented
+      // limitation, scope của fix này không filter theo taskType). Invalid →
+      // isError + list valid statuses cho LLM retry.
+      //
+      // T-47 review fix:
+      // - Empty statuses (fresh workspace chưa config workflow) → isError rõ
+      //   ràng KHÔNG "Valid statuses: ." (misleading). Hướng dẫn setup trước.
+      // - Match thành công nhưng _id undefined (schema drift) → isError KHÔNG
+      //   fallback raw params.status (reintroduce bug gốc — raw short name bị
+      //   server silent reject).
+      // - Input trim → match linh hoạt với " Done " / "Done" (caller LLM hay
+      //   thêm whitespace). Exact case vẫn giữ (Huly status name verbatim).
       if (params.status !== undefined) {
         const statuses = await tctx.client.findAll(ISSUE_STATUS_CLASS, {}, {});
-        const match = statuses.find((s) => {
-          const sn = (s as { name?: string }).name;
-          const sid = (s as { _id?: string })._id;
-          return sn === params.status || sid === params.status;
-        });
+        if (statuses.length === 0) {
+          return {
+            content:
+              "No workflow statuses configured for this workspace. " +
+              "Set up project workflow or create statuses first (huly_create_issue_status).",
+            isError: true,
+            details: {
+              identifier: params.identifier,
+              requestedStatus: params.status,
+              noStatusesConfigured: true,
+            },
+          };
+        }
+        const requested = params.status.trim();
+        // Ưu tiên _id exact (caller truyền full ref "tracker:status:Done")
+        // trước name (short heuristic) → giảm ambiguity multi-project.
+        const byId = statuses.find((s) => (s as { _id?: string })._id === requested);
+        const byName = statuses.find((s) => (s as { name?: string }).name === requested);
+        const match = byId ?? byName;
         if (match === undefined) {
           const valid = statuses
             .map((s) => (s as { name?: string }).name ?? "")
@@ -297,7 +324,22 @@ export const tools: HulyToolDefinition[] = [
             },
           };
         }
-        ops.status = (match as { _id?: string })._id ?? params.status;
+        const resolvedId = (match as { _id?: string })._id;
+        if (resolvedId === undefined) {
+          // Schema drift: IssueStatus match nhưng _id missing → KHÔNG fallback
+          // raw params.status (reintroduce bug gốc — silent server reject).
+          return {
+            content: `Status "${params.status}" matched but _id missing (schema drift). Report bug.`,
+            isError: true,
+            details: {
+              identifier: params.identifier,
+              requestedStatus: params.status,
+              matchedDoc: match,
+              schemaDrift: true,
+            },
+          };
+        }
+        ops.status = resolvedId;
       }
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };

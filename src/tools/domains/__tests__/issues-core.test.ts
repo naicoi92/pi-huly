@@ -463,4 +463,84 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     );
     expect(statusCalls).toHaveLength(0);
   });
+
+  it("findAll trả empty (fresh workspace chưa config workflow) → isError rõ ràng, KHÔNG 'Valid statuses: .'", async () => {
+    const client = makeClient();
+    client.findAll = vi.fn().mockResolvedValue([]); // no statuses configured
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", status: "Done" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    // Message hướng dẫn setup workflow, KHÔNG misleading "Valid statuses: ."
+    expect(text).not.toMatch(/Valid statuses:\s*\./);
+    expect(text).toMatch(/no workflow statuses/i);
+    // updateDoc KHÔNG gọi
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it("status match name nhưng _id undefined (schema drift) → isError, KHÔNG fallback raw params.status", async () => {
+    const client = makeClient();
+    client.findAll = vi.fn().mockResolvedValue([{ name: "Done" /* _id missing */ }]);
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", status: "Done" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    // isError (KHÔNG fallback raw params.status → reintroduce bug gốc)
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/schema drift/i);
+    // updateDoc KHÔNG gọi
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it("status có whitespace ' Done ' → trim rồi match name", async () => {
+    const client = makeClient();
+    client.findAll = vi.fn().mockResolvedValue(ISSUE_STATUSES);
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", status: "  Done  " },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const updateCall = client.updateDoc.mock.calls[0];
+    const ops = updateCall?.[3] as Record<string, unknown>;
+    expect(ops.status).toBe("tracker:status:Done");
+  });
 });
