@@ -3,6 +3,18 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.1] - 2026-07-27
+
+Canary pre-release. Early adopter test trước stable 1.0.0. Install:
+`pi install npm:pi-huly@beta`.
+
+Same content as 1.0.0 (below). Known limitations:
+
+- Runtime real-Huly e2e smoke deferred (T-36 integration smoke only — no self-host in CI).
+- R7 pi-subagent dispatch runtime unverified (precondition verified T-35).
+
+Feedback: <https://github.com/naicoi92/pi-huly/issues>
+
 ## [1.0.0] - 2026-07-27
 
 Initial stable release. Native Huly support cho pi-coding-agent.
