@@ -111,6 +111,18 @@ export interface HulyClient {
     attributes: WithMarkup<MixinData<D, M>>,
   ): Promise<TxResult>;
 
+  // MarkupOperations (T-41 — fetch markup content từ MarkupBlobRef)
+  // Issue.description là MarkupBlobRef (document ref), KHÔNG inline string.
+  // fetchMarkup resolve ref → markdown/html/markup string theo format.
+  // Ref branded types bypass (string runtime, Ref compile-time).
+  fetchMarkup(
+    objectClass: string,
+    objectId: string,
+    objectAttr: string,
+    markup: unknown,
+    format: "markdown" | "html" | "markup",
+  ): Promise<string>;
+
   // Account
   getAccount(): Promise<Account>;
   getCurrentUser(): Promise<CurrentUser>;
@@ -158,6 +170,12 @@ function makeWsClient(client: PlatformClient): HulyClient {
     removeDoc: (...args) => client.removeDoc(...args),
     addCollection: (...args) => client.addCollection(...args),
     createMixin: (...args) => client.createMixin(...args),
+    // T-41: PlatformClient có fetchMarkup built-in (delegate MarkupOperations).
+    // Signature branded Ref<Class>/Ref<Doc> nhưng runtime string — cast bypass.
+    fetchMarkup: (...args) =>
+      (client as unknown as { fetchMarkup: (...a: unknown[]) => Promise<string> }).fetchMarkup(
+        ...args,
+      ),
     getAccount: () => client.getAccount(),
     async getCurrentUser(): Promise<CurrentUser> {
       if (cachedUser) return cachedUser;
@@ -183,6 +201,16 @@ function makeRestClient(rest: RestClient, tx: TxOperations): HulyClient {
     removeDoc: (...args) => tx.removeDoc(...args),
     addCollection: (...args) => tx.addCollection(...args),
     createMixin: (...args) => tx.createMixin(...args),
+    // T-41: RestClient KHÔNG có fetchMarkup built-in (chỉ PlatformClient ws có).
+    // REST transport fallback: throw rõ ràng — user đổi sang ws transport nếu cần
+    // resolve MarkupBlobRef (vd get_issue description). Default transport = ws
+    // (config.ts D3) nên path này hiếm khi hit.
+    fetchMarkup: () => {
+      throw new Error(
+        "fetchMarkup not supported on REST transport. Use WS transport (default) " +
+          "to resolve MarkupBlobRef fields like issue description.",
+      );
+    },
     getAccount: () => rest.getAccount(),
     async getCurrentUser(): Promise<CurrentUser> {
       if (cachedUser) return cachedUser;

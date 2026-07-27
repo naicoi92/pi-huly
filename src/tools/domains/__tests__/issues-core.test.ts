@@ -46,6 +46,7 @@ function makeClient() {
     createDoc: vi.fn().mockResolvedValue("internal-id-abc"),
     updateDoc: vi.fn().mockResolvedValue(undefined),
     removeDoc: vi.fn().mockResolvedValue(undefined),
+    fetchMarkup: vi.fn(),
   };
 }
 
@@ -112,5 +113,87 @@ describe("T-40 bonus: create_issue surface identifier (#26)", () => {
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("Identifier pending");
     expect(text).toContain("huly_list_issues");
+  });
+});
+
+// T-41: get_issue resolve description document ref → markdown content (#23)
+describe("T-41: get_issue description ref → markdown (#23)", () => {
+  it("description là MarkupBlobRef → fetchMarkup resolve markdown content", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({
+      _id: "issue-1",
+      space: "sp1",
+      identifier: "PD-1",
+      title: "Test issue",
+      description: "issue-1-description-1700000000000", // MarkupBlobRef string
+      status: "InProgress",
+      priority: "high",
+    });
+    client.fetchMarkup = vi.fn().mockResolvedValue("# Heading\n\nDescription content");
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_get_issue");
+    const result = await tool.execute("tc1", { identifier: "PD-1" }, undefined, undefined, ctx);
+
+    // fetchMarkup được gọi đúng signature
+    expect(client.fetchMarkup).toHaveBeenCalledWith(
+      "tracker:class:Issue",
+      "issue-1",
+      "description",
+      "issue-1-description-1700000000000",
+      "markdown",
+    );
+    // details.description = markdown content (không phải ref string)
+    expect(result.details).toMatchObject({
+      description: "# Heading\n\nDescription content",
+      identifier: "PD-1",
+    });
+    // Content text cho LLM chứa markdown, KHÔNG chứa ref vô nghĩa
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Description content");
+    expect(text).not.toContain("issue-1-description-1700000000000");
+  });
+
+  it("description null → fetchMarkup KHÔNG gọi, description=undefined", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({
+      _id: "issue-2",
+      space: "sp1",
+      identifier: "PD-2",
+      title: "No desc",
+      description: null,
+      status: "Todo",
+    });
+    client.fetchMarkup = vi.fn();
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_get_issue");
+    const result = await tool.execute("tc1", { identifier: "PD-2" }, undefined, undefined, ctx);
+
+    expect(client.fetchMarkup).not.toHaveBeenCalled();
+    expect((result.details as { description?: string }).description).toBeUndefined();
+  });
+
+  it("fetchMarkup fail (ref không tồn tại) → fallback descriptionRef, không crash", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({
+      _id: "issue-3",
+      space: "sp1",
+      identifier: "PD-3",
+      title: "Broken ref",
+      description: "stale-ref-123",
+      status: "Todo",
+    });
+    client.fetchMarkup = vi.fn().mockRejectedValue(new Error("markup not found"));
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_get_issue");
+    const result = await tool.execute("tc1", { identifier: "PD-3" }, undefined, undefined, ctx);
+
+    // Fallback: description undefined + descriptionRef field rõ ràng cho LLM
+    expect(result.isError).toBeUndefined(); // không crash, vẫn success
+    const details = result.details as { description?: string; descriptionRef?: string };
+    expect(details.description).toBeUndefined();
+    expect(details.descriptionRef).toBe("stale-ref-123");
   });
 });

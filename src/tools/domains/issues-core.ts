@@ -18,10 +18,9 @@ import {
   prioritySchema,
   statusCategorySchema,
   resolveIdentifier,
-  parseMarkupSafe,
   escapeLikePattern,
 } from "./_common.js";
-import { mdToMarkup, markupToMd } from "../../markup/markup.js";
+import { mdToMarkup } from "../../markup/markup.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_issues
@@ -97,9 +96,10 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const f = issue as {
+        _id?: string;
         identifier?: string;
         title?: string;
-        description?: string;
+        description?: string | null;
         status?: string;
         priority?: string;
         assignee?: string;
@@ -108,15 +108,35 @@ export const tools: HulyToolDefinition[] = [
         dueDate?: number;
         estimation?: number;
       };
-      // Description markup → markdown (FR-13 R8). Guard JSON.parse.
-      const descMarkup = parseMarkupSafe(f.description);
-      const descMd = descMarkup !== null ? markupToMd(descMarkup as never) : f.description;
+      // T-41 #23: Issue.description là MarkupBlobRef (document ref), KHÔNG inline
+      // markup string. fetchMarkup resolve ref → markdown content qua collaborator.
+      // Null/undefined description → skip. fetchMarkup fail → fallback descriptionRef
+      // rõ ràng cho LLM (tránh trả ref string vô nghĩa).
+      let description: string | undefined;
+      let descriptionRef: string | undefined;
+      if (f.description !== null && f.description !== undefined && f._id !== undefined) {
+        try {
+          const markup = await tctx.client.fetchMarkup(
+            ISSUE_CLASS,
+            f._id,
+            "description",
+            f.description,
+            "markdown",
+          );
+          description = typeof markup === "string" ? markup : undefined;
+        } catch {
+          // fetchMarkup fail (ref stale / collaborator down / REST transport) →
+          // fallback descriptionRef rõ ràng, không trả ref vô nghĩa cho LLM.
+          descriptionRef = f.description;
+        }
+      }
       return {
-        content: `${f.identifier}: ${f.title ?? ""}\n\nStatus: ${f.status ?? "?"} · Priority: ${f.priority ?? "?"} · Assignee: ${f.assignee ?? "?"}\n\n${descMd ?? ""}`,
+        content: `${f.identifier}: ${f.title ?? ""}\n\nStatus: ${f.status ?? "?"} · Priority: ${f.priority ?? "?"} · Assignee: ${f.assignee ?? "?"}\n\n${description ?? ""}`,
         details: {
           identifier: f.identifier,
           title: f.title,
-          description: descMd,
+          description,
+          descriptionRef,
           status: f.status,
           priority: f.priority,
           assignee: f.assignee,
