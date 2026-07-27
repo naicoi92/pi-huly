@@ -130,8 +130,10 @@ export const tools: HulyToolDefinition[] = [
         }
 
         // Build content: partial result + warning nếu có domain fail.
+        // counts[cfg.name] luôn được set trong forEach trên cả 2 nhánh
+        // (fulfilled=length, rejected=0) nên KHÔNG cần ?? 0 fallback.
         const countSummary = domainConfigs
-          .map((cfg) => `${counts[cfg.name] ?? 0} ${cfg.name}`)
+          .map((cfg) => `${counts[cfg.name]} ${cfg.name}`)
           .join(", ");
         let content = `Found ${results.length} result(s) for "${params.query}" (${countSummary}).`;
         if (failedDomains.length > 0) {
@@ -152,8 +154,10 @@ export const tools: HulyToolDefinition[] = [
           },
         };
       } catch (e) {
-        // Safety net cho unexpected programming errors (vd .map throw trên
-        // doc shape bất thường, sync bug). KHÔNG catch domain error (đã settle).
+        // Safety net cho unexpected programming errors — KHÔNG catch domain
+        // error (đã settle thành rejected status qua Promise.allSettled).
+        // Trigger thực tế duy nhất: .map throw trên doc shape bất thường
+        // (vd d._id là object không coercible → String() throw).
         const msg = e instanceof Error ? e.message : String(e);
         return {
           content: `Search failed unexpectedly: ${msg}.`,

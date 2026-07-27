@@ -168,11 +168,16 @@ describe("T-49 #38: defensive per-domain catch (Promise.allSettled)", () => {
     // results = 2 (issue + message), KHÔNG phải 3 (document bị skip)
     const details = result.details as {
       results: Array<{ _id: string; type: string }>;
+      failedDomains?: Array<{ name: string; reason: string }>;
     };
     expect(details.results).toHaveLength(2);
     expect(details.results.some((r) => r._id === "i1" && r.type === "issue")).toBe(true);
     expect(details.results.some((r) => r._id === "m1" && r.type === "message")).toBe(true);
     expect(details.results.some((r) => r.type === "document")).toBe(false);
+    // structured failedDomains shape (lock regression: {name, reason})
+    expect(details.failedDomains).toEqual([
+      { name: "documents", reason: expect.stringContaining("domain not found") },
+    ]);
     // Content warning mention Document failed
     const text = result.content[0]?.text ?? "";
     expect(text).toMatch(/document.*fail/i);
@@ -192,5 +197,36 @@ describe("T-49 #38: defensive per-domain catch (Promise.allSettled)", () => {
     // Honest message — KHÔNG fake "Found 0 results"
     expect(text).toMatch(/all.*domain.*fail|search failed/i);
     expect(text).not.toMatch(/found 0 result/i);
+  });
+
+  it("2 domain fail (Document + ChatMessage) + 1 OK (Issue) → partial + multi-warning join ' | '", async () => {
+    const client = makeClient();
+    // Issue OK, Document + ChatMessage fail
+    client.findAll = vi
+      .fn()
+      .mockResolvedValueOnce([{ _id: "i1", identifier: "PD-1", title: "auth bug" }])
+      .mockRejectedValueOnce(new Error("domain not found: tracker:class:Document"))
+      .mockRejectedValueOnce(new Error("timeout"));
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool();
+    const result = await tool.execute("tc1", { query: "bug" }, undefined, undefined, ctx);
+
+    // Partial success (1 result)
+    expect(result.isError).toBeUndefined();
+    const details = result.details as {
+      results: Array<{ _id: string; type: string }>;
+      failedDomains?: Array<{ name: string; reason: string }>;
+    };
+    expect(details.results).toHaveLength(1);
+    expect(details.results[0]?._id).toBe("i1");
+    // failedDomains có cả 2 domain fail
+    expect(details.failedDomains).toHaveLength(2);
+    expect(details.failedDomains?.map((d) => d.name)).toEqual(
+      expect.arrayContaining(["documents", "messages"]),
+    );
+    // Content warning join cả 2 domain với separator ' | '
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/documents search failed.*\|.*messages search failed/i);
   });
 });
