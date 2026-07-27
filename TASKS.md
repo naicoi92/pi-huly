@@ -92,8 +92,47 @@ _DoD: e2e self-host smoke; npm publish; Bước 10 release._
 
 ---
 
+## Post-release hotfixes (M6 candidate — không thuộc milestone)
+
+> **Context**: Sau canary v1.0.0-beta.1, smoke test trên self-host `workvps` phát
+> hiện **7 runtime bug** (GitHub issues #22-#28). Tất cả chia sẻ **1 root pattern**:
+> code viết dựa trên assumption về Huly runtime (class name, description storage,
+> search API, surface shape, addCollection signature) nhưng **chưa có runtime
+> verification thật** — chỉ verify qua design doc/source code tĩnh.
+>
+> **Nhóm theo bản chất**:
+> - **Surface shape** (#22 list giấu array, #26 create giấu id) — cùng root cause
+>   ở `builder.ts`, T-40 fix 1 chỗ.
+> - **Class/storage/protocol sai** (#23 description ref, #25 class name, #28
+>   addCollection) — T-44 audit runtime là prerequisite.
+> - **Operator sai** (#24 `$like`) — T-44 verify operator.
+> - **Validation thiếu** (#27 label không check tồn tại) — T-45 fix, blocked-by T-44.
+>
+> **T-44 (audit runtime) là prerequisite cho T-41/T-42/T-43/T-45/T-46** — không
+> đoán mò class name / storage model / operator nữa. **T-40 fix độc lập** (chỉ
+> logic surface, không depend Huly server) → bắt đầu được ngay.
+>
+> Chi tiết mỗi task (vấn đề, phương án, acceptance) ở [`docs/tasks/T-XX.md`](./docs/tasks/).
+> Theo dõi: [GitHub issues #22-#28](https://github.com/naicoi92/pi-huly/issues).
+
+- [ ] [T-40] [M] fix(builder): surface `details` → `content` cho non-TUI path — fix cả list (#22) lẫn create_*/add_* (#26) — high | blocked-by: (none) | blocks: (none) | issues: #22,#26 — [detail](./docs/tasks/T-40.md) — **Open**
+- [ ] [T-41] [M] fix(get_issue): resolve description document ref → markdown content (issue #23) — high | blocked-by: T-44 | blocks: (none) | issue: #23 — [detail](./docs/tasks/T-41.md) — **Open**
+- [ ] [T-42] [M] fix(fulltext_search): real search thay $like stub (title + description + document + message) (issue #24) — high | blocked-by: T-44 | blocks: (none) | issue: #24 — [detail](./docs/tasks/T-42.md) — **Open**
+- [ ] [T-43] [L] fix(_class-refs): correct class name runtime cho 6+ broken class (TsRelation, Space, Tag, Label, TaskType, Employee, Document?) (issue #25 updated) — high | blocked-by: T-44 | blocks: T-41,T-42,T-45,T-46 | issue: #25 — [detail](./docs/tasks/T-43.md) — **Open**
+- [ ] [T-44] [M] chore(audit): runtime smoke test verify class refs + description storage + search operator + addCollection protocol vs Huly self-host thật — high | blocked-by: (none) | blocks: T-41,T-42,T-43,T-45,T-46 — [detail](./docs/tasks/T-44.md) — **Open**
+- [ ] [T-45] [S] fix(add_issue_label): validate label tồn tại trước khi push, không bogus ref (issue #27) — medium | blocked-by: T-44 (cần LABEL_CLASS đúng) | blocks: (none) | issue: #27 — [detail](./docs/tasks/T-45.md) — **Open**
+- [ ] [T-46] [M] fix(create_todo): correct addCollection signature / class / collection field (issue #28) — medium | blocked-by: T-44,T-43 | blocks: (none) | issue: #28 — [detail](./docs/tasks/T-46.md) — **Open**
+
+---
+
 ## Size / priority distribution
 
-- Size: S ~22 · M ~18 · **L 0** (issues 21 split T-19a/b/c).
-- Priority: 🔴 high 24 · 🟡 medium 17 · 🟢 low 1 (T-22).
+- Size: S ~24 · M ~24 · **L 1** (T-43 rescoped M → L sau comment #25 mở rộng scope 2 → 6+ class broken).
+- Priority: 🔴 high 30 · 🟡 medium 19 · 🟢 low 1 (T-22).
 - Critical path: T-01→02/03→04→05→06→09→domains→30→31→33→34→36→38→39.
+- Post-release hotfix chain:
+  - **T-40** (#22+#26 surface) — independent, no blocker, start ngay.
+  - **T-44** (audit runtime, includes full class registry dump) → unblocks T-41/T-42/T-43/T-45/T-46.
+  - **T-43** (class-refs fix, 6+ class) → unblocks T-41/T-42/T-45/T-46.
+  - Tổng: 7 bug GitHub (#22-#28, #25 đã update scope) → 7 task (T-40..T-46).
+- Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
