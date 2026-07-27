@@ -33,6 +33,8 @@ _DoD: mock Huly WS+REST integration pass; markup round-trip fixtures green (R8).
 
 _DoD: ~102 tool đăng ký; typebox schema valid; confirm gate; mock CRUD pass._
 
+**Status: 🟡 in-progress** _(slash goal complete-milestone M2, 2026-07-27 — 0/23 tasks done)_
+
 - [ ] [T-09] [M] tools/builder.ts (defineHulyTool seam: huly_ prefix, resolve ws+project, getClient, error map, confirm gate, render hook, assignee default) + unit — high | blocked-by: T-06,T-07,T-08b | blocks: T-10, T-11..T-29
 - [ ] [T-10] [S] tools/confirm.ts (confirmDestructive: ctx.ui.confirm; non-TUI auto-deny) + unit — high | blocked-by: T-09 | blocks: domains
 - [ ] [T-11] [M] tools/domains/documents.ts (10: list/get/create/update/delete_teamspace, list/get/create/edit/delete_document) — high | blocked-by: T-09,T-10 | blocks: T-30
