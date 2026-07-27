@@ -8,11 +8,13 @@
 - **License**: [MIT](./LICENSE) © 2026 naicoi92
 - **Source**: <https://github.com/naicoi92/pi-huly>
 
-## Bundled dependencies (EPL-2.0)
+## Runtime dependencies (EPL-2.0, npm public)
 
-pi-huly **bundles** các `@hcengineering/*` package vào `dist/index.mjs` (via
-rolldown) để consumer KHÔNG cần GitHub Packages token khi install (NFR-06).
-Bundle mix code MIT (pi-huly) + EPL-2.0 (@hcengineering).
+pi-huly declare `@hcengineering/*` là `dependencies` trong `package.json`.
+Consumer `pi install npm:pi-huly` → npm auto-install `@hcengineering/*` từ
+npmjs.org (publishConfig access public, verified T-37) → KHÔNG cần GitHub
+Packages token (NFR-06). `dist/index.mjs` KHÔNG bundle @hcengineering — code
+`import` từ `node_modules/@hcengineering/*` runtime (rolldown external).
 
 | Package | Version | License | npm |
 |---|---|---|---|
@@ -24,20 +26,19 @@ Bundle mix code MIT (pi-huly) + EPL-2.0 (@hcengineering).
 
 ### EPL-2.0 obligations
 
-1. **Attribution** (§3.6): this NOTICE discloses EPL-2.0 portions + source link.
-2. **Source availability** (§3.6): tarball publish chỉ chứa `dist/` (bundle).
-   Consumer lấy source của `@hcengineering/*` trực tiếp từ npm packages (public,
-   link ở bảng trên). pi-huly KHÔNG vendor source vào tarball (size bloat, R3).
+1. **Attribution** (§3.6): this NOTICE discloses EPL-2.0 dependencies.
+2. **Source availability** (§3.6): consumer install `@hcengineering/*` từ npm
+   (public, source included trong tarball npm). pi-huly KHÔNG vendor source.
 3. **No additional restrictions** (§7): EPL-2.0 permit commercial use,
    modification, distribution với attribution + source availability.
 
 ### MIT compat EPL-2.0
 
-- Bundle `dist/index.mjs` = MIT code (pi-huly) + EPL-2.0 code (@hcengineering).
-- EPL-2.0 copyleft là **file-level** — bundle KHÔNG làm toàn bộ pi-huly trở
-  thành EPL. Phần pi-huly source giữ MIT.
-- `LICENSE` file (MIT) áp dụng cho pi-huly source code. Phần bundled
-  @hcengineering subject EPL-2.0 (attribution ở đây).
+- pi-huly (MIT) depends on @hcengineering (EPL-2.0) runtime. Dist bundle chỉ
+  chứa code pi-huly (MIT). @hcengineering code ở node_modules riêng.
+- EPL-2.0 copyleft KHÔNG lan sang pi-huly source (separate distribution).
+- `LICENSE` (MIT) áp dụng cho pi-huly. `@hcengineering/*` subject EPL-2.0
+  riêng (npm package license field).
 
 ### EPL-2.0 full text
 

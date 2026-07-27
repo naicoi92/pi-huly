@@ -219,9 +219,10 @@ R6 likelihood 🟢 (design `03-tech-stack.md` §8).
 ## License
 
 - **pi-huly**: [MIT](./LICENSE) © naicoi92.
-- **Bundled `@hcengineering/*`**: **EPL-2.0** (bundled vào `dist/index.mjs` —
-  xem [`NOTICE.md`](./NOTICE.md) cho attribution + source availability).
-- **External deps** (`ws`, `typebox`, `@earendil-works/*`): MIT.
+- **Runtime dependency `@hcengineering/*`**: **EPL-2.0** (consumer install từ
+  npm public — KHÔNG bundled vào dist). Xem [`NOTICE.md`](./NOTICE.md) cho
+  attribution + source availability.
+- **Other deps** (`ws`, `typebox`, `@earendil-works/*`): MIT.
 
 R1 license audit đầy đủ: [`NOTICE.md`](./NOTICE.md).
 

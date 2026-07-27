@@ -13,7 +13,7 @@
 | Node version mgr | nub | latest | auto-install Node 24, thay nvm/fnm | repro env | — |
 | Package manager (dev) | nub | latest | pnpm-compat, `pnpm-lock.yaml`, oxc-powered | match `pi install` semantics, fast | NFR-06 |
 | Script runner | nub run / `nub <file>` | — | oxc transpile TS trực tiếp, 24× nhanh `pnpm run` | dev ergonomics | NFR-07 |
-| Build/bundle (prod) | rolldown | ^1.x (stable May 2026) | bundle → `dist/index.mjs` ESM; external pi-*+ node:* + ws | bundle @hcengineering → consumer KHÔNG cần GitHub token | D1, NFR-06 |
+| Build/bundle (prod) | rolldown | ^1.x (stable May 2026) | bundle → `dist/index.mjs` ESM; external pi-*+ node:* + ws + @hcengineering | dist chỉ code pi-huly; @hcengineering = npm dep (consumer install, no token) | D1, NFR-06 |
 | Lint | oxlint | latest | oxc, fast | code quality | NFR-07 |
 | Format | oxfmt | latest | oxc | code style | NFR-07 |
 | Typecheck | tsc `--noEmit` | 7.x (native Go, 10× faster) | strict gate CI | type safety | NFR-07 |
@@ -21,9 +21,9 @@
 | Markdown lint | markdownlint-cli2 | latest | devDep | design doc lint | NFR-07 |
 | Mock Huly (test) | ws-based mock server | — | devDep (test) | integration test không cần Huly thật | NFR-07 |
 | CI | GitHub Actions | — | `.github/workflows/ci.yml` (fmt+lint+typecheck+test+bundle) | quality gate | NFR-07 |
-| Huly client | `@hcengineering/api-client` | ^0.7.413 (bundled) | dep, bundle vào dist | WebSocket connect + CRUD | D3, D10 |
-| Huly domain | `@hcengineering/{platform,core,tracker,contact,document,tags,task,attachment,chunter,time,view,text-markdown}` | ^0.7.x (match api-client, bundled) | dep, bundled | class refs + markup | D4, D10 |
-| Markup | `@hcengineering/text-markdown` | ^0.7.x (bundled) | `markdownToMarkup`/`markupToMarkdown`/`markupToJSON` | markdown round-trip (KHÔNG reimplement parser) | D10 |
+| Huly client | `@hcengineering/api-client` | ^0.7.413 (npm public dep) | dep, external in bundle (rolldown external) | WebSocket connect + CRUD | D3, D10 |
+| Huly domain | `@hcengineering/{platform,core,tracker,contact,document,tags,task,attachment,chunter,time,view,text-markdown}` | ^0.7.x (match api-client, npm public dep) | dep, external | class refs + markup | D4, D10 |
+| Markup | `@hcengineering/text-markdown` | ^0.7.x (npm public dep) | `markdownToMarkup`/`markupToMarkdown`/`markupToJSON` | markdown round-trip (KHÔNG reimplement parser) | D10 |
 | WebSocket | ws | ^8.18 (external in bundle) | dep | api-client import ws runtime | D3 |
 | pi peers | `@earendil-works/{pi-coding-agent,pi-ai,pi-tui,pi-agent-core}` | ^0.82.1 | peerDependencies `*` (pi bundle core) | extension API + TUI render | D1, D12 |
 | Schema | typebox | ^1.1.38 | peerDep `*` | tool parameter schema (pi dùng) | D5 |
@@ -61,16 +61,21 @@
 | @hcengineering/* 0.7.x cross-package | ✅ | same monorepo version batch | pin tất cả `^0.7.x` |
 | oxlint/oxfmt + TS 7 | ✅ | oxc parser independent of tsc | không phụ thuộc TS version |
 | vitest 4 + Node 24 | ✅ | vitest supports Node 18+ | OK |
-| bundled @hcengineering → consumer no GitHub token | ✅ | deps in tarball, not resolved at install | KEY win (NFR-06) |
+| @hcengineering public npm dep → consumer no GitHub token | ✅ | deps resolved runtime từ node_modules, KHÔNG bundled in tarball | KEY win (NFR-06) |
 
 **Conflict/Kiểm tra thêm:**
 
 - `@hcengineering/*` publish **public trên npmjs.org** (verified 2026-07-27).
   Maintainer build + consumer `pi install` đều KHÔNG cần token (KHÔNG cần
   GitHub Packages registry). D10 note cũ (GitHub token install) sai — install
-  trực tiếp `pnpm add @hcengineering/*` works zero-config. Bundle vào dist cho
-  NFR-06 (consumer no token needed at runtime).
-- ws optional deps (bufferutil/utf-8-validate): bundled hoặc skip (fallback
+  trực tiếp `pnpm add @hcengineering/*` works zero-config.
+- **CORRECTION (T-38 audit 2026-07-27)**: §1/§3/§4 table rows + §7 đã updated
+  — @hcengineering là **npm public dependency** (package.json `dependencies`),
+  KHÔNG bundle vào dist. NFR-06 (consumer no token) vẫn ĐÚNG: @hcengineering
+  public trên npmjs.org, npm auto-install runtime.
+  `rolldown.config.ts` `external: [/^@hcengineering\//]` → dist/index.mjs
+  `import` từ node_modules runtime. NOTICE.md + README.md đã sync.
+- ws optional deps (bufferutil/utf-8-validate): external hoặc skip (fallback
   pure-JS). Test R2.
 
 ## 4. Đánh giá khả năng áp dụng
@@ -125,7 +130,7 @@ flowchart TD
   bundle, KHÔNG Effect, KHÔNG vendor huly-mcp.
 - D3 (WS pool) → api-client `connect` + ws + pool module.
 - D5 (`huly_`) → typebox schema per tool.
-- NFR-06 → **bundle @hcengineering → consumer no GitHub token** (KEY).
+- NFR-06 → **@hcengineering public npm dep → consumer no GitHub token** (KEY). Bundle external, KHÔNG inline.
 - NFR-07 → vitest + oxlint/oxfmt + tsc 7 + CI; nub/rolldown oxc fast.
 
 **Alternatives** (đã consider, loại):
