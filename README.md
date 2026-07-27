@@ -2,28 +2,21 @@
 
 > Native Huly support cho pi-coding-agent — ~102 tools + skills + subagent (KHÔNG MCP, gọi thẳng WebSocket API).
 
-**Status:** M0 Foundation (in-progress). Design docs: [`docs/design/`](./docs/design/). Tasks: [`TASKS.md`](./TASKS.md).
+**Status:** M1 Client core (in-progress). Design docs: [`docs/design/`](./docs/design/). Tasks: [`TASKS.md`](./TASKS.md).
 
 ## Build requirements
 
 - **Node.js 24** (LTS) — pin via `.node-version`. Consumer runtime floor `>=22.19.0` (pi engine).
 - **pnpm** — package manager (CI dùng pnpm; dev có thể dùng `nub` thay thế — pnpm-compat).
-- **`NPM_AUTH_TOKEN`** — GitHub Packages read token cho `@hcengineering/*` deps (registry `npm.pkg.github.com`).
-  - Tạo token: <https://github.com/settings/tokens> (Classic PAT, scope `read:packages`)
-  - Set env: `export NPM_AUTH_TOKEN=ghp_xxx` (hoặc lưu `~/.npmrc` ngoài repo scope)
-  - `.npmrc` (commit, repo root) reference env var — KHÔNG commit token thật.
+- **`@hcengineering/*` deps** — publish **public trên npmjs.org** (KHÔNG cần GitHub Packages token).
 
 ## Install & develop
 
 ```bash
-# 1. Set token
-export NPM_AUTH_TOKEN=ghp_xxx
+# 1. Install deps (no token needed — @hcengineering public on npm)
+pnpm install
 
-# 2. Install deps
-pnpm install   # hoặc: nub install
-nub approve-builds   # nếu dùng nub — approve @hcengineering build scripts (R4)
-
-# 3. Verify toolchain
+# 2. Verify toolchain
 pnpm run typecheck
 pnpm run lint
 pnpm run lint:md
@@ -56,8 +49,7 @@ pi-huly/
 ├── package.json          # pi manifest + scripts + deps
 ├── tsconfig.json         # TS 7 strict
 ├── rolldown.config.ts    # Bundler (R3: externals pi-*+ws+@hcengineering)
-├── vitest.config.ts      # Test runner
-└── .npmrc                # @hcengineering registry (GitHub Packages)
+└── vitest.config.ts      # Test runner
 ```
 
 ## License

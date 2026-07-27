@@ -1,11 +1,13 @@
 # pnpm workspace config (single-package repo, KHÔNG có workspaces list).
 # Build script whitelist (R4 mitigation — pnpm 11+).
-# allowBuilds = explicit boolean map (pnpm 11 format); onlyBuiltDependencies = list (legacy compat).
-# Cả 2 cùng tồn tại: allowBuilds cho pnpm 11, onlyBuiltDependencies cho pnpm 10 + document intent.
+# allowBuilds = explicit boolean map (pnpm 11 format).
+# @hcengineering/* packages được publish PUBLIC trên npmjs.org (KHÔNG cần GitHub Packages token).
+# msgpackr-extract là transitive dep của @hcengineering (msgpackr) — có native build script.
 allowBuilds:
   '@google/genai': false
   '@hcengineering/api-client': true
   '@hcengineering/platform': true
   '@hcengineering/text-markdown': true
   '@hcengineering/tracker': true
+  msgpackr-extract: true
   protobufjs: true

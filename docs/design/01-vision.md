@@ -401,9 +401,10 @@ cho `project-design`) đi kèm, chỉ tool pi-huly thay MCP. Tương thích
   chiều). Risk: native-ref round-trip fidelity (md link `?_class&_id&_label` ↔
   native ref). Bước 4 verify round-trip test. Bước 8 test markup edge cases
   (tables/code/HTML/Mermaid).
-- **Note**: `@hcengineering/*` cần **GitHub token install** (GitHub Packages
-  registry). ADR rủi ro: nếu registry unavailable → install fail. Mitigation:
-  document token setup rõ Bước 10.
+- **Note**: `@hcengineering/*` publish **public trên npmjs.org** (KHÔNG cần
+  GitHub Packages token — verified 2026-07-27, version 0.7.423). ADR cũ (GitHub
+  token install) đã sai thực tế. Mitigation: install trực tiếp từ npmjs.org,
+  bundle @hcengineering vào dist (NFR-06 consumer no token needed).
 
 ### B.11. D11: Unified `/huly` command (git-like subcommands)
 

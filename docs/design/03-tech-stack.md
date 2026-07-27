@@ -65,8 +65,11 @@
 
 **Conflict/Kiểm tra thêm:**
 
-- `@hcengineering/*` GitHub Packages: maintainer build cần `.npmrc` + token.
-  Consumer `pi install` KHÔNG cần (bundled). Document Bước 10.
+- `@hcengineering/*` publish **public trên npmjs.org** (verified 2026-07-27).
+  Maintainer build + consumer `pi install` đều KHÔNG cần token (KHÔNG cần
+  GitHub Packages registry). D10 note cũ (GitHub token install) sai — install
+  trực tiếp `pnpm add @hcengineering/*` works zero-config. Bundle vào dist cho
+  NFR-06 (consumer no token needed at runtime).
 - ws optional deps (bufferutil/utf-8-validate): bundled hoặc skip (fallback
   pure-JS). Test R2.
 
