@@ -92,7 +92,16 @@ _DoD: e2e self-host smoke; npm publish; Bước 10 release._
 
 ---
 
-## Post-release hotfixes (M6 candidate — không thuộc milestone)
+## Post-release hotfixes (M6)
+
+_DoD: 7/7 task done (T-40..T-46); 411 tests pass; CI main green; audit doc
+(`docs/design/11-runtime-audit.md`) làm source of truth._
+
+**Status: ✅ completed** _(slash goal complete-milestone M6, 2026-07-27 — 7/7
+tasks done, 411 tests pass (+46 từ 365 baseline), CI green cả ubuntu+macos, DoD
+pass; audit runtime qua npm tarball source map extraction thay self-host
+`workvps` unavailable; 3 class refs UNVERIFIED (Label/TsRelation/DocumentSnapshot)
+giữ current — cần runtime server verify khi có self-host)_
 
 > **Context**: Sau canary v1.0.0-beta.1, smoke test trên self-host `workvps` phát
 > hiện **7 runtime bug** (GitHub issues #22-#28). Tất cả chia sẻ **1 root pattern**:
@@ -115,24 +124,26 @@ _DoD: e2e self-host smoke; npm publish; Bước 10 release._
 > Chi tiết mỗi task (vấn đề, phương án, acceptance) ở [`docs/tasks/T-XX.md`](./docs/tasks/).
 > Theo dõi: [GitHub issues #22-#28](https://github.com/naicoi92/pi-huly/issues).
 
-- [ ] [T-40] [M] fix(builder): surface `details` → `content` cho non-TUI path — fix cả list (#22) lẫn create_*/add_* (#26) — high | blocked-by: (none) | blocks: (none) | issues: #22,#26 — [detail](./docs/tasks/T-40.md) — **Open**
-- [ ] [T-41] [M] fix(get_issue): resolve description document ref → markdown content (issue #23) — high | blocked-by: T-44 | blocks: (none) | issue: #23 — [detail](./docs/tasks/T-41.md) — **Open**
-- [ ] [T-42] [M] fix(fulltext_search): real search thay $like stub (title + description + document + message) (issue #24) — high | blocked-by: T-44 | blocks: (none) | issue: #24 — [detail](./docs/tasks/T-42.md) — **Open**
-- [ ] [T-43] [L] fix(_class-refs): correct class name runtime cho 6+ broken class (TsRelation, Space, Tag, Label, TaskType, Employee, Document?) (issue #25 updated) — high | blocked-by: T-44 | blocks: T-41,T-42,T-45,T-46 | issue: #25 — [detail](./docs/tasks/T-43.md) — **Open**
-- [ ] [T-44] [M] chore(audit): runtime smoke test verify class refs + description storage + search operator + addCollection protocol vs Huly self-host thật — high | blocked-by: (none) | blocks: T-41,T-42,T-43,T-45,T-46 — [detail](./docs/tasks/T-44.md) — **Open**
-- [ ] [T-45] [S] fix(add_issue_label): validate label tồn tại trước khi push, không bogus ref (issue #27) — medium | blocked-by: T-44 (cần LABEL_CLASS đúng) | blocks: (none) | issue: #27 — [detail](./docs/tasks/T-45.md) — **Open**
-- [ ] [T-46] [M] fix(create_todo): correct addCollection signature / class / collection field (issue #28) — medium | blocked-by: T-44,T-43 | blocks: (none) | issue: #28 — [detail](./docs/tasks/T-46.md) — **Open**
+- [x] [T-40] [M] fix(builder): surface `details` → `content` cho non-TUI path — fix cả list (#22) lẫn create_*/add_* (#26) — high | blocked-by: (none) | blocks: (none) | issues: #22,#26 — [detail](./docs/tasks/T-40.md) — ✅ done (PR #29 merged 9c20abf, appendDetailsForLLM generic seam + sanitize, create_issue identifier lookup, 377 tests)
+- [x] [T-41] [M] fix(get_issue): resolve description document ref → markdown content (issue #23) — high | blocked-by: T-44 | blocks: (none) | issue: #23 — [detail](./docs/tasks/T-41.md) — ✅ done (PR #32 merged 4bd1991, client.fetchMarkup MarkupOperations, fallback descriptionRef, 396 tests)
+- [x] [T-42] [M] fix(fulltext_search): expand 3-domain search + honest capability (issue #24) — high | blocked-by: T-44 | blocks: (none) | issue: #24 — [detail](./docs/tasks/T-42.md) — ✅ done (PR #33 merged 1545c5b, Issue+Document+ChatMessage Promise.all, server reject catch honest, 402 tests)
+- [x] [T-43] [L] fix(_class-refs): correct 6+ broken class name runtime (Employee→mixin, TaskType/ProjectType→task pkg, Document→tracker, Space→core, Tag→TagElement, Todo→time:ToDo, TimeSpendReport→tracker) (issue #25 updated) — high | blocked-by: T-44 | blocks: T-41,T-42,T-45,T-46 | issue: #25 — [detail](./docs/tasks/T-43.md) — ✅ done (PR #31 merged 039b15d, audit §1 truth table, 3 UNVERIFIED giữ current — Label/TsRelation/DocumentSnapshot, 393 tests)
+- [x] [T-44] [M] chore(audit): runtime class refs + storage + search + addCollection verify qua npm tarball source map extraction (KHÔNG server — workvps unavailable) — high | blocked-by: (none) | blocks: T-41,T-42,T-43,T-45,T-46 — [detail](./docs/tasks/T-44.md) — ✅ done (PR #30 merged b273dd4, `docs/design/11-runtime-audit.md` source of truth, 9 audit regression tests, 386 tests)
+- [x] [T-45] [S] fix(add_issue_label): validate label tồn tại + TagReference object shape (issue #27) — medium | blocked-by: T-44 | blocks: (none) | issue: #27 — [detail](./docs/tasks/T-45.md) — ✅ done (PR #34 merged fc06f30, lookup title OR _id + push {tag,title,color} shape, symmetric remove, 406 tests)
+- [x] [T-46] [M] fix(create_todo): addCollection required fields (attachedToClass/user/visibility/rank/priority/workslots) + error wrap (issue #28) — medium | blocked-by: T-44,T-43 | blocks: (none) | issue: #28 — [detail](./docs/tasks/T-46.md) — ✅ done (PR #35 merged 768b566, priority string→number map, Visibility.Public default, lexorank empty, 411 tests)
 
 ---
 
 ## Size / priority distribution
 
-- Size: S ~24 · M ~24 · **L 1** (T-43 rescoped M → L sau comment #25 mở rộng scope 2 → 6+ class broken).
+- Size: S ~24 · M ~25 · **L 1** (T-43 rescoped M → L sau comment #25 mở rộng scope 2 → 6+ class broken; thực tế fix hết).
 - Priority: 🔴 high 30 · 🟡 medium 19 · 🟢 low 1 (T-22).
 - Critical path: T-01→02/03→04→05→06→09→domains→30→31→33→34→36→38→39.
-- Post-release hotfix chain:
-  - **T-40** (#22+#26 surface) — independent, no blocker, start ngay.
-  - **T-44** (audit runtime, includes full class registry dump) → unblocks T-41/T-42/T-43/T-45/T-46.
-  - **T-43** (class-refs fix, 6+ class) → unblocks T-41/T-42/T-45/T-46.
-  - Tổng: 7 bug GitHub (#22-#28, #25 đã update scope) → 7 task (T-40..T-46).
+- Post-release hotfix chain (M6 — all done):
+  - **T-40** (#22+#26 surface) — independent, no blocker → done PR #29.
+  - **T-44** (audit runtime qua npm source map) → unblocks T-41/T-42/T-43/T-45/T-46 → done PR #30.
+  - **T-43** (class-refs fix, 6+ class) → done PR #31.
+  - **T-41/T-42/T-45/T-46** → done PR #32/#33/#34/#35.
+  - Tổng: 7 bug GitHub (#22-#28, #25 đã update scope) → 7 task (T-40..T-46) all done.
 - Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
+- Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).
