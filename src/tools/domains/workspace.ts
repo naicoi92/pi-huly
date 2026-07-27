@@ -138,10 +138,37 @@ export const tools: HulyToolDefinition[] = [
           details: { updated: false },
         };
       }
+      // T-50 #40: lookup Person record để resolve .space ĐÚNG (Person.space),
+      // KHÔNG dùng currentUser.id làm space. Bug gốc: updateDoc(PERSON_CLASS,
+      // currentUser.id, currentUser.id, ops) → cả space + objectId = Person._id
+      // → server match (_id AND space) không tìm thấy doc → TxUpdateDoc skip,
+      // update KHÔNG persist (silent). Warning spam "no document found".
+      const person = await tctx.client.findOne(PERSON_CLASS, {
+        _id: idRef(tctx.currentUser.id),
+      });
+      if (!person) {
+        return {
+          content: `Person "${tctx.currentUser.id}" not found. Cannot update profile.`,
+          isError: true,
+          details: { userId: tctx.currentUser.id },
+        };
+      }
+      // T-50 review fix: schema drift guard — Person record tồn tại nhưng
+      // space/_id field missing (data corruption, partial import). KHÔNG gửi
+      // updateDoc với undefined → silent no-op (reintroduce bug gốc class).
+      const personSpace = (person as { space?: unknown }).space;
+      const personId = (person as { _id?: unknown })._id;
+      if (personSpace === undefined || personId === undefined) {
+        return {
+          content: `Person "${tctx.currentUser.id}" record missing space/_id field (schema drift). Cannot update profile.`,
+          isError: true,
+          details: { userId: tctx.currentUser.id, personRecord: person },
+        };
+      }
       await tctx.client.updateDoc(
         PERSON_CLASS,
-        idRef(tctx.currentUser.id),
-        idRef(tctx.currentUser.id),
+        personSpace as never,
+        personId as never,
         operations,
       );
       return {
