@@ -135,3 +135,66 @@ describe("T-52 #42: attach_tag FK validate + TagReference shape", () => {
     expect(client.updateDoc).not.toHaveBeenCalled();
   });
 });
+
+// T-52 review fix: detach_tag symmetric với attach_tag — $pull bằng { tag: _id }
+// object (KHÔNG raw string). Regression: trước fix $pull raw string không match
+// TagReference objects attach_tag push → tag undeletable.
+describe("T-52 review fix: detach_tag symmetric shape ($pull object)", () => {
+  it("tag tồn tại + trên issue → $pull bằng { tag: _id } object (KHÔNG raw string)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "i1",
+        space: "sp1",
+        identifier: "PD-1",
+        tags: [{ tag: "tag-1", title: "bug", color: "#f00" }],
+      })
+      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: "#f00" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_detach_tag");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", tag: "tag-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(client.updateDoc).toHaveBeenCalledTimes(1);
+    const call = client.updateDoc.mock.calls[0];
+    const ops = call?.[3] as { $pull: { tags: { tag: string } } };
+    // $pull bằng { tag: _id } object — match shape attach_tag push
+    expect(ops.$pull.tags).toMatchObject({ tag: "tag-1" });
+  });
+
+  it("tag KHÔNG có trên issue → idempotent no-op, updateDoc KHÔNG gọi", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "i1",
+        space: "sp1",
+        identifier: "PD-1",
+        tags: [], // tag không có
+      })
+      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: "#f00" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_detach_tag");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", tag: "tag-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/no-op|idempotent/i);
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+});

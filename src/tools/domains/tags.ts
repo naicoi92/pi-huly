@@ -243,12 +243,36 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
+      // T-52 review fix: symmetric với attach_tag — resolve tag._id + $pull
+      // bằng { tag: _id } object (KHÔNG raw string). Trước đây $pull raw string
+      // không match TagReference objects attach_tag push → tag undeletable
+      // (regression introduced bởi attach_tag shape fix).
+      const tag = await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.tag) });
+      if (!tag) {
+        return {
+          content: `Tag "${params.tag}" not found.`,
+          isError: true,
+          details: { identifier: params.identifier, tag: params.tag },
+        };
+      }
+      const tagDoc = tag as { _id: string };
+      // Idempotent: nếu tag không có trên issue → no-op (KHÔNG crash).
+      const existingTags = ((issue as { tags?: Array<{ tag?: string }> }).tags ?? []) as Array<{
+        tag?: string;
+      }>;
+      if (!existingTags.some((t) => t?.tag === tagDoc._id)) {
+        return {
+          content: `Tag ${params.tag} not on ${params.identifier} (no-op).`,
+          details: { detached: false, idempotent: true, tag: params.tag },
+        };
+      }
+      // $pull bằng tag ref object (match shape khi push).
       await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
-        $pull: { tags: idRef(params.tag) },
+        $pull: { tags: { tag: tagDoc._id } },
       });
       return {
         content: `Detached tag ${params.tag} from ${params.identifier}.`,
-        details: { identifier: params.identifier, tag: params.tag },
+        details: { identifier: params.identifier, tag: params.tag, tagId: tagDoc._id },
       };
     },
   }),

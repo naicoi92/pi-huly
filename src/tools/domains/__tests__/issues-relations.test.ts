@@ -172,4 +172,56 @@ describe("T-52 #42: link_document_to_issue message tách (issue vs document)", (
     const text = result.content[0]?.text ?? "";
     expect(text).toMatch(/document.*not found/i);
   });
+
+  it("issue + document tồn tại → $push documents với idRef(document)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", documents: [] })
+      .mockResolvedValueOnce({ _id: "doc-1", title: "Spec" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_link_document_to_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", document: "doc-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(client.updateDoc).toHaveBeenCalledTimes(1);
+    const call = client.updateDoc.mock.calls[0];
+    const ops = call?.[3] as { $push: { documents: string } };
+    expect(ops.$push.documents).toBe("doc-1");
+  });
+
+  it("document đã link (idempotent) → no-op, updateDoc KHÔNG gọi", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "i1",
+        space: "sp1",
+        identifier: "PD-1",
+        documents: ["doc-1"], // đã link
+      })
+      .mockResolvedValueOnce({ _id: "doc-1", title: "Spec" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_link_document_to_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", document: "doc-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/already|no-op|idempotent/i);
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
 });
