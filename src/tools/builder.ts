@@ -282,13 +282,16 @@ export function defineHulyTool<P extends ToolParams>(
         // Sanitize content (08 §A no-leak) — handler có thể return entity có
         // token user paste (vd issue description). Success path cũng strip.
         const contentText = sanitize(result.content);
-        // Non-TUI mode (hasUI=false — json/print headless LLM-only): KHÔNG có
+        // Non-TUI mode (hasUI !== true — json/print headless LLM-only): KHÔNG có
         // render hook consumer → details (array list, id entity) bị mất khỏi
         // context LLM. Append summary details → content để LLM thấy đủ data
         // lifecycle (#22 list giấu array, #26 create giấu id). TUI mode giữ
         // nguyên — render layer (render/*.ts) consume details trực tiếp.
+        // T-48 #37: dùng `!== true` thay `=== false` — defensive khi agent
+        // runtime omit field hoặc detect heuristic miss (hasUI=undefined).
+        // Chỉ TUI thật (hasUI===true) mới skip append; mọi giá trị khác append.
         const finalContent =
-          ctx.hasUI === false && result.isError !== true
+          ctx.hasUI !== true && result.isError !== true
             ? appendDetailsForLLM(contentText, result.details)
             : contentText;
         return {
