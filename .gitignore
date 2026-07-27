@@ -145,3 +145,6 @@ vite.config.ts.timestamp-*
 # pi-huly local state
 .task-implement-config.json
 .pi/
+
+# npm local config (KHÔNG commit — có thể chứa authToken env ref)
+.npmrc
