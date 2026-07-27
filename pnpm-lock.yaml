@@ -29,6 +29,9 @@ importers:
       '@hcengineering/platform':
         specifier: ^0.7.423
         version: 0.7.423
+      '@hcengineering/text-core':
+        specifier: ^0.7.423
+        version: 0.7.423
       '@hcengineering/text-markdown':
         specifier: ^0.7.423
         version: 0.7.423
