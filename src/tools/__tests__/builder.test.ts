@@ -512,6 +512,34 @@ describe("defineHulyTool execute — non-TUI surface details (T-40 #22 #26)", ()
     expect(result.details).toMatchObject({ count: 1 });
   });
 
+  // T-48 #37: hasUI=undefined (agent runtime omit field hoặc detect heuristic miss)
+  // → phải append details (LLM cần data). Strict `=== false` miss case này →
+  // list_* chỉ trả count. Defensive: `!== true` (chỉ TUI thật mới skip append).
+  it("hasUI=undefined (runtime omit field) → append details như non-TUI (#37 defensive)", async () => {
+    const tool = defineHulyTool({
+      name: "list_issues",
+      label: "List",
+      description: "list",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "Found 1 issue(s).",
+        details: { count: 1, issues: [{ identifier: "PD-1", title: "X" }] },
+      }),
+    });
+    const ctx = {
+      // hasUI omitted — agent runtime có thể không set field
+      cwd: "/proj",
+      ui: { confirm: vi.fn() },
+    } as never;
+    const result = await tool.execute("tc1", {}, undefined, undefined, ctx);
+    const text = result.content[0]?.text ?? "";
+    // Append vẫn trigger (undefined !== true) → LLM thấy array data
+    expect(text).toContain("PD-1");
+    expect(text).toContain("Found 1 issue(s).");
+    // details vẫn nguyên vẹn cho render layer (full non-TUI contract)
+    expect(result.details).toMatchObject({ count: 1 });
+  });
+
   it("hasUI=false + array lớn → cap tránh bloat context (top items + '... và N khác')", async () => {
     const big = Array.from({ length: 60 }, (_, i) => ({
       identifier: `PD-${i + 1}`,
