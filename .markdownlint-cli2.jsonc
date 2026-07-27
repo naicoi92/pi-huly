@@ -12,12 +12,21 @@
     "blanks-around-headings": false,
     "blanks-around-lists": false
   },
-  "globs": ["docs/**/*.md", "README.md"],
+  "globs": ["docs/**/*.md", "README.md", "skills/**/*.md"],
   "ignores": [
     "node_modules",
     "dist",
     "CHANGELOG.md",
     "TASKS.md",
     "docs/design/plans/**"
+  ],
+  "overrides": [
+    {
+      "filter": ["skills/**/*.md"],
+      "config": {
+        "blanks-around-fences": false
+      },
+      "combine": "merge"
+    }
   ]
 }
