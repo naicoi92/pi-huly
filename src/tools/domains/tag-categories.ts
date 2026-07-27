@@ -1,0 +1,116 @@
+// tools/domains/tag-categories.ts — Tag categories domain (4 tools).
+// Design: 06-api.md §4 Tag-categories. CRUD.
+
+import { Type } from "typebox";
+import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
+import { TAG_CATEGORY_CLASS, spaceRef } from "./_class-refs.js";
+import { workspaceParam } from "./_common.js";
+
+export const tools: HulyToolDefinition[] = [
+  // 1. list_tag_categories
+  defineHulyTool({
+    name: "list_tag_categories",
+    label: "List tag categories",
+    description: "List tag categories.",
+    parameters: Type.Object({ workspace: workspaceParam }),
+    async handler(_params, tctx) {
+      const cats = await tctx.client.findAll(TAG_CATEGORY_CLASS, {}, {});
+      const list = cats.map((c) => ({
+        _id: c._id,
+        title: (c as { title?: string }).title ?? "",
+        targetClass: (c as { targetClass?: string }).targetClass,
+      }));
+      return {
+        content: `Found ${list.length} tag category(ies).`,
+        details: { count: list.length, categories: list },
+      };
+    },
+  }),
+
+  // 2. create_tag_category
+  defineHulyTool({
+    name: "create_tag_category",
+    label: "Create tag category",
+    description: "Create tag category.",
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      title: Type.String(),
+      targetClass: Type.Optional(Type.String()),
+    }),
+    async handler(params, tctx) {
+      const id = await tctx.client.createDoc(TAG_CATEGORY_CLASS, spaceRef(tctx.workspace), {
+        title: params.title,
+        targetClass: params.targetClass,
+      });
+      return {
+        content: `Created tag category "${params.title}".`,
+        details: { id, title: params.title },
+      };
+    },
+  }),
+
+  // 3. update_tag_category
+  defineHulyTool({
+    name: "update_tag_category",
+    label: "Update tag category",
+    description: "Update tag category (title, targetClass).",
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      category: Type.String(),
+      title: Type.Optional(Type.String()),
+      targetClass: Type.Optional(Type.String()),
+    }),
+    async handler(params, tctx) {
+      const c = await tctx.client.findOne(TAG_CATEGORY_CLASS, { _id: params.category });
+      if (!c) {
+        return {
+          content: `Tag category "${params.category}" not found.`,
+          isError: true,
+          details: { category: params.category },
+        };
+      }
+      const ops: Record<string, unknown> = {};
+      if (params.title !== undefined) ops.title = params.title;
+      if (params.targetClass !== undefined) ops.targetClass = params.targetClass;
+      if (Object.keys(ops).length === 0) {
+        return { content: "No fields to update.", details: { updated: false } };
+      }
+      await tctx.client.updateDoc(TAG_CATEGORY_CLASS, c.space as never, c._id as never, ops);
+      return {
+        content: `Updated tag category ${params.category}.`,
+        details: { updated: true, fields: Object.keys(ops) },
+      };
+    },
+  }),
+
+  // 4. delete_tag_category — destructive
+  defineHulyTool({
+    name: "delete_tag_category",
+    label: "Delete tag category",
+    description: "Delete tag category (destructive).",
+    destructive: true,
+    destructiveContext: (p) => ({
+      type: "tag category",
+      id: (p as { category?: string }).category ?? "<unknown>",
+    }),
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      category: Type.String(),
+    }),
+    async handler(params, tctx) {
+      const c = await tctx.client.findOne(TAG_CATEGORY_CLASS, { _id: params.category });
+      if (!c) {
+        return {
+          content: `Tag category "${params.category}" not found.`,
+          isError: true,
+          details: { category: params.category },
+        };
+      }
+      await tctx.client.removeDoc(TAG_CATEGORY_CLASS, c.space as never, c._id as never);
+      return {
+        content: `Deleted tag category ${params.category}.`,
+        details: { deleted: true, category: params.category },
+      };
+    },
+  }),
+];

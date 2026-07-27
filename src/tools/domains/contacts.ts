@@ -1,0 +1,51 @@
+// tools/domains/contacts.ts — Contacts domain (2 tools, read-only).
+// Design: 06-api.md §4 Contacts. List employees/persons cho assignee resolution.
+
+import { Type } from "typebox";
+import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
+import { PERSON_CLASS, EMPLOYEE_CLASS } from "./_class-refs.js";
+import { workspaceParam, limitParam } from "./_common.js";
+
+export const tools: HulyToolDefinition[] = [
+  // 1. list_employees
+  defineHulyTool({
+    name: "list_employees",
+    label: "List employees",
+    description: "List employees trong workspace (cho assignee resolution).",
+    parameters: Type.Object({ workspace: workspaceParam, limit: limitParam }),
+    async handler(params, tctx) {
+      const limit = typeof params.limit === "number" ? params.limit : 50;
+      const employees = await tctx.client.findAll(EMPLOYEE_CLASS, {}, { limit });
+      const list = employees.map((e) => ({
+        id: e._id,
+        name: (e as { name?: string }).name ?? "",
+        email: (e as { email?: string }).email,
+      }));
+      return {
+        content: `Found ${list.length} employee(s).`,
+        details: { count: list.length, employees: list },
+      };
+    },
+  }),
+
+  // 2. list_persons
+  defineHulyTool({
+    name: "list_persons",
+    label: "List persons",
+    description: "List persons (contacts) trong workspace.",
+    parameters: Type.Object({ workspace: workspaceParam, limit: limitParam }),
+    async handler(params, tctx) {
+      const limit = typeof params.limit === "number" ? params.limit : 50;
+      const persons = await tctx.client.findAll(PERSON_CLASS, {}, { limit });
+      const list = persons.map((p) => ({
+        id: p._id,
+        name: (p as { name?: string }).name ?? "",
+        email: (p as { email?: string }).email,
+      }));
+      return {
+        content: `Found ${list.length} person(s).`,
+        details: { count: list.length, persons: list },
+      };
+    },
+  }),
+];

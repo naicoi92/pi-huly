@@ -33,32 +33,32 @@ _DoD: mock Huly WS+REST integration pass; markup round-trip fixtures green (R8).
 
 _DoD: ~102 tool đăng ký; typebox schema valid; confirm gate; mock CRUD pass._
 
-**Status: 🟡 in-progress** _(slash goal complete-milestone M2, 2026-07-27 — 0/23 tasks done)_
+**Status: 🟡 in-progress** _(slash goal complete-milestone M2, 2026-07-27 — 23/23 tasks done, 102 tools, 273 tests)_
 
-- [ ] [T-09] [M] tools/builder.ts (defineHulyTool seam: huly_ prefix, resolve ws+project, getClient, error map, confirm gate, render hook, assignee default) + unit — high | blocked-by: T-06,T-07,T-08b | blocks: T-10, T-11..T-29
-- [ ] [T-10] [S] tools/confirm.ts (confirmDestructive: ctx.ui.confirm; non-TUI auto-deny) + unit — high | blocked-by: T-09 | blocks: domains
-- [ ] [T-11] [M] tools/domains/documents.ts (10: list/get/create/update/delete_teamspace, list/get/create/edit/delete_document) — high | blocked-by: T-09,T-10 | blocks: T-30
-- [ ] [T-12] [S] tools/domains/document-snapshots.ts (2: list/get_document_snapshot) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-13] [S] tools/domains/spaces.ts (5: list/get_space, list/get_space_type, update_space) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-14] [S] tools/domains/workspace.ts (5: get_workspace_info, list_workspaces, list_workspace_members, get/update_user_profile) — high | blocked-by: T-09 | blocks: T-30
-- [ ] [T-15] [M] tools/domains/projects.ts (6: list/get/create/update/delete_project, list_statuses) — high | blocked-by: T-09 | blocks: T-30
-- [ ] [T-16] [S] tools/domains/task-management.ts (5: list_project_types, get_project_type, list_task_types, create_task_type, create_issue_status idempotent) — high | blocked-by: T-09 | blocks: T-19
-- [ ] [T-17] [S] tools/domains/components.ts (6: list/get/create/update/set_issue/delete_component) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-18] [S] tools/domains/milestones.ts (6: list/get/create/update/set_issue/delete_milestone) — high | blocked-by: T-09 | blocks: T-30
-- [ ] [T-19a] [M] tools/domains/issues-core.ts (8: list/get/create/update/delete/move_issue, add/remove_issue_label) — high | blocked-by: T-09,T-10,T-16 | blocks: T-30, T-19b, T-19c
-- [ ] [T-19b] [M] tools/domains/issues-templates.ts (8: list/get/create/create_from/update/delete_template, add/remove_template_child) — medium | blocked-by: T-19a | blocks: T-30
-- [ ] [T-19c] [S] tools/domains/issues-relations.ts (5: add/remove/list_issue_relation, link/unlink_document_to_issue) — high | blocked-by: T-19a | blocks: T-30
-- [ ] [T-20] [S] tools/domains/labels.ts (4: list/create/update/delete_label — GLOBAL namespace) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-21] [S] tools/domains/tags.ts (7: list/create/update/delete_tag, list_attached, attach/detach_tag) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-22] [S] tools/domains/tag-categories.ts (4: list/create/update/delete_tag_category) — low | blocked-by: T-09 | blocks: T-30
-- [ ] [T-23] [S] tools/domains/comments.ts (4: list/add/update/delete_comment, body not message) — high | blocked-by: T-09 | blocks: T-30
-- [ ] [T-24] [S] tools/domains/attachments.ts (5: list/get/add_attachment, add_issue_attachment, download_attachment) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-25] [S] tools/domains/search.ts (1: fulltext_search global) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-26] [S] tools/domains/deletion.ts (1: preview_deletion cascade) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-27] [S] tools/domains/time.ts (1: log_time minutes) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-28] [S] tools/domains/todos.ts (7: list/get/create/update/complete/reopen/delete_todo) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-29] [S] tools/domains/contacts.ts (2: list_employees, list_persons — read, assignee resolution) — medium | blocked-by: T-09 | blocks: T-30
-- [ ] [T-30] [S] tools/register.ts (register all 19 domain modules) — high | blocked-by: T-11..T-29 | blocks: T-31,T-32,T-33
+- [x] [T-09] [M] tools/builder.ts (defineHulyTool seam: huly_ prefix, resolve ws+project, getClient, error map, confirm gate, render hook, assignee default) + unit — high | blocked-by: T-06,T-07,T-08b | blocks: T-10, T-11..T-29 — ✅ done (PR #11 merged 332d052, 26 tests, sanitize centralized)
+- [x] [T-10] [S] tools/confirm.ts (confirmDestructive: ctx.ui.confirm; non-TUI auto-deny) + unit — high | blocked-by: T-09 | blocks: domains — ✅ done (PR #11 merged 332d052)
+- [x] [T-11] [M] tools/domains/documents.ts (10: list/get/create/update/delete_teamspace, list/get/create/edit/delete_document) — high | blocked-by: T-09,T-10 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-12] [S] tools/domains/document-snapshots.ts (2: list/get_document_snapshot) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-13] [S] tools/domains/spaces.ts (5: list/get_space, list/get_space_type, update_space) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-14] [S] tools/domains/workspace.ts (5: get_workspace_info, list_workspaces, list_workspace_members, get/update_user_profile) — high | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12, 8 tests)
+- [x] [T-15] [M] tools/domains/projects.ts (6: list/get/create/update/delete_project, list_statuses) — high | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-16] [S] tools/domains/task-management.ts (5: list_project_types, get_project_type, list_task_types, create_task_type, create_issue_status idempotent) — high | blocked-by: T-09 | blocks: T-19 — ✅ done (PR #12)
+- [x] [T-17] [S] tools/domains/components.ts (6: list/get/create/update/set_issue/delete_component) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-18] [S] tools/domains/milestones.ts (6: list/get/create/update/set_issue/delete_milestone) — high | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-19a] [M] tools/domains/issues-core.ts (8: list/get/create/update/delete/move_issue, add/remove_issue_label) — high | blocked-by: T-09,T-10,T-16 | blocks: T-30, T-19b, T-19c — ✅ done (PR #12)
+- [x] [T-19b] [M] tools/domains/issues-templates.ts (8: list/get/create/create_from/update/delete_template, add/remove_template_child) — medium | blocked-by: T-19a | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-19c] [S] tools/domains/issues-relations.ts (5: add/remove/list_issue_relation, link/unlink_document_to_issue) — high | blocked-by: T-19a | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-20] [S] tools/domains/labels.ts (4: list/create/update/delete_label — GLOBAL namespace) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-21] [S] tools/domains/tags.ts (7: list/create/update/delete_tag, list_attached, attach/detach_tag) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-22] [S] tools/domains/tag-categories.ts (4: list/create/update/delete_tag category) — low | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-23] [S] tools/domains/comments.ts (4: list/add/update/delete_comment, body not message) — high | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-24] [S] tools/domains/attachments.ts (5: list/get/add_attachment, add_issue_attachment, download_attachment) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-25] [S] tools/domains/search.ts (1: fulltext_search global) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-26] [S] tools/domains/deletion.ts (1: preview_deletion cascade) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-27] [S] tools/domains/time.ts (1: log_time minutes) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-28] [S] tools/domains/todos.ts (7: list/get/create/update/complete/reopen/delete_todo) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-29] [S] tools/domains/contacts.ts (2: list_employees, list_persons — read, assignee resolution) — medium | blocked-by: T-09 | blocks: T-30 — ✅ done (PR #12)
+- [x] [T-30] [S] tools/register.ts (register all 19 domain modules) — high | blocked-by: T-11..T-29 | blocks: T-31,T-32,T-33 — ✅ done (PR #12, 102 tools registered)
 
 ## M3 Commands + render + factory
 
