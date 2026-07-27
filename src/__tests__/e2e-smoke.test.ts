@@ -38,10 +38,6 @@ vi.mock("../config/config.js", () => ({
   resolveByCwd: vi.fn().mockReturnValue({ workspace: "myteam", project: "PD" }),
 }));
 
-vi.mock("../client/client.js", () => ({
-  createHulyClient: vi.fn(),
-}));
-
 // Mock pool.getClient — builder import trực tiếp từ client/pool.js. Trả về
 // MockHulyStore (inject từ test, set qua mockResolvedValue trong beforeEach).
 vi.mock("../client/pool.js", () => ({
@@ -73,6 +69,13 @@ import { tools as searchTools } from "../tools/domains/search.js";
  * In-memory HulyClient mock. Stateful: createDoc insert doc thật, findAll
  * trả list thật (filter theo query match), updateDoc mutate field thật.
  * Mô phỏng Huly CRUD semantics đủ cho integration glue verify.
+ *
+ * LIMITATIONS (mock fidelity — KHÔNG = real Huly):
+ *   - `$like` pattern: simplified substring/regex match, KHÔNG PostgreSQL LIKE
+ *     full semantics (wildcards `_` NOT processed).
+ *   - `$push`/`$pull` array ops: KHÔNG support — Object.assign literal.
+ *     Smoke 10 tool không chạm; nếu sau này add test label tools → extend mock.
+ *   - createDoc id param (4th) ignored — luôn gen random.
  */
 class MockHulyStore {
   private docs = new Map<string, Record<string, unknown>>();
@@ -251,7 +254,7 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
   });
 
   // 1. huly_create_issue
-  it("create_issue: creates issue doc + returns id", async () => {
+  it("create_issue: creates issue doc + returns id + auto-resolve assignee (D15)", async () => {
     // Seed project để handler resolve
     store.seed("tracker:class:Project", {
       identifier: "PD",
@@ -260,6 +263,7 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
     const tool = findTool(issueCoreTools, "huly_create_issue");
     const result = await tool.execute(
       "call-1",
+      // KHÔNG truyền assignee → builder auto-fill currentUser.email (D15 FR-18)
       { title: "Smoke test issue", priority: "high" },
       undefined,
       undefined,
@@ -269,7 +273,10 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
     expect(result.content[0]?.text).toMatch(/Created issue/);
     expect(result.details).toMatchObject({ title: "Smoke test issue" });
     // Side-effect: issue doc thật được insert
-    expect(store.peek(result.details.id as string | undefined)).toBeDefined();
+    const inserted = store.peek(result.details.id as string | undefined);
+    expect(inserted).toBeDefined();
+    // D15 FR-18: assignee auto-resolved = currentUser email khi absent
+    expect(inserted?.assignee).toBe("user@example.com");
   });
 
   // 2. huly_list_issues
@@ -398,6 +405,8 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toMatch(/Comment added to PD-8/);
     expect(result.details).toMatchObject({ identifier: "PD-8" });
+    // Side-effect: comment doc thật được insert qua addCollection
+    expect(store.peek(result.details.id as string | undefined)).toBeDefined();
   });
 
   // 9. huly_fulltext_search
