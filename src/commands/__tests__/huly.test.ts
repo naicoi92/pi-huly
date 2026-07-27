@@ -146,6 +146,19 @@ describe("/huly status", () => {
     const result = await runHulyCommand("status", ctx);
     expect(result.message).toContain("pool: (no active connections)");
   });
+
+  it("calls health() with bound workspace when cwd bound", async () => {
+    const { health } = await import("../../client/pool.js");
+    await writeConfig({
+      version: 1,
+      transport: "ws",
+      projects: { [CWD]: { workspace: "ws1", project: "PD" } },
+    });
+    await writeCreds({ ws1: { url: "https://h", workspace: "prod", token: "t" } });
+    const ctx = makeCtx();
+    await runHulyCommand("status", ctx);
+    expect(health).toHaveBeenCalledWith("ws1");
+  });
 });
 
 // === /huly workspace list|add|remove ===
@@ -279,6 +292,15 @@ describe("/huly (smart)", () => {
     // init flow starts → prompt → user cancel → "cancelled"
     expect(result.message.includes("cancelled") || result.message.includes("Init")).toBe(true);
   });
+
+  it("unbound + non-TUI → warning hint link (KHÔNG contradictory init)", async () => {
+    const ctx = makeCtx({ hasUI: false });
+    const result = await runHulyCommand("", ctx);
+    expect(result.type).toBe("warning");
+    expect(result.message).toContain("/huly link");
+    // KHÔNG có notify "starting init" (tránh contradictory message)
+    expect(ctx.ui.notify).not.toHaveBeenCalled();
+  });
 });
 
 // === /huly init (UC-01) ===
@@ -311,13 +333,15 @@ describe("/huly init", () => {
     // findByName returns 0 → prompt url + auth → addWorkspace
     // getCurrentUser verify OK → list_projects empty → create new
     const ctx = makeCtx();
+    // Flow inputs (input prompts theo thứ tự gọi):
+    //   [0] ws name, [1] url, [2] token (sau select "Token"),
+    //   [3] project name, [4] project identifier (sau select "+ Create new")
     const inputs = [
       "prod-workspace", // ws name
       "https://huly.io", // url
-      "Token", // (unused — select controls flow)
-      "tok123", // token
+      "tok123", // token (sau select auth=Token)
       "My Project", // project name
-      "MP", // identifier
+      "MP", // project identifier
     ];
     const selects = ["Token", "+ Create new project"];
     let inputIdx = 0;
@@ -331,8 +355,13 @@ describe("/huly init", () => {
     expect(result.type).toBe("info");
     expect(result.message).toContain("Bound");
     expect(result.message).toContain(CWD);
-    // createDoc được gọi (create_project)
-    expect(mockClient.createDoc).toHaveBeenCalled();
+    expect(result.message).toContain('workspace "prod-workspace"');
+    expect(result.message).toContain('project "MP"');
+    // create_project createDoc args chính xác (PROJECT_CLASS, space, {name, identifier})
+    expect(mockClient.createDoc).toHaveBeenCalledWith("tracker:class:Project", "prod-workspace", {
+      name: "My Project",
+      identifier: "MP",
+    });
   });
 
   it("reuse existing single-match workspace", async () => {
@@ -350,12 +379,13 @@ describe("/huly init", () => {
     const result = await runHulyCommand("init", ctx);
     expect(result.message).toContain("Bound");
     expect(result.message).toContain('workspace "prod"');
-    // KHÔNG prompt url khi reuse (chỉ prompt name + project name + identifier = 3 inputs)
+    // KHÔNG prompt url khi reuse (chỉ prompt name + project name + identifier = 3 inputs).
+    // Lọc theo arg 0 (title) — arg 1 là placeholder luôn undefined khi không truyền.
     const inputCalls = (ctx.ui.input as ReturnType<typeof vi.fn>).mock.calls;
-    const urlPrompts = inputCalls.filter(
-      ([, p]) => p === "Huly URL (vd https://huly.example.com):",
-    );
+    const urlPrompts = inputCalls.filter(([t]) => t === "Huly URL (vd https://huly.example.com):");
     expect(urlPrompts).toHaveLength(0);
+    // ws name prompt phải được gọi (arg đầu)
+    expect(inputCalls[0]?.[0]).toBe("Huly workspace name:");
   });
 
   it("ambiguous same-name → disambiguate select", async () => {
@@ -392,5 +422,44 @@ describe("/huly init", () => {
     expect(result.type).toBe("error");
     expect(result.message).toContain("Auth/connection failed");
     expect(result.message).toContain("Unauthorized");
+  });
+
+  it("invalid project identifier → cancelled (no createDoc)", async () => {
+    await writeCreds({ prod: { url: "https://h", workspace: "prod", token: "t" } });
+    const ctx = makeCtx();
+    // ws name, project name, identifier quá dài + ký tự lạ (KHÔNG fix bằng uppercase)
+    const inputs = ["prod", "My Proj", "toolong!!"];
+    const selects = ["+ Create new project"];
+    let inputIdx = 0;
+    let selectIdx = 0;
+    ctx.ui.input = vi.fn(() => Promise.resolve(inputs[inputIdx++]));
+    ctx.ui.select = vi.fn(() => Promise.resolve(selects[selectIdx++]));
+    ctx.ui.notify = vi.fn();
+
+    const result = await runHulyCommand("init", ctx);
+    // KHÔNG bind, KHÔNG createDoc (validation reject trước)
+    expect(result.message).toContain("cancelled");
+    expect(mockClient.createDoc).not.toHaveBeenCalled();
+  });
+
+  it("lowercase identifier → auto-uppercase + bound", async () => {
+    await writeCreds({ prod: { url: "https://h", workspace: "prod", token: "t" } });
+    const ctx = makeCtx();
+    const inputs = ["prod", "My Proj", "mp"]; // lowercase → auto "MP"
+    const selects = ["+ Create new project"];
+    let inputIdx = 0;
+    let selectIdx = 0;
+    ctx.ui.input = vi.fn(() => Promise.resolve(inputs[inputIdx++]));
+    ctx.ui.select = vi.fn(() => Promise.resolve(selects[selectIdx++]));
+    ctx.ui.notify = vi.fn();
+
+    const result = await runHulyCommand("init", ctx);
+    expect(result.message).toContain("Bound");
+    expect(result.message).toContain('project "MP"');
+    // createDoc nhận identifier đã uppercase
+    expect(mockClient.createDoc).toHaveBeenCalledWith("tracker:class:Project", "prod", {
+      name: "My Proj",
+      identifier: "MP",
+    });
   });
 });

@@ -33,6 +33,7 @@ import {
 } from "../config/config.js";
 import { getClient, health, closeAll } from "../client/pool.js";
 import { createHulyClient } from "../client/client.js";
+import { classRef, spaceRef } from "../tools/domains/_class-refs.js";
 import { HULY_VERSION } from "../version.js";
 
 /**
@@ -138,13 +139,21 @@ export async function runHulyCommand(rawArgs: string, ctx: CommandContext): Prom
 
 // === Smart (no-arg) ===
 
-/** `/huly` no-arg: cwd bound → status; unbound → init flow. */
+/** `/huly` no-arg: cwd bound → status; unbound → init flow (TUI only). */
 async function runSmart(ctx: CommandContext): Promise<CommandResult> {
   const binding = await safeResolveByCwd(ctx);
   if (binding !== undefined) {
     return runStatus(ctx);
   }
-  // Unbound → init flow
+  // Unbound: init flow yêu cầu interactive UI. Non-TUI → hint link manual
+  // (tránh contradictory messages: notify "starting init" rồi init error "requires UI").
+  if (ctx.hasUI !== true) {
+    return {
+      message:
+        "No Huly binding for this directory. Use `/huly link <workspace> <project>` to bind (non-interactive mode).",
+      type: "warning",
+    };
+  }
   ctx.ui.notify("No Huly binding for this directory. Starting /huly init…", "info");
   return runInit(ctx);
 }
@@ -193,14 +202,18 @@ async function runInit(ctx: CommandContext): Promise<CommandResult> {
       workspaceId = matches[0].id;
       ctx.ui.notify(`Reusing workspace "${workspaceId}".`, "info");
     } else {
-      // Disambiguate (same-name diff-URL)
+      // Disambiguate (same-name diff-URL). Index lookup thay vì split string
+      // (tránh truncate sai nếu id/url chứa " (").
       const opts = matches.map((m) => `${m.id} (${m.url})`);
       const chosen = await ctx.ui.select(`Workspace "${name}" is ambiguous. Pick:`, opts);
       if (chosen === undefined) {
         return { message: "Init cancelled.", type: "info" };
       }
-      // Extract id trước " ("
-      workspaceId = chosen.split(" (")[0]!;
+      const idx = opts.indexOf(chosen);
+      if (idx < 0 || matches[idx] === undefined) {
+        return { message: "Init cancelled (invalid selection).", type: "info" };
+      }
+      workspaceId = matches[idx]!.id;
     }
   } catch (e) {
     return { message: `Init failed: ${errorMessage(e)}`, type: "error" };
@@ -289,8 +302,9 @@ async function uniqueWorkspaceId(name: string, ctx: CommandContext): Promise<str
  */
 async function promptProject(workspaceId: string, ctx: CommandContext): Promise<string> {
   const client = await getClient(workspaceId);
-  // Reuse PROJECT_CLASS literal (tránh import cycle với domain modules).
-  const PROJECT_CLASS = "tracker:class:Project" as never;
+  // Reuse PROJECT_CLASS via classRef (single source với domain modules).
+  // Pattern space=workspaceId-handle nhất quán với domains/projects.ts create_project.
+  const PROJECT_CLASS = classRef("tracker:class:Project");
   const projects = await client.findAll(PROJECT_CLASS, {}, {});
   const items = projects.map((p) => ({
     identifier: (p as { identifier?: string }).identifier ?? "",
@@ -304,15 +318,25 @@ async function promptProject(workspaceId: string, ctx: CommandContext): Promise<
   if (chosen === "+ Create new project") {
     const name = await ctx.ui.input("Project name:");
     if (name === undefined || name.length === 0) return "";
-    const identifier = await ctx.ui.input("Project identifier (1-5 uppercase):");
-    if (identifier === undefined || identifier.length === 0) return "";
-    const space = workspaceId as never;
-    await client.createDoc(PROJECT_CLASS, space, { name, identifier });
+    // Validate identifier: 1-5 chars, uppercase letter start (Huly convention).
+    let identifier = await ctx.ui.input("Project identifier (1-5 uppercase):");
+    if (identifier === undefined) return "";
+    identifier = identifier.trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9]{0,4}$/.test(identifier)) {
+      ctx.ui.notify(
+        `Invalid identifier "${identifier}": must be 1-5 chars, start with uppercase letter.`,
+        "error",
+      );
+      return "";
+    }
+    await client.createDoc(PROJECT_CLASS, spaceRef(workspaceId), { name, identifier });
     return identifier;
   }
 
-  // Extract identifier trước " —"
-  return chosen.split(" —")[0]!;
+  // Pick existing: index lookup thay vì split string (tránh truncate nếu name chứa " —").
+  const idx = opts.indexOf(chosen) - 1; // -1 vì opts[0] = "+ Create new"
+  if (idx < 0 || items[idx] === undefined) return "";
+  return items[idx]!.identifier;
 }
 
 // === /huly status ===
