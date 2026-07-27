@@ -10,7 +10,13 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { ISSUE_CLASS, PROJECT_CLASS, LABEL_CLASS, idRef } from "./_class-refs.js";
+import {
+  ISSUE_CLASS,
+  PROJECT_CLASS,
+  LABEL_CLASS,
+  ISSUE_STATUS_CLASS,
+  idRef,
+} from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -223,12 +229,18 @@ export const tools: HulyToolDefinition[] = [
   }),
 
   // 4. update_issue
+  // T-47 #36: KHÔNG dùng needsAssignee (D15 chỉ cho create). Update KHÔNG
+  // auto-fill assignee → caller muốn đổi assignee phải truyền rõ. Trước đây
+  // leak sang update → mọi update tự claim current user (silent overwrite).
+  // T-47 #36: status phải validate workflow enum — server reject raw short
+  // name ("Done") mà cần full ref ("tracker:status:Done"). Trước đây push raw
+  // → silent reject, status không persist. Giờ lookup IssueStatus → resolve.
   defineHulyTool({
     name: "update_issue",
     label: "Update issue",
-    description: "Update issue fields.",
+    description:
+      "Update issue fields. Status must match exact IssueStatus name (case-sensitive) or _id full ref.",
     needsProject: true,
-    needsAssignee: true,
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
@@ -258,9 +270,93 @@ export const tools: HulyToolDefinition[] = [
         ops.description = JSON.stringify(mdToMarkup(params.description));
       if (params.priority !== undefined) ops.priority = params.priority;
       if (params.assignee !== undefined) ops.assignee = params.assignee;
-      if (params.status !== undefined) ops.status = params.status;
       if (params.dueDate !== undefined) ops.dueDate = params.dueDate;
       if (params.estimation !== undefined) ops.estimation = params.estimation;
+      // T-47 #36: resolve status short name ("Done") → full ref
+      // ("tracker:status:Done") trước khi push. Huly IssueStatus có _id = full
+      // ref, name = short human. Match _id exact trước (caller truyền full ref
+      // → match chắc), fallback name (caller truyền short → heuristic; có thể
+      // ambiguous nếu multi-project workspace có cùng status name — documented
+      // limitation, scope của fix này không filter theo taskType). Invalid →
+      // isError + list valid statuses cho LLM retry.
+      //
+      // T-47 review fix:
+      // - Empty statuses (fresh workspace chưa config workflow) → isError rõ
+      //   ràng KHÔNG "Valid statuses: ." (misleading). Hướng dẫn setup trước.
+      // - Match thành công nhưng _id undefined (schema drift) → isError KHÔNG
+      //   fallback raw params.status (reintroduce bug gốc — raw short name bị
+      //   server silent reject).
+      // - Input trim → match linh hoạt với " Done " / "Done" (caller LLM hay
+      //   thêm whitespace). Exact case vẫn giữ (Huly status name verbatim).
+      if (params.status !== undefined) {
+        // T-47 review: findAll có thể throw (transport/network/workspace-down).
+        // Wrap → isError rõ ràng + retry hint, KHÔNG để uncaught rejection
+        // propagate ra handler (generic transport error khó hiểu cho LLM).
+        let statuses: unknown[];
+        try {
+          statuses = await tctx.client.findAll(ISSUE_STATUS_CLASS, {}, {});
+        } catch (e) {
+          return {
+            content: `Failed to load workflow statuses: ${(e as Error).message}. Retry huly_update_issue.`,
+            isError: true,
+            details: {
+              identifier: params.identifier,
+              requestedStatus: params.status,
+              loadError: (e as Error).message,
+            },
+          };
+        }
+        if (statuses.length === 0) {
+          return {
+            content:
+              "No workflow statuses configured for this workspace. " +
+              "Set up project workflow or create statuses first (huly_create_issue_status).",
+            isError: true,
+            details: {
+              identifier: params.identifier,
+              requestedStatus: params.status,
+              noStatusesConfigured: true,
+            },
+          };
+        }
+        const requested = params.status.trim();
+        // Ưu tiên _id exact (caller truyền full ref "tracker:status:Done")
+        // trước name (short heuristic) → giảm ambiguity multi-project.
+        const byId = statuses.find((s) => (s as { _id?: string })._id === requested);
+        const byName = statuses.find((s) => (s as { name?: string }).name === requested);
+        const match = byId ?? byName;
+        if (match === undefined) {
+          const valid = statuses
+            .map((s) => (s as { name?: string }).name ?? "")
+            .filter((n) => n.length > 0)
+            .join(", ");
+          return {
+            content: `Invalid status "${params.status}". Valid statuses: ${valid}.`,
+            isError: true,
+            details: {
+              identifier: params.identifier,
+              invalidStatus: params.status,
+              validStatuses: statuses.map((s) => (s as { name?: string }).name),
+            },
+          };
+        }
+        const resolvedId = (match as { _id?: string })._id;
+        if (resolvedId === undefined) {
+          // Schema drift: IssueStatus match nhưng _id missing → KHÔNG fallback
+          // raw params.status (reintroduce bug gốc — silent server reject).
+          return {
+            content: `Status "${params.status}" matched but _id missing (schema drift). Report bug.`,
+            isError: true,
+            details: {
+              identifier: params.identifier,
+              requestedStatus: params.status,
+              matchedDoc: match,
+              schemaDrift: true,
+            },
+          };
+        }
+        ops.status = resolvedId;
+      }
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
