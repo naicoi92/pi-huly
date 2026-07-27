@@ -146,9 +146,10 @@ describe("mapError — network errors (plain Error)", () => {
     expect(err.message).toContain("/huly init");
   });
 
-  it("generic plain Error → InternalError", () => {
+  it("generic plain Error → InternalError (includes e.message for ops debug)", () => {
     const err = mapError(new Error("something unexpected"));
     expect(err).toBeInstanceOf(InternalError);
+    expect(err.message).toContain("something unexpected");
   });
 });
 
@@ -228,11 +229,19 @@ describe("toToolResult — no-leak (NFR-04)", () => {
     expect(result.content[0].text).not.toContain(pat);
   });
 
-  it("strips stack frames from message", () => {
+  it("strips stack frames from message (bare path form)", () => {
     const err = new InternalError("fail at /path/file.js:123:45");
     const result = toToolResult(err);
     // Stack frame pattern replaced (file path + line:line)
     expect(result.content[0].text).not.toMatch(/at\s+.+:\d+:\d+/);
+  });
+
+  it("strips V8-format stack frames (at fn (file.js:line:col))", () => {
+    const err = new InternalError(
+      "TypeError: x\n    at foo (/path/file.js:10:5)\n    at bar (/app/index.js:42:13)",
+    );
+    const result = toToolResult(err);
+    expect(result.content[0].text).not.toMatch(/at\s+.*?:\d+:\d+/);
   });
 
   it("handles all 7 error classes", () => {

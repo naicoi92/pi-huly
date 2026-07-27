@@ -146,9 +146,9 @@ function classifyPlatformError(e: PlatformErrorLike): HulyError {
     code.includes("AccountMismatch")
   ) {
     const hint = code.includes("WorkspaceNotFound")
-      ? " Workspace not found — run /huly init to bind."
+      ? " Run /huly init to bind."
       : code.includes("PasswordLoginLocked")
-        ? " Account locked (5 failed attempts)."
+        ? " Account locked — try again later or re-init."
         : "";
     return new AuthError(`Auth failed: ${code}${hint}`, e);
   }
@@ -234,8 +234,8 @@ export function mapError(e: unknown): HulyError {
     if (/^Workspace\s+\S+\s+not\s+found/i.test(msg)) {
       return new AuthError(`Auth failed: ${msg} Run /huly init.`, e);
     }
-    // Generic
-    return new InternalError(`Internal: ${e.name}`, e);
+    // Generic — include e.message cho ops debug (sanitize() ở toToolResult strip secret)
+    return new InternalError(`Internal: ${e.name}: ${e.message}`, e);
   }
 
   // 3. Non-Error (string, object, null, undefined) → wrap
@@ -259,8 +259,8 @@ const LEAK_PATTERNS = [
   /ghp_[A-Za-z0-9]{36,}/g,
   /npm_[A-Za-z0-9]{36,}/g,
   /github_pat_[A-Za-z0-9_]+/g,
-  // Stack frame: "at <path>:<line>:<col>" (vd "at /path/file.js:123:45")
-  /\bat\s+\S+:\d+:\d+/g,
+  // Stack frame: "at <path>:<line>:<col>" hoặc V8 "at fn (file.js:10:5)"
+  /\bat\s+.*?:\d+:\d+(?::\d+)?\)?/g,
 ];
 
 /** Sanitize message — strip secrets + stack traces. */
