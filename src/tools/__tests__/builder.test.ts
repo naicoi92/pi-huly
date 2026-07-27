@@ -552,6 +552,72 @@ describe("defineHulyTool execute — non-TUI surface details (T-40 #22 #26)", ()
     const text = result.content[0]?.text ?? "";
     expect(result.isError).toBe(true);
     expect(text).toContain("Issue not found.");
-    // Error details vẫn có thể có identifier nhưng KHÔNG append bloat (error path ưu tiên message)
+    // Error path KHÔNG append details (guard isError !== true) — regression test
+    // phải verify thực tế, KHÔNG chỉ check contains content gốc
+    expect(text).not.toContain("PD-999");
+    expect(text).not.toContain("identifier:");
+  });
+
+  it("hasUI=false + details: null → content KHÔNG append (early return)", async () => {
+    const tool = defineHulyTool({
+      name: "noop",
+      label: "N",
+      description: "n",
+      parameters: Type.Object({}),
+      handler: async () => ({ content: "Done.", details: null }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(false));
+    expect(result.content[0]?.text).toBe("Done.");
+  });
+
+  it("hasUI=false + details: {} empty object → content KHÔNG append", async () => {
+    const tool = defineHulyTool({
+      name: "noop",
+      label: "N",
+      description: "n",
+      parameters: Type.Object({}),
+      handler: async () => ({ content: "Done.", details: {} }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(false));
+    expect(result.content[0]?.text).toBe("Done.");
+  });
+
+  it("hasUI=false + primitive array (tags/labels) → serialize String(item)", async () => {
+    const tool = defineHulyTool({
+      name: "list_tags",
+      label: "T",
+      description: "t",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "Found 2 tag(s).",
+        details: { count: 2, tags: ["bug", "urgent"] },
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(false));
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Found 2 tag(s).");
+    expect(text).toContain("bug");
+    expect(text).toContain("urgent");
+  });
+
+  it("hasUI=false + multiple arrays → serialize cả 2 (seenArrays accumulation)", async () => {
+    const tool = defineHulyTool({
+      name: "search",
+      label: "S",
+      description: "s",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "Search results.",
+        details: {
+          issues: [{ identifier: "PD-1", title: "A" }],
+          documents: [{ identifier: "doc-1", title: "Doc" }],
+        },
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(false));
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("PD-1");
+    expect(text).toContain("doc-1");
+    expect(text).toContain("Search results.");
   });
 });

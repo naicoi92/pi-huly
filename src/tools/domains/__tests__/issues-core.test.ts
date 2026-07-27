@@ -108,5 +108,9 @@ describe("T-40 bonus: create_issue surface identifier (#26)", () => {
     expect(result.details).toMatchObject({ id: "internal-id-abc", title: "Test" });
     // identifier undefined (server async assign, có thể cần retry sau) — không crash
     expect((result.details as { identifier?: string }).identifier).toBeUndefined();
+    // Content hint cho LLM biết retry path (tránh stuck với _id internal)
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Identifier pending");
+    expect(text).toContain("huly_list_issues");
   });
 });

@@ -313,9 +313,13 @@ const LLM_ARRAY_CAP = 30;
  * Append summary của `details` vào content text cho non-TUI path (T-40 #22 #26).
  *
  * Heuristic shape-aware (KHÔNG schema per-tool — 1 seam generic):
- * - Detect array field phổ biến (`issues`, `documents`, `items`, `list`, `results`,
- *   `todos`, `comments`, ...) → serialize cap top `LLM_ARRAY_CAP` + đuôi "... và N khác".
- * - Detect field `id`/`_id`/`identifier` (entity vừa create) → append dạng `id: <val>`.
+ * - Detect MỌI array field (vd `issues`, `members`, `attachments`, `tags`, ...)
+ *   KHÔNG whitelist — iterate toàn bộ keys, kiểm `Array.isArray`. Serialize
+ *   cap top `LLM_ARRAY_CAP` + đuôi "... và N khác". Lưu ý: handler nào đặt
+ *   array lớn binary/debug vào details (vd `chunks`) cũng sẽ serialize —
+ *   domain tránh pattern đó.
+ * - Detect field `id`/`_id`/`identifier` (entity vừa create) → append dạng
+ *   `id: <val>`.
  * - Bỏ qua field meta trống/count trùng (count đã trong content gốc nhiều case).
  *
  * Return text đã append (content gốc + "\n" + summary). Nếu details rỗng/không
