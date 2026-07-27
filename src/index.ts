@@ -3,7 +3,9 @@
 // TS 7 incompatibility với pi types sớm (design 03 §8 R6).
 import type {} from "@earendil-works/pi-coding-agent";
 
-export const HULY_VERSION = "0.1.0";
+// Version constant tách riêng version.ts (tránh circular import commands↔index).
+// Re-export giữ backward-compat cho consumer import từ index.
+export { HULY_VERSION } from "./version.js";
 
 export default function setup(_pi: unknown): void {
   // Placeholder — T-33 factory sẽ registerTools (19 domains) +
