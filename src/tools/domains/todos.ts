@@ -5,6 +5,31 @@ import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { ISSUE_CLASS, TODO_CLASS } from "./_class-refs.js";
 import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
+import { mdToMarkup } from "../../markup/markup.js";
+
+/**
+ * ToDoPriority enum (audit §5 — @hcengineering/time).
+ * High=0, Medium=1, Low=2, NoPriority=3, Urgent=4.
+ * Pi-huly API dùng string ('urgent', 'high', ...) → map sang number cho server.
+ */
+const TODO_PRIORITY_MAP: Record<string, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+  "no-priority": 3,
+  urgent: 4,
+};
+
+/** Priority param schema (string → number enum mapping). */
+const todoPrioritySchema = Type.Optional(
+  Type.Union([
+    Type.Literal("urgent"),
+    Type.Literal("high"),
+    Type.Literal("medium"),
+    Type.Literal("low"),
+    Type.Literal("no-priority"),
+  ]),
+);
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_todos
@@ -87,6 +112,7 @@ export const tools: HulyToolDefinition[] = [
       title: Type.String(),
       description: Type.Optional(Type.String()),
       dueDate: Type.Optional(Type.Integer()),
+      priority: todoPrioritySchema,
     }),
     async handler(params, tctx) {
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
@@ -99,22 +125,55 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      const id = await tctx.client.addCollection(
-        TODO_CLASS,
-        issue.space as never,
-        issue._id as never,
-        ISSUE_CLASS,
-        "todos",
-        {
-          title: params.title,
-          description: params.description,
-          dueDate: params.dueDate,
-        },
-      );
-      return {
-        content: `Created todo "${params.title}" on ${params.identifier}.`,
-        details: { id, title: params.title, identifier: params.identifier },
-      };
+      // T-46 #28 (audit §5): ToDo extends AttachedDoc với required fields.
+      // Trước đây addCollection thiếu attachedToClass + user + visibility + rank
+      // + priority + workslots → platform:status:UnknownError.
+      const priority = TODO_PRIORITY_MAP[params.priority ?? "medium"];
+      try {
+        const id = await tctx.client.addCollection(
+          TODO_CLASS,
+          issue.space as never,
+          issue._id as never,
+          ISSUE_CLASS,
+          "todos",
+          {
+            title: params.title,
+            description:
+              params.description !== undefined
+                ? JSON.stringify(mdToMarkup(params.description))
+                : undefined,
+            attachedTo: issue._id,
+            attachedToClass: ISSUE_CLASS,
+            attachedSpace: issue.space,
+            user: tctx.currentUser.id, // Ref<Employee>
+            priority, // ToDoPriority number enum (audit §5)
+            visibility: "Public", // Visibility.Public default
+            rank: "", // lexorank empty — server gán nếu empty
+            workslots: 0,
+            dueDate: params.dueDate,
+          },
+        );
+        return {
+          content: `Created todo "${params.title}" on ${params.identifier}.`,
+          details: { id, title: params.title, identifier: params.identifier },
+        };
+      } catch (e) {
+        // Wrap lỗi generic của Huly server (platform:status:UnknownError) với
+        // context rõ ràng hơn — mention todo + issue + class để debug lần sau.
+        const msg = e instanceof Error ? e.message : String(e);
+        return {
+          content:
+            `Failed to create todo "${params.title}" on ${params.identifier} ` +
+            `(class ${TODO_CLASS}). Server error: ${msg}. ` +
+            `Verify issue exists and ToDo required fields are valid.`,
+          isError: true,
+          details: {
+            identifier: params.identifier,
+            title: params.title,
+            error: msg,
+          },
+        };
+      }
     },
   }),
 
