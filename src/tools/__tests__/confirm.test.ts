@@ -53,4 +53,12 @@ describe("confirmDestructive — FR-09 D9", () => {
     const result = await confirmDestructive(ctx, { type: "issue", id: "PD-1" });
     expect(result).toBe(false);
   });
+
+  it("hasUI undefined (boundary) → auto-deny (NFR-10 fail-safe)", async () => {
+    // Pi có thể truyền ctx không set hasUI — phải deny KHÔNG bypass
+    const ctx = { ui: { confirm: vi.fn() } } as unknown as Parameters<typeof confirmDestructive>[0];
+    const result = await confirmDestructive(ctx, { type: "issue", id: "PD-1" });
+    expect(result).toBe(false);
+    expect(ctx.ui.confirm).not.toHaveBeenCalled();
+  });
 });

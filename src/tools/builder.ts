@@ -15,9 +15,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type Static, type TObject } from "typebox";
 import { getClient } from "../client/pool.js";
-import { mapError } from "../client/errors.js";
+import { mapError, sanitize } from "../client/errors.js";
 import type { HulyClient, CurrentUser } from "../client/client.js";
-import { resolveAssignee } from "../client/assignee.js";
 import {
   resolveProject,
   resolveWorkspace,
@@ -229,23 +228,27 @@ export function defineHulyTool<P extends ToolParams, TDetails = unknown>(
       }
 
       // 5. Auto-resolve assignee nếu cần + absent (D15 FR-18)
+      // Dùng currentUser đã fetch ở step 4 (cached — single source = Huly).
       if (needsAssignee) {
         const current = params[assigneeField];
         if (current === undefined || current === null || current === "") {
-          try {
-            const ref = await resolveAssignee(client, undefined);
-            params[assigneeField] = ref.identifier;
-          } catch (e) {
-            return toErrorResult(e);
-          }
+          params[assigneeField] = currentUser.email;
         }
       }
 
       // 6. Confirm gate (FR-09 D9) — non-TUI auto-deny (KHÔNG bypass)
       if (opts.destructive === true) {
-        const destructiveCtx: ConfirmContext = opts.destructiveContext
-          ? opts.destructiveContext(rawParams as Static<P>)
-          : { type: opts.name, id: "<unknown>" };
+        let destructiveCtx: ConfirmContext;
+        if (opts.destructiveContext) {
+          try {
+            destructiveCtx = opts.destructiveContext(rawParams as Static<P>);
+          } catch {
+            // destructiveContext throw (domain bug) → fallback safe defaults
+            destructiveCtx = { type: opts.name, id: "<unknown>" };
+          }
+        } else {
+          destructiveCtx = { type: opts.name, id: "<unknown>" };
+        }
         const confirmed = await confirmDestructive(ctx, destructiveCtx);
         if (!confirmed) {
           return {
@@ -271,8 +274,10 @@ export function defineHulyTool<P extends ToolParams, TDetails = unknown>(
           client,
         });
         // 8. Convert HulyToolResult → AgentToolResult shape
+        // Sanitize content (08 §A no-leak) — handler có thể return entity có
+        // token user paste (vd issue description). Success path cũng strip.
         return {
-          content: [{ type: "text", text: result.content }],
+          content: [{ type: "text", text: sanitize(result.content) }],
           details: (result.details ?? {}) as TDetails,
           isError: result.isError === true ? true : undefined,
         };
@@ -331,27 +336,8 @@ function toErrorResult<TDetails = unknown>(
   };
 }
 
-/**
- * Sanitize message — strip secrets + stack traces (08 §A NFR-04).
- * Mirror logic từ client/errors.ts LEAK_PATTERNS.
- * KHÔNG duplicate ra file khác — khi cần, export centralized từ errors.ts (T-10 follow-up).
- */
-const LEAK_PATTERNS = [
-  /(?:token|password|secret|api[_-]?key|authorization)\s*[=:]\s*['"]?[A-Za-z0-9_.+/ -]{8,}['"]?/gi,
-  /ghp_[A-Za-z0-9]{36,}/g,
-  /npm_[A-Za-z0-9]{36,}/g,
-  /github_pat_[A-Za-z0-9_]+/g,
-  /\bat\s+.*?:\d+:\d+(?::\d+)?\)?/g,
-];
-
-function sanitize(message: string): string {
-  let out = message;
-  for (const re of LEAK_PATTERNS) {
-    out = out.replace(re, "[REDACTED]");
-  }
-  return out;
-}
-
 // Re-export sub-modules cho domain single-import.
 export { confirmDestructive } from "./confirm.js";
 export type { ConfirmContext } from "./confirm.js";
+// Re-export sanitize + LEAK_PATTERNS centralized (cho domain tool muốn sanitize custom output).
+export { sanitize, LEAK_PATTERNS } from "../client/errors.js";

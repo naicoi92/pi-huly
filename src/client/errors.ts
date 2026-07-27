@@ -253,18 +253,33 @@ export type ToolResult = {
   isError: true;
 };
 
-/** Patterns to strip from messages (secrets + stack). */
-const LEAK_PATTERNS = [
+/**
+ * Patterns to strip from messages (secrets + stack) — 08 §A NFR-04 no-leak.
+ * Centralized ở errors.ts để mọi consumer (toToolResult, builder sanitize path)
+ * dùng chung single source of truth (tránh drift khi thêm pattern mới).
+ */
+export const LEAK_PATTERNS = [
+  // Generic key=value assignment: token=..., password: "...", Authorization: Bearer xxx
   /(?:token|password|secret|api[_-]?key|authorization)\s*[=:]\s*['"]?[A-Za-z0-9_.+/ -]{8,}['"]?/gi,
+  // GitHub tokens (classic PAT, fine-grained, npm)
   /ghp_[A-Za-z0-9]{36,}/g,
   /npm_[A-Za-z0-9]{36,}/g,
   /github_pat_[A-Za-z0-9_]+/g,
+  // Cloud provider access keys: AWS (AKIA...), OpenAI (sk-...)
+  /(?:AKIA|sk-)[A-Za-z0-9]{16,}/g,
+  // JWT (3 dot-separated base64url segments, each ≥10 chars)
+  /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  // URL-embedded credentials: https://user:pass@host
+  /https?:\/\/[^/\s@]+:[^/\s@]+@/gi,
   // Stack frame: "at <path>:<line>:<col>" hoặc V8 "at fn (file.js:10:5)"
   /\bat\s+.*?:\d+:\d+(?::\d+)?\)?/g,
 ];
 
-/** Sanitize message — strip secrets + stack traces. */
-function sanitize(message: string): string {
+/**
+ * Sanitize message — strip secrets + stack traces (08 §A NFR-04).
+ * Exported để builder + domain tool reuse (single source of truth cho patterns).
+ */
+export function sanitize(message: string): string {
   let out = message;
   for (const re of LEAK_PATTERNS) {
     out = out.replace(re, "[REDACTED]");

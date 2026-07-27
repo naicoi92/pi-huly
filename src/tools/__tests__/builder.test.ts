@@ -28,7 +28,10 @@ vi.mock("../../config/resolver.js", () => {
     NeedsDisambiguationError,
   };
 });
-vi.mock("../../client/errors.js", () => {
+vi.mock("../../client/errors.js", async (importOriginal) => {
+  const actual = (await importOriginal()) as typeof import("../../client/errors.js");
+  // Real sanitize + LEAK_PATTERNS (test verify leak strip thật), mock chỉ mapError
+  // để test kiểm soát error class trả về.
   class HulyError extends Error {
     readonly class: string;
     constructor(c: string, m: string) {
@@ -38,6 +41,7 @@ vi.mock("../../client/errors.js", () => {
     }
   }
   return {
+    ...actual,
     HulyError,
     mapError: vi.fn((e: unknown) => {
       if (e instanceof Error && /network/i.test(e.message)) {
@@ -48,13 +52,9 @@ vi.mock("../../client/errors.js", () => {
   };
 });
 vi.mock("../../client/client.js", () => ({}));
-vi.mock("../../client/assignee.js", () => ({
-  resolveAssignee: vi.fn(),
-}));
 
 import { getClient } from "../../client/pool.js";
 import { resolveWorkspace, resolveProject, NeedsInitError } from "../../config/resolver.js";
-import { resolveAssignee } from "../../client/assignee.js";
 import { defineHulyTool } from "../builder.js";
 
 function makeMockClient() {
@@ -76,11 +76,6 @@ beforeEach(() => {
   vi.mocked(getClient).mockResolvedValue(makeMockClient() as never);
   vi.mocked(resolveWorkspace).mockResolvedValue("ws1");
   vi.mocked(resolveProject).mockResolvedValue("PD");
-  vi.mocked(resolveAssignee).mockResolvedValue({
-    identifier: "u@x.com",
-    name: "User",
-    resolved: true,
-  });
 });
 
 describe("defineHulyTool — prefix huly_ (D5 FR-02)", () => {
@@ -234,7 +229,7 @@ describe("defineHulyTool execute — confirm gate (FR-09 D9)", () => {
 });
 
 describe("defineHulyTool execute — assignee default (D15 FR-18)", () => {
-  it("needsAssignee + assignee absent → resolveAssignee fill email", async () => {
+  it("needsAssignee + assignee absent → fill currentUser email trực tiếp", async () => {
     const handler = vi.fn().mockResolvedValue({ content: "ok" });
     const tool = defineHulyTool({
       name: "create_issue",
@@ -248,14 +243,13 @@ describe("defineHulyTool execute — assignee default (D15 FR-18)", () => {
       handler,
     });
     await tool.execute("tc1", { title: "T" }, undefined, undefined, makeCtx());
-    expect(resolveAssignee).toHaveBeenCalledWith(expect.anything(), undefined);
     expect(handler).toHaveBeenCalledWith(
       expect.objectContaining({ assignee: "u@x.com" }),
       expect.anything(),
     );
   });
 
-  it("needsAssignee + assignee present → KHÔNG resolveAssignee", async () => {
+  it("needsAssignee + assignee present → giữ nguyên KHÔNG override", async () => {
     const handler = vi.fn().mockResolvedValue({ content: "ok" });
     const tool = defineHulyTool({
       name: "create_issue",
@@ -269,7 +263,6 @@ describe("defineHulyTool execute — assignee default (D15 FR-18)", () => {
       handler,
     });
     await tool.execute("tc1", { title: "T", assignee: "x@y.com" }, undefined, undefined, makeCtx());
-    expect(resolveAssignee).not.toHaveBeenCalled();
     expect(handler).toHaveBeenCalledWith(
       expect.objectContaining({ assignee: "x@y.com" }),
       expect.anything(),
@@ -294,6 +287,116 @@ describe("defineHulyTool execute — assignee default (D15 FR-18)", () => {
       expect.objectContaining({ owner: "u@x.com" }),
       expect.anything(),
     );
+  });
+});
+
+describe("defineHulyTool execute — error gate coverage (FR-14)", () => {
+  it("NeedsDisambiguationError → isError=true + matches propagate", async () => {
+    const { NeedsDisambiguationError } = await import("../../config/resolver.js");
+    vi.mocked(resolveWorkspace).mockRejectedValueOnce(
+      new NeedsDisambiguationError([
+        { id: "ws-a", url: "https://a.io", workspace: "team" },
+        { id: "ws-b", url: "https://b.io", workspace: "team" },
+      ]),
+    );
+    const tool = defineHulyTool({
+      name: "list_issues",
+      label: "List",
+      description: "list",
+      parameters: Type.Object({}),
+      handler: async () => ({ content: "ok" }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("ws-a");
+    expect(result.content[0]?.text).toContain("https://a.io");
+    expect(result.content[0]?.text).toContain("ws-b");
+    expect(result.details).toMatchObject({
+      errorClass: "Auth",
+      kind: "NeedsDisambiguation",
+    });
+  });
+
+  it("getClient throw → mapError → isError=true", async () => {
+    vi.mocked(getClient).mockRejectedValueOnce(new Error("network unreachable"));
+    const tool = defineHulyTool({
+      name: "list_issues",
+      label: "List",
+      description: "list",
+      parameters: Type.Object({}),
+      handler: async () => ({ content: "ok" }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({ errorClass: "Connection" });
+  });
+
+  it("getCurrentUser throw → mapError → isError=true", async () => {
+    vi.mocked(getClient).mockResolvedValueOnce({
+      getCurrentUser: vi.fn().mockRejectedValue(new Error("network auth fail")),
+    } as never);
+    const tool = defineHulyTool({
+      name: "list_issues",
+      label: "List",
+      description: "list",
+      parameters: Type.Object({}),
+      handler: async () => ({ content: "ok" }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({ errorClass: "Connection" });
+  });
+
+  it("success path có token → sanitize strip [REDACTED] (08 §A)", async () => {
+    const tool = defineHulyTool({
+      name: "get_issue",
+      label: "Get",
+      description: "get",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "Issue desc: Authorization=Bearer-abc123secret456 here",
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
+    expect(result.content[0]?.text).not.toContain("abc123secret456");
+    expect(result.content[0]?.text).toContain("[REDACTED]");
+  });
+
+  it("AWS key trong success → strip", async () => {
+    const tool = defineHulyTool({
+      name: "get_doc",
+      label: "Doc",
+      description: "get",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "config AKIAIOSFODNN7EXAMPLE was here",
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
+    expect(result.content[0]?.text).not.toContain("AKIAIOSFODNN7EXAMPLE");
+  });
+});
+
+describe("defineHulyTool execute — destructiveContext safety", () => {
+  it("destructiveContext throw → fallback safe defaults (KHÔNG crash execute)", async () => {
+    const handler = vi.fn().mockResolvedValue({ content: "deleted" });
+    const tool = defineHulyTool({
+      name: "delete_issue",
+      label: "Delete",
+      description: "delete",
+      parameters: Type.Object({}),
+      destructive: true,
+      destructiveContext: () => {
+        throw new Error("domain bug");
+      },
+      handler,
+    });
+    const ctx = makeCtx(true, true);
+    const result = await tool.execute("tc1", {}, undefined, undefined, ctx);
+    // Confirm vẫn chạy với fallback defaults
+    expect(ctx.ui.confirm).toHaveBeenCalled();
+    expect(handler).toHaveBeenCalled();
+    expect(result.content[0]?.text).toBe("deleted");
   });
 });
 
