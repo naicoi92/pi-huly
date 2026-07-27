@@ -1,0 +1,41 @@
+# .npmignore — exclude dev-only files khỏi npm tarball.
+# Consumer chỉ nhận: dist/ + skills/ + README.md + LICENSE + NOTICE.md +
+# CHANGELOG.md + package.json (qua `files` field trong package.json).
+# File này là defense-in-depth (files field đã whitelist, nhưng .npmignore
+# catch thêm nếu files field bị break trong tương lai).
+
+# Source code (KHÔNG ship — consumer dùng dist bundle)
+src/
+
+# Design docs + plans (internal)
+docs/
+
+# Tasks tracker (internal)
+TASKS.md
+
+# Tests
+**/*.test.ts
+**/__tests__/
+vitest.config.ts
+
+# Dev config
+tsconfig.json
+rolldown.config.ts
+oxlint.config.json
+.oxfmtrc.json
+.markdownlint-cli2.jsonc
+.node-version
+.editorconfig
+
+# CI / meta
+.github/
+.git/
+.gitignore
+.pi/
+
+# Package managers
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# Build artifacts (chỉ dist/ ship)
+*.tsbuildinfo

@@ -68,9 +68,17 @@
 - `@hcengineering/*` publish **public trên npmjs.org** (verified 2026-07-27).
   Maintainer build + consumer `pi install` đều KHÔNG cần token (KHÔNG cần
   GitHub Packages registry). D10 note cũ (GitHub token install) sai — install
-  trực tiếp `pnpm add @hcengineering/*` works zero-config. Bundle vào dist cho
-  NFR-06 (consumer no token needed at runtime).
-- ws optional deps (bufferutil/utf-8-validate): bundled hoặc skip (fallback
+  trực tiếp `pnpm add @hcengineering/*` works zero-config.
+- **CORRECTION (T-38 audit 2026-07-27)**: §1 table + các row dưới đây ghi
+  "bundle @hcengineering → consumer no GitHub token" là **KHÔNG chính xác về
+  mechanism**. NFR-06 thực claim = consumer no token → ĐÚNG, nhưng mechanism
+  là **npm public dependency** (package.json `dependencies`), KHÔNG phải bundle
+  vào dist. `rolldown.config.ts` `external: [/^@hcengineering\//]` →
+  dist/index.mjs `import` từ node_modules runtime. Bundle thực sẽ bloat dist +
+  cause version drift. Docs khác (NOTICE.md, README.md) đã corrected T-38.
+  Các row "(bundled)" trong §1/§3/§4 bảng = **stale wording**, KHÔNG reflect
+  code thật — treat as historical design intent, code truth = external dep.
+- ws optional deps (bufferutil/utf-8-validate): external hoặc skip (fallback
   pure-JS). Test R2.
 
 ## 4. Đánh giá khả năng áp dụng
