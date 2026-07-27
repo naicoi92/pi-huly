@@ -26,7 +26,7 @@ _DoD: mock Huly WS+REST integration pass; markup round-trip fixtures green (R8).
 - [x] [T-05] [M] client/client.ts (createHulyClient ws connect / rest connectRest, generic CRUD findOne/findAll/createDoc/updateDoc/removeDoc/addCollection/createMixin, getCurrentUser) + integration mock — high | blocked-by: T-04 | blocks: T-06,T-07 | risks: R2 — ✅ done (PR #6 merged 9c5bb2a, 28 tests, coverage 90%, ambient decls cho @hcengineering types)
 - [x] [T-06] [M] client/pool.ts (transport-aware getClient, LRU evict ≤8 ws, auto-reconnect backoff, closeAll session_shutdown, health) + integration — high | blocked-by: T-05 | blocks: T-09 | risks: R2 — ✅ done (PR #7 merged 6316108, 15 tests, coverage 100% stmts)
 - [x] [T-07] [S] client/assignee.ts (resolveAssignee: input→validate/lookup, absent→getCurrentUser email) + unit — medium | blocked-by: T-05 | blocks: T-09 — ✅ done (PR #8 merged, 5 tests)
-- [ ] [T-08a] [S] markup/markup.ts wrapper (@hcengineering/text-markdown markdownToMarkup/markupToMd, both directions) + unit — high | blocked-by: T-04 | blocks: T-08b
+- [x] [T-08a] [S] markup/markup.ts wrapper (@hcengineering/text-markdown markdownToMarkup/markupToMd, both directions) + unit — high | blocked-by: T-04 | blocks: T-08b — ✅ done (PR #9 merged, 26 tests + 12 markdown fixtures)
 - [ ] [T-08b] [M] native-ref transform (reimplement transformMarkupNodeNativeReferenceLinks + markupNodeToMarkdownString) + round-trip fixtures (R8) — high | blocked-by: T-08a | blocks: T-09 | risks: R8
 
 ## M2 Tools layer
