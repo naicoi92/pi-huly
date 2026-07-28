@@ -6,6 +6,6 @@ import { HULY_VERSION } from "../index.js";
 // config/skeleton → classic no-TDD).
 describe("pi-huly skeleton", () => {
   it("exports HULY_VERSION constant", () => {
-    expect(HULY_VERSION).toBe("1.0.0-beta.1");
+    expect(HULY_VERSION).toBe("1.0.0-beta.4");
   });
 });
