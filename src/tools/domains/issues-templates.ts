@@ -13,6 +13,22 @@ import {
 } from "./_common.js";
 import { mdToMarkup } from "../../markup/markup.js";
 
+/** T-76: IssueTemplateChild object shape (replaces raw string in children array). */
+interface TemplateChild {
+  id: string;
+  title: string;
+  description?: string;
+  priority?: string;
+  assignee?: string | null;
+  component?: string | null;
+  estimation?: number;
+}
+
+/** Generate Huly-style id for template child (Ref<Issue> placeholder). */
+function genChildId(): string {
+  return `tracker:issue.${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export const tools: HulyToolDefinition[] = [
   // 1. list_templates
   defineHulyTool({
@@ -102,10 +118,21 @@ export const tools: HulyToolDefinition[] = [
         params.description !== undefined
           ? JSON.stringify(mdToMarkup(params.description))
           : undefined;
-      const id = await tctx.client.createDoc(ISSUE_TEMPLATE_CLASS, project.space as never, {
-        title: params.title,
-        description: descMarkup,
-      });
+      const id = await tctx.client.createDoc(
+        ISSUE_TEMPLATE_CLASS,
+        project.space as never,
+        {
+          title: params.title,
+          description: descMarkup,
+          // T-76: default fields (trusted createIssueTemplate).
+          priority: "no-priority",
+          assignee: null,
+          component: null,
+          estimation: 0,
+          children: [],
+          comments: 0,
+        } as never,
+      );
       return {
         content: `Created template "${params.title}".`,
         details: { id, title: params.title },
@@ -146,10 +173,24 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const title = params.title ?? (tpl as { title?: string }).title ?? "Untitled";
-      const id = await tctx.client.createDoc(ISSUE_CLASS, project.space as never, {
-        title,
-        description: (tpl as { description?: string }).description,
-      });
+      // T-76: copy priority/assignee/component từ template (trước chỉ copy title+desc).
+      const tplFields = tpl as {
+        priority?: string;
+        assignee?: string | null;
+        component?: string | null;
+        description?: string;
+      };
+      const id = await tctx.client.createDoc(
+        ISSUE_CLASS,
+        project.space as never,
+        {
+          title,
+          description: tplFields.description,
+          priority: tplFields.priority ?? "no-priority",
+          assignee: tplFields.assignee ?? null,
+          component: tplFields.component ?? null,
+        } as never,
+      );
       return {
         content: `Created issue "${title}" from template.`,
         details: { id, title, template: params.template },
@@ -229,17 +270,23 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 7. add_template_child — add sub-template (parent-child)
+  // 7. add_template_child — T-76: build IssueTemplateChild object + replace array
   defineHulyTool({
     name: "add_template_child",
     label: "Add template child",
-    description: "Add child template to parent template.",
+    description:
+      "Add child template to parent. Builds IssueTemplateChild object {id,title,priority,...} + replaces full children array.",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
       template: Type.String(),
-      childTemplate: Type.String(),
+      title: Type.String(),
+      description: Type.Optional(Type.String()),
+      priority: Type.Optional(Type.String()),
+      assignee: Type.Optional(Type.String()),
+      component: Type.Optional(Type.String()),
+      estimation: Type.Optional(Type.Integer()),
     }),
     async handler(params, tctx) {
       const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, { _id: params.template });
@@ -250,28 +297,41 @@ export const tools: HulyToolDefinition[] = [
           details: { template: params.template },
         };
       }
+      // T-76: build IssueTemplateChild object (KHÔNG raw string).
+      const child: TemplateChild = {
+        id: genChildId(),
+        title: params.title,
+      };
+      if (params.description !== undefined) child.description = params.description;
+      if (params.priority !== undefined) child.priority = params.priority;
+      if (params.assignee !== undefined) child.assignee = params.assignee;
+      if (params.component !== undefined) child.component = params.component;
+      if (params.estimation !== undefined) child.estimation = params.estimation;
+      // T-76: replace full children array (KHÔNG $push).
+      const existingChildren = ((t as { children?: TemplateChild[] }).children ??
+        []) as TemplateChild[];
       const updResult = await safeUpdateDoc(tctx.client, ISSUE_TEMPLATE_CLASS, t, {
-        $push: { children: params.childTemplate },
+        children: [...existingChildren, child],
       });
       if (!updResult.ok) return updResult.error;
       return {
-        content: `Added child ${params.childTemplate} to template ${params.template}.`,
-        details: { template: params.template, child: params.childTemplate },
+        content: `Added child "${params.title}" to template ${params.template}.`,
+        details: { template: params.template, childId: child.id, title: params.title },
       };
     },
   }),
 
-  // 8. remove_template_child
+  // 8. remove_template_child — T-76: find by id field + replace array
   defineHulyTool({
     name: "remove_template_child",
     label: "Remove template child",
-    description: "Remove child from parent template.",
+    description: "Remove child from parent template (by child id).",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
       template: Type.String(),
-      childTemplate: Type.String(),
+      childId: Type.String({ description: "IssueTemplateChild.id to remove." }),
     }),
     async handler(params, tctx) {
       const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, { _id: params.template });
@@ -282,13 +342,25 @@ export const tools: HulyToolDefinition[] = [
           details: { template: params.template },
         };
       }
+      // T-76: find by id field trong children (KHÔNG $pull raw string).
+      const existingChildren = ((t as { children?: TemplateChild[] }).children ??
+        []) as TemplateChild[];
+      const idx = existingChildren.findIndex((c) => c.id === params.childId);
+      if (idx === -1) {
+        return {
+          content: `Child "${params.childId}" not found in template ${params.template}.`,
+          isError: true,
+          details: { template: params.template, childId: params.childId },
+        };
+      }
+      const newChildren = existingChildren.filter((_, i) => i !== idx);
       const updResult = await safeUpdateDoc(tctx.client, ISSUE_TEMPLATE_CLASS, t, {
-        $pull: { children: params.childTemplate },
+        children: newChildren,
       });
       if (!updResult.ok) return updResult.error;
       return {
-        content: `Removed child ${params.childTemplate} from template ${params.template}.`,
-        details: { template: params.template, child: params.childTemplate },
+        content: `Removed child ${params.childId} from template ${params.template}.`,
+        details: { template: params.template, childId: params.childId },
       };
     },
   }),
