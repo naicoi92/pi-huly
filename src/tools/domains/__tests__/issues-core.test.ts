@@ -32,6 +32,7 @@ vi.mock("../../../markup/markup.js", () => ({
 
 import { getClient } from "../../../client/pool.js";
 import { tools } from "../issues-core.js";
+import { ISSUE_CLASS, PROJECT_CLASS, ISSUE_KIND_REF } from "../_class-refs.js";
 
 const ctx = {
   hasUI: false,
@@ -47,6 +48,7 @@ function makeClient() {
     createDoc: vi.fn().mockResolvedValue("internal-id-abc"),
     updateDoc: vi.fn().mockResolvedValue(undefined),
     removeDoc: vi.fn().mockResolvedValue(undefined),
+    addCollection: vi.fn().mockResolvedValue("internal-id-abc"),
     fetchMarkup: vi.fn(),
   };
 }
@@ -68,14 +70,18 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("T-40 bonus: create_issue surface identifier (#26)", () => {
-  it("create_issue → lookup issue sau createDoc để lấy identifier", async () => {
+describe("T-67: create_issue $inc sequence + addCollection + local identifier (#75)", () => {
+  it("create_issue → $inc sequence trên Project + addCollection + identifier format", async () => {
     const client = makeClient();
-    // findOne: lần 1 = project lookup, lần 2 = issue lookup sau createDoc
-    client.findOne = vi
-      .fn()
-      .mockResolvedValueOnce({ _id: "proj-1", space: "sp1" }) // project
-      .mockResolvedValueOnce({ _id: "internal-id-abc", identifier: "PD-42", title: "Test" }); // issue sau tạo
+    // findOne: project lookup. updateDoc: $inc sequence → trả txResult với sequence.
+    client.findOne = vi.fn().mockResolvedValue({
+      _id: "proj-1",
+      space: "sp1",
+      identifier: "PD",
+      sequence: 5,
+    });
+    client.updateDoc = vi.fn().mockResolvedValue({ object: { sequence: 6 } });
+    client.addCollection = vi.fn().mockResolvedValue("issue-id-1");
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_create_issue");
@@ -87,42 +93,72 @@ describe("T-40 bonus: create_issue surface identifier (#26)", () => {
       ctx,
     );
 
-    // createDoc được gọi
-    expect(client.createDoc).toHaveBeenCalledTimes(1);
-    // findOne gọi 2 lần: project + issue lookup
-    expect(client.findOne).toHaveBeenCalledTimes(2);
-    // Lần 2 query bằng _id internal (để lấy identifier server-assigned)
-    const secondCallArgs = client.findOne.mock.calls[1];
-    expect(secondCallArgs?.[1]).toMatchObject({ _id: "internal-id-abc" });
-    // details có cả id + identifier + title
+    // T-67: createDoc KHÔNG gọi — addCollection thay (Issue = AttachedDoc)
+    expect(client.createDoc).not.toHaveBeenCalled();
+    expect(client.addCollection).toHaveBeenCalledTimes(1);
+    // $inc sequence trên Project
+    expect(client.updateDoc).toHaveBeenCalledWith(
+      PROJECT_CLASS,
+      "core:space:Space",
+      "proj-1",
+      { $inc: { sequence: 1 } },
+      true,
+    );
+    // identifier computed locally = PD-6 (sequence từ txResult)
     expect(result.details).toMatchObject({
-      id: "internal-id-abc",
-      identifier: "PD-42",
+      identifier: "PD-6",
+      number: 6,
       title: "Test",
     });
-    // non-TUI: content phải có identifier (LLM cần)
     const text = result.content[0]?.text ?? "";
-    expect(text).toContain("PD-42");
+    expect(text).toContain("PD-6");
   });
 
-  it("create_issue lookup fail (server chưa gán identifier) → vẫn return id, identifier=undefined", async () => {
+  it("create_issue fallback sequence khi txResult thiếu object.sequence (dùng project.sequence+1)", async () => {
     const client = makeClient();
-    client.findOne = vi
-      .fn()
-      .mockResolvedValueOnce({ _id: "proj-1", space: "sp1" }) // project
-      .mockResolvedValueOnce(undefined); // issue lookup fail (chưa index)
+    client.findOne = vi.fn().mockResolvedValue({
+      _id: "proj-1",
+      identifier: "PD",
+      sequence: 10,
+    });
+    // txResult không có object.sequence (một số transport)
+    client.updateDoc = vi.fn().mockResolvedValue({});
+    client.addCollection = vi.fn().mockResolvedValue("id");
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_create_issue");
-    const result = await tool.execute("tc1", { title: "Test" }, undefined, undefined, ctx);
+    const result = await tool.execute("tc1", { title: "X" }, undefined, undefined, ctx);
 
-    expect(result.details).toMatchObject({ id: "internal-id-abc", title: "Test" });
-    // identifier undefined (server async assign, có thể cần retry sau) — không crash
-    expect((result.details as { identifier?: string }).identifier).toBeUndefined();
-    // Content hint cho LLM biết retry path (tránh stuck với _id internal)
-    const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Identifier pending");
-    expect(text).toContain("huly_list_issues");
+    // fallback: project.sequence(10) + 1 = 11 → identifier PD-11
+    expect(result.details).toMatchObject({ identifier: "PD-11", number: 11 });
+  });
+
+  it("create_issue addCollection gọi với NoParent + subIssues collection + kind", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({
+      _id: "proj-1",
+      identifier: "PD",
+      sequence: 0,
+    });
+    client.updateDoc = vi.fn().mockResolvedValue({ object: { sequence: 1 } });
+    client.addCollection = vi.fn().mockResolvedValue("id");
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_create_issue");
+    await tool.execute("tc1", { title: "Y" }, undefined, undefined, ctx);
+
+    const callArgs = client.addCollection.mock.calls[0];
+    // attachedTo = "" (NoParent sentinel), collection = "subIssues"
+    expect(callArgs?.[0]).toBe(ISSUE_CLASS); // _class
+    expect(callArgs?.[1]).toBe("proj-1"); // space
+    expect(callArgs?.[2]).toBe(""); // attachedTo = NoParent ""
+    expect(callArgs?.[3]).toBe(ISSUE_CLASS); // attachedToClass
+    expect(callArgs?.[4]).toBe("subIssues"); // collection
+    const attrs = callArgs?.[5] as Record<string, unknown>;
+    expect(attrs.kind).toBe(ISSUE_KIND_REF);
+    expect(attrs.number).toBe(1);
+    expect(attrs.identifier).toBe("PD-1");
+    expect(attrs.parents).toEqual([]);
   });
 });
 
