@@ -20,6 +20,13 @@ import {
   ISSUE_KIND_REF,
 } from "./_class-refs.js";
 import {
+  topLevelIssueParent,
+  attachIssueChild,
+  hasConcreteIssueParent,
+  updateDescendantParents,
+  type IssueHierarchyFields,
+} from "./issues-hierarchy.js";
+import {
   workspaceParam,
   projectParam,
   identifierParam,
@@ -62,7 +69,21 @@ export const tools: HulyToolDefinition[] = [
       if (params.statusCategory !== undefined) query.statusCategory = params.statusCategory;
       if (params.assignee !== undefined) query.assignee = params.assignee;
       if (params.component !== undefined) query.component = params.component;
-      if (params.parentIssue !== undefined) query.parentIssue = params.parentIssue;
+      // T-68: parentIssue filter → resolve identifier → _id, query.attachedTo
+      // (field `parentIssue` KHÔNG tồn tại runtime — AttachedDoc hierarchy).
+      if (params.parentIssue !== undefined) {
+        const parent = await tctx.client.findOne(ISSUE_CLASS, {
+          identifier: resolveIdentifier(tctx.project!, params.parentIssue),
+        });
+        if (!parent) {
+          return {
+            content: `Parent issue "${params.parentIssue}" not found.`,
+            isError: true,
+            details: { parentIssue: params.parentIssue },
+          };
+        }
+        query.attachedTo = parent._id;
+      }
       if (params.titleSearch !== undefined) {
         // Override identifier filter khi search title (KHÔNG combine $like)
         delete query.identifier;
@@ -432,10 +453,10 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 6. move_issue — change parent OR project (simplified: parent)
+  // 6. move_issue — change parent (AttachedDoc hierarchy, T-68 fix).
   // T-52 #42: KHÔNG truyền parentIssue = top-level promotion (Option A user chốt).
-  // Trước description nói "null = top-level" sai (schema Optional<String>).
-  // T-52 #42: validate parentIssue tồn tại khi truyền (tránh ref rác).
+  // T-68: dùng attachedTo/attachedToClass/collection/parents/subIssues thay vì
+  // field `parentIssue` (KHÔNG tồn tại runtime). Helper issues-hierarchy.ts.
   defineHulyTool({
     name: "move_issue",
     label: "Move issue",
@@ -452,9 +473,9 @@ export const tools: HulyToolDefinition[] = [
       ),
     }),
     async handler(params, tctx) {
-      const issue = await tctx.client.findOne(ISSUE_CLASS, {
+      const issue = (await tctx.client.findOne(ISSUE_CLASS, {
         identifier: resolveIdentifier(tctx.project!, params.identifier),
-      });
+      })) as IssueHierarchyFields & { space?: string };
       if (!issue) {
         return {
           content: `Issue "${params.identifier}" not found.`,
@@ -462,20 +483,48 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // T-52 #42: KHÔNG truyền parentIssue → top-level (null). Có truyền → validate.
+      const projectSpace = (issue.space ?? "") as never;
+      // Capture old parent state BEFORE mutate (attachIssueChild overwrites attachedTo).
+      const oldAttachedTo = issue.attachedTo;
+      const wasChild = hasConcreteIssueParent(issue);
+
+      // Case A: top-level promotion (no parentIssue param).
       if (params.parentIssue === undefined) {
-        const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
-          parentIssue: null,
-        });
-        if (!updResult.ok) return updResult.error;
+        const topFields = topLevelIssueParent();
+        await tctx.client.updateDoc(
+          ISSUE_CLASS,
+          projectSpace,
+          issue._id as never,
+          {
+            attachedTo: topFields.attachedTo,
+            attachedToClass: topFields.attachedToClass,
+            collection: topFields.collection,
+            parents: topFields.parents,
+          } as never,
+        );
+        // Dec old parent subIssues if was child (trusted always decs when oldParentIsIssue).
+        if (wasChild && oldAttachedTo) {
+          await tctx.client.updateDoc(
+            ISSUE_CLASS,
+            projectSpace,
+            oldAttachedTo as never,
+            { $inc: { subIssues: -1 } } as never,
+          );
+        }
+        // Re-breadcrumb descendants (clear chain to []).
+        if ((issue.subIssues ?? 0) > 0) {
+          await updateDescendantParents(tctx.client, projectSpace as string, issue, []);
+        }
         return {
           content: `Moved ${params.identifier} → top-level.`,
           details: { identifier: params.identifier, parentIssue: null },
         };
       }
-      const parent = await tctx.client.findOne(ISSUE_CLASS, {
+
+      // Case B: move to new parent.
+      const parent = (await tctx.client.findOne(ISSUE_CLASS, {
         identifier: resolveIdentifier(tctx.project!, params.parentIssue),
-      });
+      })) as IssueHierarchyFields;
       if (!parent) {
         return {
           content: `Parent issue "${params.parentIssue}" not found.`,
@@ -483,10 +532,30 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier, parentIssue: params.parentIssue },
         };
       }
-      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
-        parentIssue: parent._id as never,
-      });
-      if (!updResult.ok) return updResult.error;
+      // attachIssueChild: set child fields + $inc new parent subIssues +1.
+      await attachIssueChild(tctx.client, projectSpace as string, issue._id, parent, {});
+      // Dec old parent subIssues if was child (always when wasChild — same-parent net 0).
+      if (wasChild && oldAttachedTo) {
+        await tctx.client.updateDoc(
+          ISSUE_CLASS,
+          projectSpace,
+          oldAttachedTo as never,
+          { $inc: { subIssues: -1 } } as never,
+        );
+      }
+      // Re-breadcrumb descendants với new ancestor chain.
+      if ((issue.subIssues ?? 0) > 0) {
+        const parentInfo = {
+          parentId: parent._id,
+          identifier: parent.identifier ?? "",
+          parentTitle: parent.title ?? "",
+          space: projectSpace as string,
+        };
+        await updateDescendantParents(tctx.client, projectSpace as string, issue, [
+          ...(parent.parents ?? []),
+          parentInfo,
+        ]);
+      }
       return {
         content: `Moved ${params.identifier} → parent ${params.parentIssue}.`,
         details: { identifier: params.identifier, parentIssue: params.parentIssue },
