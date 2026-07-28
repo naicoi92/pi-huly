@@ -51,6 +51,32 @@ KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketF
   Schema-drift-guard test cho 4 file thiếu test (comments, projects, tag-categories,
   spaces) — 7 tool-entry regression verify migration wiring thật.
 
+### Security (T-64 #69 — WS spam + token leak gate)
+
+- **Token leak fix (NFR-04)** — upstream `@hcengineering/client-resources@0.7.423`
+  `lib/connection.js:554` in ra stderr: `client websocket error: <id>
+  wss://.../_transactor/<api-token> <ws> <user>`. URL chứa api-token → vi phạm
+  NFR-04 (no-leak) nếu log capture/export. Filter swallow toàn bộ (KHÔNG redact,
+  KHÔNG spam màn hình). Verified: stderr captured KHÔNG chứa `_transactor/` +
+  token substring.
+- Đăng ký 7 pattern vào `DEFAULT_UPSTREAM_NOISE_PATTERNS` (framework T-62):
+  `client websocket error` + `Generate new SessionId` + `no ping response` +
+  `Connected to server` + `Processing upgrade` + `measure slow findAll`.
+- **KHÔNG filter Error instance** — `console.error(new Error('unknown response
+  id'))` (connection.js:329) + `console.error(err)` decompress (488/496/510/518)
+  là real error cần debug. Filter chỉ apply plain string / structured log.
+  T-62 đã guard `!(firstArg instanceof Error)`.
+- **WS onerror vẫn trigger reconnect** — filter chỉ override `console.error`
+  METHOD, KHÔNG chạm `wsocket.onerror` callback. Error throw pathway (auth fail,
+  server down) vẫn reach LLM qua `mapError()` → `toToolResult`.
+- **B1 fix (review)** — `runWithConsoleFilter` chỉ cover connect-time (restore
+  `console.error` trước khi `wsocket.onerror` async callback thật fire → token
+  leak post-connect). Thêm `installGlobalConsoleFilter()` install 1 lần tại
+  `setup()` (index.ts), active toàn session lifetime. WS error fires bất kỳ lúc
+  nào post-connect (reconnect, server down, network blip) đều bị gate. Test verify
+  post-connect timing (setTimeout gap) + reconnect spam 10 lần + Error instance
+  vẫn log ra downstream.
+
 ## [1.0.0-beta.4] - 2026-07-28
 
 Hotfix canary #3. **Root cause fix** beta.3 follow-up hotfixes — DEEP-AUDIT 12

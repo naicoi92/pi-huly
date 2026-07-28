@@ -137,6 +137,10 @@ export class UpstreamConsoleFilter {
  * Wrap async block với console filter active. Install → run → restore (try/finally
  * LUÔN restore — KHÔNG leak override global dù block throw).
  *
+ * **Scope hạn chế**: chỉ cover connect-time spam (cache-miss replay khi buildModel).
+ * WS error post-connect (wsocket.onerror async callback) KHÔNG cover — dùng
+ * `installGlobalConsoleFilter()` cho connection lifetime.
+ *
  * @param patterns RegExp[] match first-arg string (hoặc object.message)
  * @param fn async block (vd quanh connect() / warmPool)
  * @returns giá trị fn trả về
@@ -155,16 +159,69 @@ export async function runWithConsoleFilter<T>(
 }
 
 /**
- * Default upstream noise pattern registry (T-62 ship #67).
+ * T-64 #69: Global console filter — install 1 lần, active toàn session lifetime
+ * (KHÔNG restore). Cần thiết vì WS error (`wsocket.onerror` async callback trong
+ * `client-resources/lib/connection.js:554`) fires **post-connect** — `runWithConsoleFilter`
+ * chỉ cover connect-time, restore `console.error` trước khi WS error thật sự fire.
  *
- * T-64 (blocked-by T-62) đăng ký thêm WS error + 7 dòng spam khác trong
- * connection.js (SessionId/ping/version/unknown response id/upgrade/findAll).
+ * Token leak (URL `_transactor/<token>`) chỉ gate được nếu filter active khi WS
+ * error fire (bất kỳ lúc nào post-connect: reconnect, server down, network blip).
+ *
+ * Install idempotent — gọi 2 lần no-op (return false nếu đã active).
+ *
+ * @param patterns RegExp[] match first-arg string (hoặc object.message)
+ * @returns true nếu install mới, false nếu đã active (no-op)
+ */
+let globalFilterInstalled = false;
+let globalFilter: UpstreamConsoleFilter | null = null;
+
+export function installGlobalConsoleFilter(patterns: RegExp[]): boolean {
+  if (globalFilterInstalled) return false;
+  globalFilter = new UpstreamConsoleFilter(patterns);
+  globalFilter.install();
+  globalFilterInstalled = true;
+  return true;
+}
+
+/**
+ * Restore global filter (test-only — production KHÔNG gọi, filter active toàn session).
+ */
+export function __resetGlobalFilterForTests(): void {
+  if (globalFilter !== null) {
+    globalFilter.restore();
+    globalFilter = null;
+  }
+  globalFilterInstalled = false;
+}
+
+/**
+ * Default upstream noise pattern registry.
+ *
+ * T-62 ship #67 (cache-miss warn). T-64 (#69) đăng ký thêm WS error spam +
+ * token leak + 7 dòng spam khác trong `client-resources/lib/connection.js`.
  *
  * Pattern match FIRST-arg string (case-insensitive). KHÔNG match log khác
  * (vd pi-huly tool call log `[huly_list_issues] args: ...`) — guard test có sẵn.
+ *
+ * **KHÔNG filter Error instance** (dòng `console.error(new Error(...))` ở
+ * connection.js:329 `unknown response id` + 488/496/510/518 decompress error):
+ * Error.message là real error cần debug. Filter chỉ apply cho plain string /
+ * structured log {message}. Decision documented CHANGELOG.
  */
 export const DEFAULT_UPSTREAM_NOISE_PATTERNS: RegExp[] = [
   // #67 (T-62): cache-miss warn khi replay TxUpdateDoc/TxRemoveDoc/TxMixin cho
   // doc không có trong local model. Vô hại (doc đã expire/removed trên server).
   /^no document found, failed to apply model transaction/i,
+  // #69 (T-64): WS error spam + token leak. Upstream connection.js:554 in ra
+  // `client websocket error: <id> wss://.../_transactor/<token> <ws> <user>`
+  // mỗi lần WS gặp error (reconnect backoff). URL chứa api-token → NFR-04
+  // violation nếu log ra stderr/UI. Filter swallow toàn bộ (KHÔNG redact).
+  /^client websocket error/i,
+  // #69 (T-64): 6 dòng spam khác trong connection.js — session info, ping,
+  // version, upgrade, perf warning. Vô hại, break UI pi.
+  /^Generate new SessionId/i,
+  /^no ping response from server/i,
+  /^Connected to server/i,
+  /^Processing upgrade/i,
+  /^measure slow findAll/i,
 ];

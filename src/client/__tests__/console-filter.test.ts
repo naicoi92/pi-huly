@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_UPSTREAM_NOISE_PATTERNS,
   getUpstreamNoiseCounters,
+  installGlobalConsoleFilter,
+  __resetGlobalFilterForTests,
   resetUpstreamNoiseCounters,
   runWithConsoleFilter,
   UpstreamConsoleFilter,
@@ -213,6 +215,199 @@ describe("DEFAULT_UPSTREAM_NOISE_PATTERNS", () => {
     for (const p of DEFAULT_UPSTREAM_NOISE_PATTERNS) {
       expect(p.test("[huly_list_issues] args: {}")).toBe(false);
     }
+  });
+
+  // T-64 #69: WS error spam + token leak pattern.
+  it("T-64: chứa pattern 'client websocket error' (URL + token leak)", () => {
+    const match = DEFAULT_UPSTREAM_NOISE_PATTERNS.some((p) =>
+      p.test("client websocket error: 1 wss://huly.io/_transactor/TOKEN-LEAK ws user"),
+    );
+    expect(match).toBe(true);
+  });
+
+  it("T-64: chứa 5 pattern spam khác trong connection.js (string-arg)", () => {
+    // 6 pattern string-arg total: 1 WS error + 5 spam. KHÔNG filter Error
+    // instance (unknown response id :329 + decompress err :488/496/510/518).
+    const spamMessages = [
+      "Generate new SessionId abc-123",
+      "no ping response from server. Closing socket. id1 ws user",
+      "Connected to server: 0.7.423",
+      "Processing upgrade ws user",
+      "measure slow findAll 1500 800 100",
+    ];
+    for (const msg of spamMessages) {
+      const match = DEFAULT_UPSTREAM_NOISE_PATTERNS.some((p) => p.test(msg));
+      expect(match).toBe(true);
+    }
+  });
+});
+
+// T-64 #69: security guard — token leak prevention.
+// Filter KHÔNG chỉ đếm đúng mà còn assert stderr captured KHÔNG chứa token.
+describe("T-64 token leak security guard", () => {
+  it("WS error với URL _transactor/<token> → KHÔNG log ra, token KHÔNG leak stderr", async () => {
+    const captured: string[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      captured.push(args.map(String).join(" "));
+    };
+    const TEST_TOKEN = "super-secret-token-1234567890abcdef";
+    await runWithConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS, async () => {
+      // Giả lập upstream connection.js:554 — URL chứa token
+      console.error(
+        "client websocket error:",
+        1,
+        `wss://huly.io/_transactor/${TEST_TOKEN}`,
+        "ws",
+        "user",
+      );
+    });
+    console.error = origError;
+    // Filter swallow → captured rỗng (KHÔNG delegate ra origError)
+    expect(captured).toHaveLength(0);
+    // Security guard: stderr captured KHÔNG chứa token substring
+    const allOutput = captured.join(" ");
+    expect(allOutput).not.toContain(TEST_TOKEN);
+    expect(allOutput).not.toContain("_transactor/");
+    // Counter tăng → filter active
+    expect(getUpstreamNoiseCounters().total).toBe(1);
+  });
+
+  it("WS error lặp lại (reconnect) → filter đếm đúng, KHÔNG spam", async () => {
+    const captured: string[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      captured.push(String(args[0]));
+    };
+    await runWithConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS, async () => {
+      // Giả lập WS error trigger 5 lần (reconnect backoff)
+      for (let i = 0; i < 5; i++) {
+        console.error("client websocket error:", i, "wss://h/_transactor/tok", "ws");
+      }
+    });
+    console.error = origError;
+    expect(captured).toHaveLength(0); // KHÔNG log ra
+    expect(getUpstreamNoiseCounters().total).toBe(5); // counter +5
+  });
+
+  it("real error (KHÔNG match pattern) vẫn log ra — filter KHÔNG swallow tất cả", async () => {
+    const captured: string[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      captured.push(String(args[0]));
+    };
+    await runWithConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS, async () => {
+      console.error("AuthError: token expired"); // real error, KHÔNG match
+    });
+    console.error = origError;
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toBe("AuthError: token expired");
+  });
+
+  it("T-64: filter KHÔNG affect error throw pathway — throw trong scope vẫn propagate", async () => {
+    // Filter chỉ override console.error METHOD. Error throw pathway (auth fail,
+    // server down) vẫn reach LLM qua mapError() → toToolResult — KHÔNG qua
+    // console.error. Verify: throw trong scope filter VẪN propagate ra ngoài.
+    const origError = console.error;
+    console.error = () => {}; // swallow để test chỉ check throw
+    let threw = false;
+    try {
+      await runWithConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS, async () => {
+        throw new Error("ConnectionError: Huly unreachable");
+      });
+    } catch (e) {
+      threw = true;
+      expect((e as Error).message).toBe("ConnectionError: Huly unreachable");
+    }
+    console.error = origError;
+    expect(threw).toBe(true); // error throw VẪN propagate qua filter
+  });
+});
+
+// T-64 #69 B1 fix: global filter active toàn session — WS error fires post-connect.
+// runWithConsoleFilter chỉ cover connect-time (restore console.error trước khi
+// wsocket.onerror async callback thật fire). Token leak chỉ gate được nếu filter
+// active khi WS error fire bất kỳ lúc nào post-connect.
+describe("T-64 B1 fix — installGlobalConsoleFilter (connection lifetime)", () => {
+  beforeEach(() => {
+    __resetGlobalFilterForTests();
+    resetUpstreamNoiseCounters();
+  });
+
+  afterEach(() => {
+    __resetGlobalFilterForTests();
+  });
+
+  it("installGlobalConsoleFilter active toàn session — WS error post-connect vẫn bị gate", async () => {
+    // Spy install TRƯỚC global filter → filter delegate qua spy (capture downstream).
+    // Match production: spy = real stderr writer, filter wrap ở giữa.
+    const captured: string[] = [];
+    const downstreamSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...args: unknown[]) => captured.push(args.map(String).join(" ")));
+    installGlobalConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS);
+    // SAU install + async gap (giả lập post-connect timing) — filter vẫn active.
+    await new Promise((r) => setTimeout(r, 10));
+    const TEST_TOKEN = "post-connect-secret-token-9876543210";
+    // Giả lập wsocket.onerror fires post-connect (KHÔNG trong scope runWithConsoleFilter).
+    console.error("client websocket error:", 1, `wss://h/_transactor/${TEST_TOKEN}`, "ws");
+    // Filter global active → swallow → downstream spy KHÔNG nhận.
+    expect(captured).toHaveLength(0);
+    expect(getUpstreamNoiseCounters().total).toBe(1);
+    // Security guard: token KHÔNG leak downstream.
+    expect(captured.join(" ")).not.toContain(TEST_TOKEN);
+    expect(captured.join(" ")).not.toContain("_transactor/");
+    downstreamSpy.mockRestore();
+  });
+
+  it("idempotent — install 2 lần no-op (return false lần 2)", () => {
+    const first = installGlobalConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS);
+    expect(first).toBe(true);
+    const second = installGlobalConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS);
+    expect(second).toBe(false);
+  });
+
+  it("WS error lặp nhiều lần post-connect (reconnect spam) → toàn bộ bị gate", async () => {
+    const captured: string[] = [];
+    const downstreamSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...args: unknown[]) => captured.push(String(args[0])));
+    installGlobalConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS);
+    await new Promise((r) => setTimeout(r, 5));
+    // Giả lập reconnect backoff — WS error fires 10 lần post-connect.
+    for (let i = 0; i < 10; i++) {
+      console.error("client websocket error:", i, "wss://h/_transactor/tok", "ws");
+    }
+    expect(captured).toHaveLength(0); // toàn bộ swallow
+    expect(getUpstreamNoiseCounters().total).toBe(10);
+    downstreamSpy.mockRestore();
+  });
+
+  it("real error post-connect (KHÔNG match pattern) vẫn log ra downstream", async () => {
+    const captured: string[] = [];
+    const downstreamSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...args: unknown[]) => captured.push(String(args[0])));
+    installGlobalConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS);
+    await new Promise((r) => setTimeout(r, 5));
+    console.error("AuthError: token expired"); // real error, KHÔNG match
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toBe("AuthError: token expired");
+    downstreamSpy.mockRestore();
+  });
+
+  it("real Error instance post-connect vẫn log ra downstream (KHÔNG filter Error)", async () => {
+    const captured: string[] = [];
+    const downstreamSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...args: unknown[]) => captured.push(String(args[0])));
+    installGlobalConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS);
+    await new Promise((r) => setTimeout(r, 5));
+    // connection.js:329 unknown response id — Error instance, KHÔNG filter.
+    console.error(new Error("unknown response id: 42 ws user"));
+    expect(captured).toHaveLength(1);
+    expect(getUpstreamNoiseCounters().total).toBe(0);
+    downstreamSpy.mockRestore();
   });
 });
 

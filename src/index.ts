@@ -31,6 +31,11 @@ import { loadCredentials, type Credentials } from "./config/credentials.js";
 import { sanitize } from "./client/errors.js";
 import { renderIssueListResult, renderIssueResult } from "./render/issue.js";
 import { renderDocumentResult } from "./render/document.js";
+import {
+  DEFAULT_UPSTREAM_NOISE_PATTERNS,
+  installGlobalConsoleFilter,
+} from "./client/console-filter.js";
+import { loadConfig, type Config } from "./config/config.js";
 
 /**
  * Render hook signature (pi ToolDefinition.renderResult subset).
@@ -109,6 +114,30 @@ const WARM_REASONS = new Set(["startup", "resume"]);
 const LOG_ARGS_CAP = 500;
 
 /**
+ * T-64 #69: Resolve console filter pattern từ config cho global install.
+ * - `quietUpstreamNoise === false` → null (escape hatch, KHÔNG filter)
+ * - `upstreamNoisePatterns` override → compile user pattern (case-insensitive)
+ * - Default → DEFAULT_UPSTREAM_NOISE_PATTERNS
+ *
+ * KHÔNG throw nếu pattern invalid (skip + fallback default).
+ */
+function resolvePatternsFromConfig(config: Config): RegExp[] | null {
+  if (config.quietUpstreamNoise === false) return null;
+  if (config.upstreamNoisePatterns !== undefined && config.upstreamNoisePatterns.length > 0) {
+    const compiled: RegExp[] = [];
+    for (const src of config.upstreamNoisePatterns) {
+      try {
+        compiled.push(new RegExp(src, "i"));
+      } catch {
+        // Skip invalid — validateConfig đã catch khi load, runtime skip cho safety.
+      }
+    }
+    return compiled.length > 0 ? compiled : DEFAULT_UPSTREAM_NOISE_PATTERNS;
+  }
+  return DEFAULT_UPSTREAM_NOISE_PATTERNS;
+}
+
+/**
  * T-56 #60: Log tool call khi LLM gọi Huly tool (debug observability).
  * Subscribe tool_execution_start → log `[huly_<tool>] args: <json>` ra stderr.
  *
@@ -161,6 +190,23 @@ export default function setup(pi: ExtensionAPI): number {
 
   // 3. Register unified /huly command (init/status/workspace/link/unlink)
   registerHulyCommand(pi);
+
+  // 3.5. T-64 #69: install global console filter ASAP (active toàn session).
+  // Cần thiết vì WS error (wsocket.onerror async callback) fires post-connect —
+  // runWithConsoleFilter trong createHulyClient chỉ cover connect-time, restore
+  // console.error trước khi WS error thật fire → token leak nếu KHÔNG global filter.
+  // Async vì resolveFilterPatterns đọc config ( KHÔNG block setup — fire-and-forget).
+  void (async () => {
+    try {
+      const config = await loadConfig();
+      if (config.quietUpstreamNoise === false) return; // escape hatch
+      const patterns = resolvePatternsFromConfig(config);
+      if (patterns !== null) installGlobalConsoleFilter(patterns);
+    } catch {
+      // Config error → install default patterns (best-effort, KHÔNG block setup).
+      installGlobalConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS);
+    }
+  })();
 
   // 4. session_shutdown hook → close all WS connections (FR-12, D14 pool cleanup).
   // Pi AWAIT handler xong trước khi exit (contract ExtensionHandler async support).
