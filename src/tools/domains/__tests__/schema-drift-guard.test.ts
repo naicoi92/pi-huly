@@ -129,7 +129,7 @@ describe("T-63 schema drift guard — tag-categories", () => {
     if (!tool) throw new Error("huly_update_tag_category not found");
     const result = await tool.execute(
       "tc1",
-      { category: "cat-1", title: "Updated" } as never,
+      { category: "cat-1", label: "Updated" } as never,
       undefined,
       undefined,
       ctx,

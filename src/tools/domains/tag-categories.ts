@@ -1,5 +1,9 @@
 // tools/domains/tag-categories.ts — Tag categories domain (4 tools).
 // Design: 06-api.md §4 Tag-categories. CRUD.
+//
+// T-77 (2026-07-28): field thật là `label` (KHÔNG `title` — TagCategory.label).
+// reality-checker CONFIRMED vs @hcengineering/tags types. TagElement dùng title,
+// TagCategory dùng label — KHÔNG nhầm.
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
@@ -17,7 +21,7 @@ export const tools: HulyToolDefinition[] = [
       const cats = await tctx.client.findAll(TAG_CATEGORY_CLASS, {}, {});
       const list = cats.map((c) => ({
         _id: c._id,
-        title: (c as { title?: string }).title ?? "",
+        label: (c as { label?: string }).label ?? "",
         targetClass: (c as { targetClass?: string }).targetClass,
       }));
       return {
@@ -34,17 +38,21 @@ export const tools: HulyToolDefinition[] = [
     description: "Create tag category.",
     parameters: Type.Object({
       workspace: workspaceParam,
-      title: Type.String(),
+      label: Type.String(),
       targetClass: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
       const id = await tctx.client.createDoc(TAG_CATEGORY_CLASS, spaceRef(tctx.workspace), {
-        title: params.title,
+        label: params.label,
         targetClass: params.targetClass,
-      });
+        // T-77: defaults (trusted createTagCategory).
+        icon: "",
+        tags: [],
+        default: false,
+      } as never);
       return {
-        content: `Created tag category "${params.title}".`,
-        details: { id, title: params.title },
+        content: `Created tag category "${params.label}".`,
+        details: { id, label: params.label },
       };
     },
   }),
@@ -53,11 +61,11 @@ export const tools: HulyToolDefinition[] = [
   defineHulyTool({
     name: "update_tag_category",
     label: "Update tag category",
-    description: "Update tag category (title, targetClass).",
+    description: "Update tag category (label, targetClass).",
     parameters: Type.Object({
       workspace: workspaceParam,
       category: Type.String(),
-      title: Type.Optional(Type.String()),
+      label: Type.Optional(Type.String()),
       targetClass: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
@@ -70,7 +78,7 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const ops: Record<string, unknown> = {};
-      if (params.title !== undefined) ops.title = params.title;
+      if (params.label !== undefined) ops.label = params.label;
       if (params.targetClass !== undefined) ops.targetClass = params.targetClass;
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };

@@ -141,6 +141,11 @@ export interface HulyClient {
     format: "markdown" | "html" | "markup",
   ): Promise<void>;
 
+  // T-77: Fulltext search API (relevance-ranked, fulltext index).
+  // Signature: searchFulltext({query, classes?, spaces?}, {limit?}) → {docs, total?}.
+  // WS PlatformClient có thể KHÔNG expose — handler fallback $like nếu throw.
+  searchFulltext?(query: unknown, options?: unknown): Promise<unknown>;
+
   // Account
   getAccount(): Promise<Account>;
   getCurrentUser(): Promise<CurrentUser>;
@@ -246,6 +251,16 @@ function makeWsClient(client: PlatformClient): HulyClient {
       (client as unknown as { updateMarkup: (...a: unknown[]) => Promise<void> }).updateMarkup(
         ...args,
       ),
+    // T-77: searchFulltext — PlatformClient có thể KHÔNG expose; cast-access.
+    // Nếu undefined runtime → handler fulltext_search fallback $like.
+    searchFulltext: (...args) => {
+      const fn = (client as unknown as { searchFulltext?: (...a: unknown[]) => Promise<unknown> })
+        .searchFulltext;
+      if (typeof fn !== "function") {
+        throw new Error("searchFulltext not available on WS transport — fallback to $like.");
+      }
+      return fn(...args);
+    },
     getAccount: () => client.getAccount(),
     async getCurrentUser(): Promise<CurrentUser> {
       if (cachedUser) return cachedUser;
@@ -293,6 +308,11 @@ function makeRestClient(rest: RestClient, tx: TxOperations): HulyClient {
           "to update document content (MarkupBlobRef).",
       );
     },
+    // T-77: REST has searchFulltext (RestClient.searchFulltext exists).
+    searchFulltext: (...args) =>
+      (rest as unknown as { searchFulltext: (...a: unknown[]) => Promise<unknown> }).searchFulltext(
+        ...args,
+      ),
     getAccount: () => rest.getAccount(),
     async getCurrentUser(): Promise<CurrentUser> {
       if (cachedUser) return cachedUser;
