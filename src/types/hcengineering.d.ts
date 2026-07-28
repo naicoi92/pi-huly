@@ -176,6 +176,22 @@ declare module "@hcengineering/api-client" {
     fullModel?: boolean,
   ): Promise<TxOperations>;
   export function getWorkspaceToken(url: string, options: AuthOptions): Promise<WorkspaceToken>;
+
+  // T-75: storage (blob upload/download) — connectStorage lazily.
+  export interface StorageClient {
+    put(
+      objectName: string,
+      stream: Readable | Buffer | string,
+      contentType: string,
+      size?: number,
+    ): Promise<{ _id: string; size: number; type?: string }>;
+    get(objectName: string): Promise<Readable>;
+  }
+  export function connectStorage(
+    url: string,
+    options: AuthOptions,
+    config?: unknown,
+  ): Promise<StorageClient>;
 }
 
 declare module "@hcengineering/core" {
