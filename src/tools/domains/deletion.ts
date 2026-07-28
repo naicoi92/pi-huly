@@ -34,7 +34,8 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // Simplified cascade preview: count related comments + attachments
+      // T-77: cascade preview — count comments + attachments + subIssues +
+      // reverse-blocks + inline blockedBy/relations (before chỉ comments+attachments).
       const comments = await tctx.client.findAll(
         "chunter:class:ChatMessage" as never,
         { attachedTo: entity._id },
@@ -45,15 +46,45 @@ export const tools: HulyToolDefinition[] = [
         { attachedTo: entity._id },
         {},
       );
+      // subIssues: direct child issues (AttachedDoc attachedTo=entity).
+      const subIssues = await tctx.client.findAll(
+        ISSUE_CLASS,
+        { attachedTo: entity._id } as never,
+        {},
+      );
+      // Reverse blocks: issues whose blockedBy references this entity.
+      const reverseBlocks = await tctx.client.findAll(
+        ISSUE_CLASS,
+        { "blockedBy._id": entity._id } as never,
+        {},
+      );
+      // Inline arrays trên Issue (RelatedDocument[]).
+      const issueFields = entity as {
+        blockedBy?: Array<{ _id?: string }>;
+        relations?: Array<{ _id?: string }>;
+      };
+      const blockedByCount = issueFields.blockedBy?.length ?? 0;
+      const relationsCount = issueFields.relations?.length ?? 0;
       const cascade = {
         entity: entity._id,
         comments: comments.length,
         attachments: attachments.length,
-        total: comments.length + attachments.length + 1,
+        subIssues: subIssues.length,
+        blockedBy: blockedByCount,
+        relations: relationsCount,
+        reverseBlocks: reverseBlocks.length,
+        total: 1 + comments.length + attachments.length + subIssues.length + reverseBlocks.length,
       };
+      const warnings: string[] = [];
+      if (subIssues.length > 0) warnings.push(`${subIssues.length} sub-issue(s) orphaned`);
+      if (reverseBlocks.length > 0)
+        warnings.push(`${reverseBlocks.length} issue(s) lose a block reference`);
+      if (blockedByCount > 0) warnings.push(`${blockedByCount} blockedBy reference(s) dropped`);
+      if (relationsCount > 0) warnings.push(`${relationsCount} relation(s) dropped`);
+      const warnText = warnings.length > 0 ? ` Warnings: ${warnings.join("; ")}.` : "";
       return {
-        content: `Deletion preview for ${params.identifier}: ${cascade.total} item(s) will be removed (1 entity + ${cascade.comments} comments + ${cascade.attachments} attachments).`,
-        details: { cascade },
+        content: `Deletion preview for ${params.identifier}: ${cascade.total} item(s) affected (1 entity + ${cascade.comments} comments + ${cascade.attachments} attachments + ${cascade.subIssues} sub-issues + ${cascade.reverseBlocks} reverse-blocks).${warnText}`,
+        details: { cascade, warnings: warnings.length > 0 ? warnings : undefined },
       };
     },
   }),

@@ -83,6 +83,45 @@ export const tools: HulyToolDefinition[] = [
       // Escape wildcards (% _ \) tránh injection / unintended pattern.
       const query = escapeLikePattern(params.query);
 
+      // T-77: prefer searchFulltext API (relevance-ranked fulltext index) khi
+      // available. Fallback $like substring nếu WS transport KHÔNG expose.
+      if (typeof tctx.client.searchFulltext === "function") {
+        try {
+          const raw = (await tctx.client.searchFulltext({ query: params.query }, { limit })) as {
+            docs?: Array<Record<string, unknown>>;
+            total?: number;
+          };
+          const docs = raw?.docs ?? [];
+          const results: SearchResult[] = docs.map((d) => {
+            const doc = (d.doc ?? d) as Record<string, unknown>;
+            return {
+              _id: String(doc._id ?? d.id ?? ""),
+              type: String(doc._class ?? "").includes("Issue") ? "issue" : "message",
+              identifier: doc.identifier !== undefined ? String(doc.identifier) : undefined,
+              title:
+                d.title !== undefined
+                  ? String(d.title)
+                  : doc.title !== undefined
+                    ? String(doc.title)
+                    : undefined,
+              preview:
+                d.description !== undefined ? String(d.description).slice(0, 120) : undefined,
+            };
+          });
+          return {
+            content: `Found ${results.length} result(s) for "${params.query}" (searchFulltext).`,
+            details: {
+              count: results.length,
+              query: params.query,
+              engine: "searchFulltext",
+              results,
+            },
+          };
+        } catch {
+          // Fall through to $like fallback.
+        }
+      }
+
       // T-60: chỉ 2 domain — Issue (title) + ChatMessage (content). Document
       // domain REMOVE (class not registered runtime — #55 honest unavailable).
       const domainConfigs: Array<{
