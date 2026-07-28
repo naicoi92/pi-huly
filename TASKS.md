@@ -1,6 +1,6 @@
 # pi-huly — TASKS
 
-> TaskStore = `local-tasks`. 64 task (T-XX design ID, T-01..T-64). Size prefix
+> TaskStore = `local-tasks`. 77 task (T-XX design ID, T-01..T-77). Size prefix
 > [S/M/L] (gate: S không chia, M agent đề xuất, L bắt buộc chia — issues 21 đã
 > split T-19a/b/c). DAG `blocked-by`/`blocks` text. Priority high/medium/low
 > quyết định thứ tự implement (`milestone-implement` sort: priority > order >
@@ -254,10 +254,70 @@ done, 583 tests pass (+74 từ 509 baseline), CI green cả ubuntu+macos, DoD pa
 
 ---
 
+## beta.5 follow-up hotfixes (post-beta.5 — không thuộc milestone)
+
+> **Context**: Audit toàn diện 102 tool pi-huly đối chiếu với trusted
+> `@firfi/huly-mcp` v0.45 (https://github.com/dearlordylord/huly-mcp, clone
+> `/tmp/huly-mcp-trusted`). Phương pháp: 4 agent Explore song song rà soát từng
+> nhóm domain (issues/projects/milestones · documents/comments/attachments ·
+> tags/labels/components/spaces/task-mgmt · todos/time/contacts/workspace/
+> search/templates), đối chiếu logic nghiệp vụ, verify trực tiếp claim trọng
+> yếu bằng evidence source + tests trusted.
+>
+> **Kết quả**: ~40/102 tool có bug, **~22 tool hỏng hoàn toàn** (silent data loss
+> hoặc không dùng được). 5 root-cause chính:
+>
+> 1. **Sai class ref / thiếu plugin `@hcengineering/document`** — Documents/
+>    Teamspaces/Snapshots disabled vì đoán `tracker:class:Document` (interface
+>    orphan — kết luận T-58 sai vì đoán package). Class đúng từ
+>    `documentPlugin.class.*` (`@hcengineering/document`). → T-65 (root), T-66.
+> 2. **Sai data model** — `createDoc` thay vì `addCollection` cho AttachedDoc
+>    (Issue); inline array `$push`/`$pull` thay vì `TagReference` AttachedDoc;
+>    field `parentIssue` KHÔNG tồn tại (phải `attachedTo`/`attachedToClass`/
+>    `collection`/`parents`). → T-67 (create_*), T-68 (issue hierarchy),
+>    T-69 (TagReference).
+> 3. **Sai field name + type** — comments `body` vs `message`; raw string vs
+>    `MarkupBlobRef`; string vs enum (`MilestoneStatus`). → T-70 (comments),
+>    T-72 (markup + enum).
+> 4. **Thiếu space scoping + sai query field** — `list_*` query global → trả
+>    cross-project; filter `assignee`/`parentIssue` raw string thay vì `_id`.
+>    → T-71.
+> 5. **Thiếu account-client integration** — 4 tool cần `WorkspaceClient` (HTTP)
+>    mà pi-huly chỉ có data-client (WebSocket). → T-74 (root), T-75 (attachments
+>    blob upload có thể phụ thuộc).
+>
+> Ngoài 5 root-cause còn có: workflow registration (T-73), templates children
+> (T-76 — phụ thuộc T-68 cho `attachIssueChild`), misc bugs (T-77:
+> `fulltext_search` sai API method, `preview_deletion` bỏ sót cascade, tag
+> category sai field `title` vs `label`).
+>
+> **Umbrella tracking**: issue #86 `[META]` map toàn bộ + DAG. Mỗi task = 1
+> vertical slice grab độc lập (trừ phụ thuộc đã note).
+>
+> Chi tiết mỗi task ở [`docs/tasks/T-XX.md`](./docs/tasks/) (TODO — cần tạo sau).
+> Theo dõi: [GitHub issues #73-#86](https://github.com/naicoi92/pi-huly/issues).
+
+- [ ] [T-65] [L] fix(class-refs): register `@hcengineering/document` plugin — unlock Document/Teamspace/Snapshot (root cause của #55, #58, supercedes T-58 interface-orphan conclusion) — critical | blocked-by: (none) | blocks: T-66 | issue: #73 — ✱ **blocker cho beta.5 chain** — root cause: pi-huly chỉ bundle 4 package core, đoán sai class `tracker:class:Document` (interface orphan); trusted dùng `documentPlugin.class.{Document,Teamspace,DocumentSnapshot}` từ `@hcengineering/document`. Slice: thêm dep + load plugin + expose class refs qua `_class-refs.ts`.
+- [ ] [T-66] [L] enable(documents): mở lại 11 tool honest-unavailable (Document CRUD ×5, Teamspace CRUD ×4, Snapshot ×2) bằng `documentPlugin.class.*` — critical | blocked-by: T-65 | blocks: (none) | issue: #74 — bonus: `list_teamspaces` đang dùng `core:class:Space` (base abstract) trả TẤT CẢ space, phải dùng `documentPlugin.class.Teamspace` chỉ trả Teamspace; space param cho update/delete = `core.space.Space` (root) không phải `.space` từ doc.
+- [ ] [T-67] [M] bug(create_*): dùng `addCollection` cho AttachedDoc + set `sequence`/`identifier`/`rank`/`number`/`kind` — fix `create_issue`/`create_project`/`create_milestone` (silent data loss, không idempotent) — critical | blocked-by: (none) | blocks: (none) | issue: #75 — `create_issue` không `$inc sequence` → race duplicate identifier; `create_project` space sai (workspace handle thay vì project._id self-ref), thiếu `type` (workflow) + `members`/`owners` + `sequence:0`, không idempotent vi spec §9; `create_milestone` `status:"planned"` string thay vì enum `MilestoneStatus.Planned`.
+- [ ] [T-68] [M] bug(issue hierarchy): `move_issue` + `list_issue_relations` dùng field `parentIssue` (KHÔNG tồn tại) thay vì `attachedTo`/`attachedToClass`/`collection`/`parents` — critical | blocked-by: (none) | blocks: T-76 | issue: #76 — `move_issue` không inc `subIssues` + không update descendants → cây hierarchy inconsistent; `list_issue_relations` query "blocks" dùng pattern trusted đã verify KHÔNG work + trả raw `_id` thay vì `identifier` → LLM không dùng được kết quả. Cần helper `topLevelIssueParent()`/`attachIssueChild()`/`updateDescendantParents()`.
+- [ ] [T-69] [M] bug(tags): `attach_tag`/`detach_tag`/`list_attached_tags` dùng sai data model — `$push`/`$pull` inline array thay vì `TagReference` AttachedDoc — high | blocked-by: (none) | blocks: (none) | issue: #77 — `attach_tag` phải `addCollection(tags.class.TagReference, ...)` với attributes `{tag, title, color, weight}`; `list_attached_tags` phải `findAll(TagReference, {attachedTo})` thay vì inline `doc.labels`; generic theo `targetClass` param (không hardcoded Issue) để attach lên bất kỳ doc.
+- [ ] [T-70] [M] bug(comments): `add`/`update`/`list_comment` dùng field `body` — Huly field thật là `message` (comment luôn rỗng, update silent no-op) — critical | blocked-by: (none) | blocks: (none) | issue: #78 — ĐÃ VERIFY trực tiếp: trusted `comments.ts:150` `message: markdownToMarkupString(params.body)`; trusted test `comments.test.ts:85` `message: "Test message"`. Bonus: `list_comments` thiếu filter `attachedToClass: tracker.class.Issue` (chỉ có `attachedTo`); design doc `05-data-model.md:122` cũng sai (cần sửa cả doc).
+- [ ] [T-71] [M] bug(list_*): thiếu space scoping — `list_issues`/`list_milestones`/`list_statuses`/`list_components`/`list_templates` trả cross-project — high | blocked-by: (none) | blocks: (none) | issue: #79 — thêm `space: tctx.project._id` vào query 5 tool; `list_issues` filter `assignee` raw email → resolve Person trước (`findPersonByEmailOrName`); filter `parentIssue` raw identifier → resolve parent issue trước; `titleSearch` không xóa filter project (leak); `list_statuses` query theo `projectType.statuses` + convert `category` ref → enum + thêm `isDefault`.
+- [ ] [T-72] [M] bug(markup): `description` gán raw string thay vì `MarkupBlobRef` + `status` sai type (string thay vì enum) — fix `create`/`update` issue + milestone — high | blocked-by: (none) | blocks: (none) | issue: #80 — tạo helper `uploadMarkup(client, markdown)` → `MarkupBlobRef` (wrap `client.uploadMarkup`); convert `MilestoneStatus` enum ↔ string (`stringToMilestoneStatus`/`milestoneStatusToString`); scope status resolve trong `update_issue` theo project type (hiện global → match cross-project).
+- [ ] [T-73] [M] bug(workflow): `create_issue_status`/`create_task_type` sai class + không register vào project workflow — high | blocked-by: (none) | blocks: (none) | issue: #81 — `create_issue_status` class hardcoded `tracker:class:IssueStatus` → phải `statusClass` động của project type; space = workspace root → phải `core.space.Model`; `category` raw string → phải `Ref<TaskStatusCategory>`; KHÔNG `$push` ref vào `projectType.statuses`. Bonus: `list_tags` thiếu `targetClass` filter; `list_task_types` sai query field (`ofProjectType` vs parent); `list_space_types`/`get_space_type` trả fabricated data.
+- [ ] [T-74] [L] enhancement(account-client): thêm `WorkspaceClient` integration (HTTP) — unlock `log_time` (value/date/employee đúng) + `list_workspaces` + `list_workspace_members` + `list_employees` — high | blocked-by: (none, sub-slice 1 data-client only) | blocks: T-75 | issue: #82 — chia 2 sub-slice: (1) **quick win** fix `log_time` collection `"reports"`, thêm `date` + `employee`, đơn vị hours (đang lệch 60x); (2) **architecture work** thêm account-client layer cho 3 tool còn lại. Cần ADR trước khi implement sub-slice 2. `list_workspaces` hiện WRONG-FUNCTION (trả members thay vì workspaces); `list_workspace_members`/`list_employees` query mixin `contact:mixin:Employee` như class → luôn fail runtime.
+- [ ] [T-75] [M] bug(attachments): thiếu blob upload — `add_attachment`/`add_issue_attachment` gán inline `data`, `download_attachment` đọc field không tồn tại (luôn rỗng) — high | blocked-by: T-74 (có thể, khi grab xác nhận storageClient dependency) | blocks: (none) | issue: #83 — Huly Attachment lưu `file: Ref<Blob>` (ref tới blob), KHÔNG có field `data`. Phải `storageClient.uploadFile(filename, buffer, contentType)` → `{blobId, size, url}` rồi `addCollection` với `{name, file: blobId, size, type, lastModified}`; download dùng `storageClient.getFileUrl(att.file)`.
+- [ ] [T-76] [M] bug(templates): `add`/`remove_template_child` dùng raw string thay vì `IssueTemplateChild` object — `create_issue_from_template` mất `priority`/`assignee`/`component`/`children` — high | blocked-by: T-68 (cần `attachIssueChild` cho sub-issue creation) | blocks: (none) | issue: #84 — `add_template_child` phải build object `{id, title, priority, assignee, component, estimation, description}` + replace toàn bộ `children` array (không `$push` string); `remove_template_child` find by `id` field trong children; `create_template` thiếu default field (`priority`/`assignee`/`component`/`estimation`/`children:[]`/`comments:0`); `create_issue_from_template` chỉ copy title+description → phải copy priority/assignee/component + tạo child issues đệ quy.
+- [ ] [T-77] [M] bug(search + misc): `fulltext_search` dùng `$like findAll` thay vì `searchFulltext` API; `preview_deletion` bỏ sót cascade (sub-issues/relations/blockedBy); `create`/`update_tag_category` sai field `title` vs `label` — medium | blocked-by: (none) | blocks: (none) | issue: #85 — `fulltext_search` đổi sang `client.searchFulltext({query}, {limit})` (API engine thật + relevance score) + honest error nếu server không support (theo T-57 pattern); `preview_deletion` dùng aggregate counters (`subIssues`/`comments`/`attachments`/`blockedBy`/`relations`) + generate warnings cascade; tag category field `title` → `label`.
+
+
+---
+
 ## Size / priority distribution
 
-- Size: S ~30 · M ~30 · **L 3** (T-43, T-52 done; T-58 done — runtime audit critical).
-- Priority: 🔴 critical 0 open (3 done: T-47, T-52, T-58) · 🔴 high 0 open (3 done: T-62, T-63, T-64) · 🟡 medium 21 · 🟢 low 1 (T-22).
+- Size: S ~30 · M ~37 · **L 6** (T-43, T-52 done; T-58 done — runtime audit critical; T-65, T-66, T-74 open — beta.5).
+- Priority: 🔴 critical 5 open (T-65, T-66, T-67, T-68, T-70) · 🔴 high 7 open (T-69, T-71, T-72, T-73, T-74, T-75, T-76) · 🟡 medium 22 (T-77 + 21 cũ) · 🟢 low 1 (T-22).
 - Critical path: T-01→02/03→04→05→06→09→domains→30→31→33→34→36→38→39.
 - **beta.1 hotfix chain (M6 — all done)**: T-40..T-46 fix #22-#28, PR #29-#35.
 - **beta.2 follow-up chain (T-47..T-53 — all done)**: fix #36-#43, PR #44-#53.
@@ -271,5 +331,11 @@ done, 583 tests pass (+74 từ 509 baseline), CI green cả ubuntu+macos, DoD pa
   - **Audit hardening** (1): T-63 (PR #71 — `safeUpdateDoc`/`safeRemoveDoc` helper schema drift guard + migrate 42/42 call site, issue #68).
   - **WS spam + token leak** (1): T-64 (PR #72 — đăng ký 6 pattern WS error vào framework T-62 + B1 fix `installGlobalConsoleFilter` active toàn session lifetime — token leak gate post-connect, issue #69).
   - 583 tests (+74 baseline 509), CI green cả ubuntu+macos, 3 review pass (code-review + reality-checker mỗi task) + 1 BLOCKER fix (T-64 B1 token leak post-connect).
+- **beta.5 follow-up chain (T-65..T-77 — TODO 0/13)**: audit toàn diện 102 tool vs trusted `@firfi/huly-mcp` v0.45 — 5 root-cause (sai class ref · sai data model · sai field name/type · thiếu space scoping · thiếu account-client). Umbrella: issue #86. Độ ưu tiên đề xuất:
+  - **Critical path (silent data loss, làm trước)**: T-65 → T-66 (Document plugin enable), T-67 (create_* AttachedDoc), T-68 (issue hierarchy), T-70 (comments `body`→`message`).
+  - **High**: T-69 (TagReference), T-71 (list_* scoping), T-72 (markup+enum), T-73 (workflow registration), T-74 (account-client, blocker T-75), T-75 (attachments blob — blocked-by T-74), T-76 (templates children — blocked-by T-68).
+  - **Medium**: T-77 (fulltext_search API + preview_deletion cascade + tag category field).
+  - DAG phụ thuộc: T-65→T-66 · T-68→T-76 · T-74→T-75.
+  - Task detail files: TODO (cần tạo `docs/tasks/T-65.md`..`T-77.md` khi grab).
 - Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
 - Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).
