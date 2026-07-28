@@ -3,6 +3,32 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.7] - 2026-07-29
+
+Hotfix canary #6. **User-reported blocker fix**: `create_teamspace` was
+honest-unavailable (T-66 conclusion sai — claimed icon/spaceType refs cần
+bundle document plugin). Reality: plugin refs = plain string literals
+(plugin() factory prefixes `<pluginId>:<category>:<name>`), verified runtime
+via `node -e`. Same T-65 pattern.
+
+### Fixed
+
+- **create_teamspace** (T-78 #101): implement (string-literal icon/spaceType).
+  Idempotent (findOne name → existing) + createDoc {name, description, private,
+  members:[uuid], owners:[uuid], icon, type}. Return {id, name, created}.
+  Unblocks Huly docs workflow.
+- **list_teamspaces** (T-78 #101): content message surface ids+names (trước
+  chỉ "Found N" — agent không resolve id được).
+- **SPACE_PARENT colon form** (T-78 #101 latent fix): `spaceRef("core.space.Space")`
+  (DOT — sai) → `spaceRef("core:space:Space")` (colon, đúng Huly ref format).
+  Affects update/delete teamspace (T-66 silent bug).
+
+### Known limitations (from fresh audit — issues TBD)
+
+Fresh audit vs trusted v0.45 found ~20 bugs across 4 clusters (todos, issues
+read-path, projects/spaces/components, milestones/workspace/contacts). GitHub
+issues to be filed.
+
 ## [1.0.0-beta.6] - 2026-07-29
 
 Hotfix canary #5. **beta.5 follow-up** — audit toàn diện 102 tool vs trusted
