@@ -10,7 +10,15 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { ISSUE_CLASS, PROJECT_CLASS, TAG_CLASS, ISSUE_STATUS_CLASS, idRef } from "./_class-refs.js";
+import {
+  ISSUE_CLASS,
+  PROJECT_CLASS,
+  TAG_CLASS,
+  ISSUE_STATUS_CLASS,
+  idRef,
+  NO_PARENT_REF,
+  ISSUE_KIND_REF,
+} from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -184,42 +192,65 @@ export const tools: HulyToolDefinition[] = [
           details: { project: tctx.project },
         };
       }
-      // Description markdown → markup (FR-13 R8)
+      // T-67 #75: $inc sequence trên Project → lấy sequence number (atomic, tránh
+      // race duplicate identifier). trusted issues-write.ts:133.
+      const incResult = await tctx.client.updateDoc(
+        PROJECT_CLASS,
+        "core:space:Space" as never,
+        project._id as never,
+        { $inc: { sequence: 1 } } as never,
+        true,
+      );
+      // Extract sequence từ txResult (Huly trả { object: { sequence: N } }).
+      const seqRaw = (incResult as { object?: { sequence?: number } })?.object?.sequence;
+      const sequence =
+        typeof seqRaw === "number"
+          ? seqRaw
+          : ((project as { sequence?: number }).sequence ?? 0) + 1;
+      const identifier = `${(project as { identifier?: string }).identifier ?? tctx.project}-${sequence}`;
+
+      // T-67 #75: Issue = AttachedDoc → addCollection (KHÔNG createDoc).
+      // Top-level issue: attachedTo=NoParent (""), collection="subIssues".
+      // DEFERRED: status Ref resolution (T-71), description MarkupBlobRef (T-72),
+      // parentIssue hierarchy (T-68).
       const descriptionMarkup =
         params.description !== undefined
           ? JSON.stringify(mdToMarkup(params.description))
           : undefined;
-      const id = await tctx.client.createDoc(ISSUE_CLASS, project.space as never, {
-        title: params.title,
-        description: descriptionMarkup,
-        priority: params.priority,
-        assignee: params.assignee,
-        status: params.status,
-        taskType: params.taskType,
-        parentIssue: params.parentIssue,
-        dueDate: params.dueDate,
-        estimation: params.estimation,
-      });
-      // T-40 #26: identifier (vd "PD-42") được server gán sau createDoc.
-      // createDoc chỉ trả _id internal → lookup issue để lấy identifier cho LLM
-      // (90% tool khác như get/update/add_comment cần identifier, không _id).
-      // Lookup fail (server async index chậm) → vẫn trả id, identifier=undefined
-      // + hint content rõ ràng để LLM biết retry qua list_issues (tránh stuck
-      // khi LLM cố dùng _id internal cho get_issue — resolveIdentifier fail).
-      let identifier: string | undefined;
-      try {
-        const created = await tctx.client.findOne(ISSUE_CLASS, { _id: id });
-        identifier = (created as { identifier?: string } | null)?.identifier;
-      } catch {
-        // Lookup fail không block success — identifier optional, LLM có _id dự phòng
-      }
-      const contentMsg =
-        identifier !== undefined
-          ? `Created issue ${identifier}: "${params.title}".`
-          : `Created issue "${params.title}". Identifier pending (server indexing) — use huly_list_issues to find by title if needed.`;
+      const issueId = `tracker:issue.${Math.random().toString(36).slice(2, 14)}`;
+      const id = await tctx.client.addCollection(
+        ISSUE_CLASS,
+        project._id as never, // space = project (issues live trong project space)
+        NO_PARENT_REF, // attachedTo = NoParent sentinel (top-level)
+        ISSUE_CLASS, // attachedToClass
+        "subIssues", // collection
+        {
+          title: params.title,
+          description: descriptionMarkup,
+          priority: params.priority,
+          assignee: params.assignee,
+          status: params.status,
+          number: sequence,
+          kind: ISSUE_KIND_REF,
+          identifier,
+          component: null,
+          estimation: params.estimation ?? 0,
+          remainingTime: 0,
+          reportedTime: 0,
+          reports: 0,
+          subIssues: 0,
+          parents: [],
+          childInfo: [],
+          dueDate: params.dueDate ?? null,
+          rank: "", // lexorank empty — server gán nếu empty (pattern T-46)
+        } as never,
+        issueId as never,
+      );
+      // T-40 #26: identifier computed locally (T-67) — KHÔNG cần lookup server.
+      const contentMsg = `Created issue ${identifier}: "${params.title}".`;
       return {
         content: contentMsg,
-        details: { id, identifier, title: params.title },
+        details: { id, identifier, title: params.title, number: sequence },
       };
     },
   }),

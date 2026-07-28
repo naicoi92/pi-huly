@@ -11,7 +11,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { PROJECT_CLASS, ISSUE_STATUS_CLASS, spaceRef } from "./_class-refs.js";
+import { PROJECT_CLASS, ISSUE_STATUS_CLASS, CLASSIC_PROJECT_TYPE_REF } from "./_class-refs.js";
 import { workspaceParam, projectParam, safeUpdateDoc, safeRemoveDoc } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -76,7 +76,8 @@ export const tools: HulyToolDefinition[] = [
   defineHulyTool({
     name: "create_project",
     label: "Create project",
-    description: "Create Huly project. Returns identifier. KHÔNG idempotent (mỗi call = new).",
+    description:
+      "Create Huly project. Idempotent (findOne by identifier trước). Returns identifier.",
     promptSnippet: "Create a new Huly project.",
     parameters: Type.Object({
       workspace: workspaceParam,
@@ -89,11 +90,38 @@ export const tools: HulyToolDefinition[] = [
       description: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
-      const id = await tctx.client.createDoc(PROJECT_CLASS, spaceRef(tctx.workspace), {
-        name: params.name,
+      // T-67 #75: idempotent — findOne by identifier trước (spec §9).
+      const existing = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: params.identifier,
-        description: params.description,
       });
+      if (existing) {
+        return {
+          content: `Project ${params.identifier} (${(existing as { name?: string }).name ?? ""}) đã tồn tại.`,
+          details: { identifier: params.identifier, id: existing._id, idempotent: true },
+        };
+      }
+      // T-67 #75: Project = TypedSpace, self-ref space (project._id = own space).
+      // Required fields: type (SpaceType), members/owners, sequence:0,
+      // defaultIssueStatus:"" (placeholder), defaultTimeReportDay:"CurrentWorkDay".
+      const projectId = `tracker:project.${Math.random().toString(36).slice(2, 14)}`;
+      const id = await tctx.client.createDoc(
+        PROJECT_CLASS,
+        projectId as never, // self-ref space
+        {
+          name: params.name,
+          identifier: params.identifier,
+          description: params.description ?? "",
+          private: false,
+          archived: false,
+          members: [tctx.currentUser.id],
+          owners: [tctx.currentUser.id],
+          sequence: 0,
+          type: CLASSIC_PROJECT_TYPE_REF,
+          defaultIssueStatus: "", // placeholder — server resolve từ ProjectType statuses
+          defaultTimeReportDay: "CurrentWorkDay",
+        } as never,
+        projectId as never,
+      );
       return {
         content: `Created project ${params.identifier} (${params.name}).`,
         details: { identifier: params.identifier, id },

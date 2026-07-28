@@ -107,7 +107,8 @@ export const tools: HulyToolDefinition[] = [
         label: params.label,
         description: params.description,
         targetDate: params.targetDate,
-        status: "planned",
+        // T-67 #75: MilestoneStatus.Planned = 0 (numeric enum, KHÔNG phải string).
+        status: 0,
       });
       return {
         content: `Created milestone "${params.label}".`,

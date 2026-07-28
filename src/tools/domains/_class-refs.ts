@@ -86,6 +86,15 @@ export const SPACE_CLASS = classRef("core:class:Space");
 // có SpaceTypeDescriptor). Register trong drive plugin() class block line 31.
 export const DRIVE_CLASS = classRef("drive:class:Drive");
 
+// T-67 (2026-07-28): refs cho create_* AttachedDoc + Project Type.
+// Huly convention <plugin>:<category>:<key> (giống class refs).
+// NoParent = empty ref sentinel (trusted issues-parent.ts:21 tracker.ids.NoParent="").
+export const NO_PARENT_REF = idRef("");
+// Issue.kind = tracker.taskTypes.Issue (trusted issues-write.ts:168).
+export const ISSUE_KIND_REF = classRef("tracker:taskTypes:Issue");
+// Project.type (TypedSpace) = tracker.ids.ClassingProjectType (trusted projects.ts:185).
+export const CLASSIC_PROJECT_TYPE_REF = classRef("tracker:ids:ClassingProjectType");
+
 // chunter (Comments = ChatMessage)
 export const CHAT_MESSAGE_CLASS = classRef("chunter:class:ChatMessage");
 

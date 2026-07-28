@@ -95,6 +95,29 @@ describe("T-51 #41: create_milestone project space resolve (no silent fallback)"
   });
 });
 
+describe("T-67 #75: create_milestone status = MilestoneStatus.Planned (0)", () => {
+  it("create_milestone pass status:0 (numeric enum, KHÔNG string)", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({ _id: "proj-1", space: "sp1" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_create_milestone");
+    await tool.execute(
+      "tc1",
+      { label: "M1", targetDate: 1700000000000 },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    const call = client.createDoc.mock.calls[0];
+    const attrs = call?.[2] as Record<string, unknown>;
+    // T-67: status = 0 (MilestoneStatus.Planned numeric enum)
+    expect(attrs.status).toBe(0);
+    expect(attrs.status).not.toBe("planned");
+  });
+});
+
 describe("T-52 #42: set_issue_milestone FK validate", () => {
   it("milestone KHÔNG tồn tại → isError + updateDoc KHÔNG gọi", async () => {
     const client = makeClient();
