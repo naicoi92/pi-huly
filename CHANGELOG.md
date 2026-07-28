@@ -3,7 +3,7 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
-## [1.0.0-beta.5] - 2026-07-28 (Unreleased)
+## [1.0.0-beta.5] - 2026-07-28
 
 Hotfix canary #4. **beta.4 follow-up hotfixes** — 3 task hardening noise + data
 loss class. Verified upstream `@hcengineering/api-client@0.7.423` `connect()`
