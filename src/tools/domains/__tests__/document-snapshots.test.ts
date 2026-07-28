@@ -1,6 +1,6 @@
-// Test T-58 #43 document-snapshots domain — honest-unavailable (deprecated).
-// DEEP-AUDIT 12 packages @0.7.423: document:class:DocumentSnapshot 0 match.
-// All 2 snapshot tools → isError + redirect Huly UI Activity panel.
+// T-66 (2026-07-28): document-snapshots domain tests — RE-ENABLED.
+// DOCUMENT_SNAPSHOT_CLASS registered trong document plugin() block (verified
+// vs trusted huly-mcp v0.45). Snapshot content = MarkupBlobRef → fetchMarkup.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,6 +26,7 @@ vi.mock("../../../client/errors.js", () => ({
 
 import { getClient } from "../../../client/pool.js";
 import { tools } from "../document-snapshots.js";
+import { DOCUMENT_SNAPSHOT_CLASS } from "../_class-refs.js";
 
 const ctx = {
   hasUI: false,
@@ -38,6 +39,7 @@ function makeClient() {
     getCurrentUser: vi.fn().mockResolvedValue({ id: "u1", name: "User", email: "u@x.com" }),
     findAll: vi.fn().mockResolvedValue([]),
     findOne: vi.fn(),
+    fetchMarkup: vi.fn().mockResolvedValue("# snapshot content"),
   };
 }
 
@@ -49,52 +51,67 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("T-58 #43: document-snapshots honest-unavailable (deprecated)", () => {
-  it("list_document_snapshots → isError + KHÔNG gọi findAll", async () => {
+describe("T-66: document-snapshots ENABLED (DOCUMENT_SNAPSHOT_CLASS)", () => {
+  it("list_document_snapshots → findAll DOCUMENT_SNAPSHOT_CLASS + attachedTo=document", async () => {
     const client = makeClient();
+    client.findAll = vi
+      .fn()
+      .mockResolvedValue([{ _id: "s-1", modifiedBy: "u1", modifiedOn: 1000 }]);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_list_document_snapshots");
     const result = await tool.execute("tc1", { document: "doc-1" }, undefined, undefined, ctx);
 
-    expect(result.isError).toBe(true);
-    expect(client.findAll).not.toHaveBeenCalled();
-  });
-
-  it("get_document_snapshot → isError + KHÔNG gọi findOne", async () => {
-    const client = makeClient();
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool("huly_get_document_snapshot");
-    const result = await tool.execute("tc1", { snapshot: "snap-1" }, undefined, undefined, ctx);
-
-    expect(result.isError).toBe(true);
-    expect(client.findOne).not.toHaveBeenCalled();
-  });
-
-  it("message mention deprecated + redirect Huly UI / get_document", async () => {
-    const client = makeClient();
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool("huly_list_document_snapshots");
-    const result = await tool.execute("tc1", { document: "d1" }, undefined, undefined, ctx);
-
+    expect(result.isError).toBeUndefined();
+    expect(client.findAll).toHaveBeenCalledWith(DOCUMENT_SNAPSHOT_CLASS, { attachedTo: "doc-1" });
     const text = result.content[0]?.text ?? "";
-    expect(text).toMatch(/KHÔNG khả dụng|deprecated/i);
-    expect(text).toContain("document:class:DocumentSnapshot");
-    expect(text).toMatch(/Huly UI|Activity/i);
+    expect(text).toContain("1 snapshot");
   });
 
-  it("details reason=deprecated", async () => {
+  it("get_document_snapshot → findOne DOCUMENT_SNAPSHOT_CLASS + fetchMarkup", async () => {
     const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({
+      _id: "s-1",
+      content: { blob: "ref" },
+      modifiedBy: "u1",
+      modifiedOn: 1000,
+    });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_get_document_snapshot");
-    const result = await tool.execute("tc1", { snapshot: "s1" }, undefined, undefined, ctx);
+    const result = await tool.execute("tc1", { snapshot: "s-1" }, undefined, undefined, ctx);
 
-    expect(result.details).toMatchObject({
-      reason: "deprecated",
-      useClass: "document:class:DocumentSnapshot",
-    });
+    expect(result.isError).toBeUndefined();
+    expect(client.findOne).toHaveBeenCalledWith(DOCUMENT_SNAPSHOT_CLASS, { _id: "s-1" });
+    expect(client.fetchMarkup).toHaveBeenCalledWith(
+      DOCUMENT_SNAPSHOT_CLASS,
+      "s-1",
+      "content",
+      { blob: "ref" },
+      "markdown",
+    );
+  });
+
+  it("get_document_snapshot not found → isError", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_get_document_snapshot");
+    const result = await tool.execute("tc1", { snapshot: "x" }, undefined, undefined, ctx);
+
+    expect(result.isError).toBe(true);
+  });
+
+  it("get_document_snapshot no content → metadata only (no fetchMarkup)", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({ _id: "s-1", content: undefined });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_get_document_snapshot");
+    const result = await tool.execute("tc1", { snapshot: "s-1" }, undefined, undefined, ctx);
+
+    expect(result.isError).toBeUndefined();
+    expect(client.fetchMarkup).not.toHaveBeenCalled();
   });
 });

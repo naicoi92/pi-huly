@@ -42,6 +42,9 @@ function makeClient() {
     removeDoc: vi.fn().mockResolvedValue(undefined),
     addCollection: vi.fn().mockResolvedValue("new-coll-id"),
     createMixin: vi.fn().mockResolvedValue(undefined),
+    fetchMarkup: vi.fn().mockResolvedValue(""),
+    uploadMarkup: vi.fn().mockResolvedValue({ blob: "ref" }),
+    updateMarkup: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -207,8 +210,16 @@ describe("error path coverage", () => {
     expect(client.createDoc).toHaveBeenCalledTimes(1);
   });
 
-  it("edit_document honest-unavailable (T-60 Document orphan) → isError", async () => {
+  it("edit_document ENABLED (T-66) — search-replace gọi fetchMarkup + updateMarkup", async () => {
     const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({
+      _id: "d1",
+      title: "Doc",
+      content: { blob: "ref" },
+      space: "ts-1",
+    });
+    client.fetchMarkup = vi.fn().mockResolvedValue("hello world");
+    client.updateMarkup = vi.fn().mockResolvedValue(undefined);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = allTools.find((t) => t.name === "huly_edit_document")!;
@@ -219,11 +230,10 @@ describe("error path coverage", () => {
       undefined,
       ctx,
     );
-    // T-60: edit_document honest-unavailable — Document interface orphan
-    expect(result.isError).toBe(true);
-    expect(result.details).toMatchObject({ reason: "interface_orphan" });
-    expect(client.updateDoc).not.toHaveBeenCalled();
-    expect(client.findOne).not.toHaveBeenCalled();
+    // T-66: edit_document ENABLED — search-replace path
+    expect(result.isError).toBeUndefined();
+    expect(result.details).toMatchObject({ updated: true, mode: "search-replace" });
+    expect(client.updateMarkup).toHaveBeenCalledTimes(1);
   });
 
   it("get_issue cross-project identifier → isError", async () => {
