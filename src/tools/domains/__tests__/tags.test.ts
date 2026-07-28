@@ -26,6 +26,7 @@ vi.mock("../../../client/errors.js", () => ({
 
 import { getClient } from "../../../client/pool.js";
 import { tools } from "../tags.js";
+import { TAG_REFERENCE_CLASS, ISSUE_CLASS } from "../_class-refs.js";
 
 const ctx = {
   hasUI: false,
@@ -41,6 +42,7 @@ function makeClient() {
     createDoc: vi.fn().mockResolvedValue("tag-id-1"),
     updateDoc: vi.fn().mockResolvedValue(undefined),
     removeDoc: vi.fn().mockResolvedValue(undefined),
+    addCollection: vi.fn().mockResolvedValue("tagref-id-1"), // T-69
   };
 }
 
@@ -52,13 +54,17 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("T-52 #42: attach_tag FK validate + TagReference shape", () => {
-  it("tag KHÔNG tồn tại → isError + updateDoc KHÔNG gọi", async () => {
+// T-69: attach_tag/detach_tag/list_attached_tags dùng TagReference AttachedDoc
+// (addCollection/findAll/removeDoc) — KHÔNG $push/$pull inline array. Collection
+// field = "labels" (KHÔNG "tags"). reality-checker CONFIRMED vs trusted.
+describe('T-69: attach_tag dùng addCollection TagReference (collection="labels")', () => {
+  it("tag KHÔNG tồn tại → isError + addCollection KHÔNG gọi", async () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", tags: [] })
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
       .mockResolvedValueOnce(undefined); // tag not found
+    client.findAll = vi.fn().mockResolvedValue([]); // idempotent check empty
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_attach_tag");
@@ -71,18 +77,16 @@ describe("T-52 #42: attach_tag FK validate + TagReference shape", () => {
     );
 
     expect(result.isError).toBe(true);
-    const text = result.content[0]?.text ?? "";
-    expect(text).toMatch(/tag.*not found/i);
-    expect(text).toMatch(/create_tag/i);
-    expect(client.updateDoc).not.toHaveBeenCalled();
+    expect(client.addCollection).not.toHaveBeenCalled();
   });
 
-  it("tag tồn tại → $push TagReference object shape {tag, title, color} (KHÔNG raw string)", async () => {
+  it('tag tồn tại → addCollection TAG_REFERENCE_CLASS collection="labels" + attrs {tag,title,color:Number}', async () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", tags: [] })
-      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: "#f00" }); // tag
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
+      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: 5 }); // tag (color number)
+    client.findAll = vi.fn().mockResolvedValue([]); // chưa attached
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_attach_tag");
@@ -95,28 +99,27 @@ describe("T-52 #42: attach_tag FK validate + TagReference shape", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(client.updateDoc).toHaveBeenCalledTimes(1);
-    const call = client.updateDoc.mock.calls[0];
-    const ops = call?.[3] as { $push: { tags: { tag: string; title: string; color: string } } };
-    // TagReference object shape (KHÔNG raw string idRef)
-    expect(ops.$push.tags).toMatchObject({
-      tag: "tag-1",
-      title: "bug",
-      color: "#f00",
-    });
+    expect(client.addCollection).toHaveBeenCalledTimes(1);
+    const call = client.addCollection.mock.calls[0];
+    expect(call?.[0]).toBe(TAG_REFERENCE_CLASS);
+    expect(call?.[1]).toBe("sp1"); // space = issue.space
+    expect(call?.[2]).toBe("i1"); // attachedTo
+    expect(call?.[3]).toBe(ISSUE_CLASS); // attachedToClass
+    expect(call?.[4]).toBe("labels"); // collection (KHÔNG "tags")
+    const attrs = call?.[5] as Record<string, unknown>;
+    expect(attrs.tag).toBe("tag-1");
+    expect(attrs.title).toBe("bug");
+    expect(attrs.color).toBe(5); // number (coerce)
   });
 
-  it("tag đã có trên issue (idempotent ref resolved) → no-op, KHÔNG re-push duplicate", async () => {
+  it("tag đã có (idempotent findAll match) → no-op, addCollection KHÔNG gọi", async () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({
-        _id: "i1",
-        space: "sp1",
-        identifier: "PD-1",
-        tags: [{ tag: "tag-1", title: "bug", color: "#f00" }], // đã có
-      })
-      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: "#f00" });
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
+      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: 5 });
+    // findAll returns existing TagReference with tag=tag-1 → idempotent
+    client.findAll = vi.fn().mockResolvedValue([{ _id: "tr-1", tag: "tag-1", space: "sp1" }]);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_attach_tag");
@@ -131,26 +134,18 @@ describe("T-52 #42: attach_tag FK validate + TagReference shape", () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
     expect(text).toMatch(/already|no-op|idempotent/i);
-    // updateDoc KHÔNG gọi (idempotent dùng ref resolved match)
-    expect(client.updateDoc).not.toHaveBeenCalled();
+    expect(client.addCollection).not.toHaveBeenCalled();
   });
 });
 
-// T-52 review fix: detach_tag symmetric với attach_tag — $pull bằng { tag: _id }
-// object (KHÔNG raw string). Regression: trước fix $pull raw string không match
-// TagReference objects attach_tag push → tag undeletable.
-describe("T-52 review fix: detach_tag symmetric shape ($pull object)", () => {
-  it("tag tồn tại + trên issue → $pull bằng { tag: _id } object (KHÔNG raw string)", async () => {
+describe("T-69: detach_tag dùng findAll + removeDoc TagReference", () => {
+  it('tag trên issue → findAll TagReference collection="labels" + removeDoc matching', async () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({
-        _id: "i1",
-        space: "sp1",
-        identifier: "PD-1",
-        tags: [{ tag: "tag-1", title: "bug", color: "#f00" }],
-      })
-      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: "#f00" });
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
+      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: 5 });
+    client.findAll = vi.fn().mockResolvedValue([{ _id: "tr-1", tag: "tag-1", space: "sp1" }]);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_detach_tag");
@@ -163,24 +158,21 @@ describe("T-52 review fix: detach_tag symmetric shape ($pull object)", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(client.updateDoc).toHaveBeenCalledTimes(1);
-    const call = client.updateDoc.mock.calls[0];
-    const ops = call?.[3] as { $pull: { tags: { tag: string } } };
-    // $pull bằng { tag: _id } object — match shape attach_tag push
-    expect(ops.$pull.tags).toMatchObject({ tag: "tag-1" });
+    const findCall = client.findAll.mock.calls[0];
+    expect(findCall?.[0]).toBe(TAG_REFERENCE_CLASS);
+    const query = findCall?.[1] as Record<string, unknown>;
+    expect(query.attachedTo).toBe("i1");
+    expect(query.collection).toBe("labels");
+    expect(client.removeDoc).toHaveBeenCalledWith(TAG_REFERENCE_CLASS, "sp1", "tr-1");
   });
 
-  it("tag KHÔNG có trên issue → idempotent no-op, updateDoc KHÔNG gọi", async () => {
+  it("tag KHÔNG có trên issue → idempotent no-op, removeDoc KHÔNG gọi", async () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({
-        _id: "i1",
-        space: "sp1",
-        identifier: "PD-1",
-        tags: [], // tag không có
-      })
-      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: "#f00" });
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
+      .mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: 5 });
+    client.findAll = vi.fn().mockResolvedValue([]); // không có TagReference
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_detach_tag");
@@ -194,8 +186,44 @@ describe("T-52 review fix: detach_tag symmetric shape ($pull object)", () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
-    expect(text).toMatch(/no-op|idempotent/i);
-    expect(client.updateDoc).not.toHaveBeenCalled();
+    expect(text).toMatch(/no-op|idempotent|not on/i);
+    expect(client.removeDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe("T-69: list_attached_tags dùng findAll TagReference (KHÔNG issue.tags inline)", () => {
+  it('list_attached_tags → findAll TAG_REFERENCE_CLASS + collection="labels"', async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({ _id: "i1", space: "sp1", identifier: "PD-1" });
+    client.findAll = vi
+      .fn()
+      .mockResolvedValue([{ _id: "tr-1", tag: "tag-1", title: "bug", color: 5 }]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_attached_tags");
+    const result = await tool.execute("tc1", { identifier: "PD-1" }, undefined, undefined, ctx);
+
+    expect(result.isError).toBeUndefined();
+    const call = client.findAll.mock.calls[0];
+    expect(call?.[0]).toBe(TAG_REFERENCE_CLASS);
+    const query = call?.[1] as Record<string, unknown>;
+    expect(query.attachedTo).toBe("i1");
+    expect(query.attachedToClass).toBe(ISSUE_CLASS);
+    expect(query.collection).toBe("labels");
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("1 tag");
+  });
+
+  it("issue not found → isError", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_attached_tags");
+    const result = await tool.execute("tc1", { identifier: "x" }, undefined, undefined, ctx);
+
+    expect(result.isError).toBe(true);
+    expect(client.findAll).not.toHaveBeenCalled();
   });
 });
 

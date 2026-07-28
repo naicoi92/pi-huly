@@ -104,6 +104,7 @@ export const ATTACHMENT_CLASS = classRef("attachment:class:Attachment");
 // tags (TagElement = entity thật, NOT "Tag")
 // Huly thiết kế: TagElement = tag entity, TagReference = ref trong doc, TagCategory = group.
 export const TAG_CLASS = classRef("tags:class:TagElement"); // T-43: Tag → TagElement
+export const TAG_REFERENCE_CLASS = classRef("tags:class:TagReference"); // T-69: AttachedDoc cho tag attachments
 export const TAG_CATEGORY_CLASS = classRef("tags:class:TagCategory");
 
 // view — T-58 DEEP-AUDIT: Label KHÔNG tồn tại trong 12 packages (0 match).
