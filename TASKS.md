@@ -211,6 +211,10 @@ giữ current — cần runtime server verify khi có self-host)_
 
 ## beta.4 follow-up hotfixes (post-beta.4 — không thuộc milestone)
 
+**Status: ✅ completed** _(slash goal beta.4 follow-up, 2026-07-28 — 3/3 tasks
+done, 583 tests pass (+74 từ 509 baseline), CI green cả ubuntu+macos, DoD pass;
+3 review pass + 1 BLOCKER fix T-64 B1 token leak post-connect)_
+
 > **Context**: Sau khi beta.4 shipped (root cause fix 5 class ref qua T-54..T-60 +
 > T-61 issue_relations direction), smoke test tiếp tục phát hiện **3 vấn đề mới**:
 >
@@ -253,7 +257,7 @@ giữ current — cần runtime server verify khi có self-host)_
 ## Size / priority distribution
 
 - Size: S ~30 · M ~30 · **L 3** (T-43, T-52 done; T-58 done — runtime audit critical).
-- Priority: 🔴 critical 0 open (3 done: T-47, T-52, T-58) · 🔴 high 3 open (T-62, T-63, T-64) · 🟡 medium 21 · 🟢 low 1 (T-22).
+- Priority: 🔴 critical 0 open (3 done: T-47, T-52, T-58) · 🔴 high 0 open (3 done: T-62, T-63, T-64) · 🟡 medium 21 · 🟢 low 1 (T-22).
 - Critical path: T-01→02/03→04→05→06→09→domains→30→31→33→34→36→38→39.
 - **beta.1 hotfix chain (M6 — all done)**: T-40..T-46 fix #22-#28, PR #29-#35.
 - **beta.2 follow-up chain (T-47..T-53 — all done)**: fix #36-#43, PR #44-#53.
@@ -262,10 +266,10 @@ giữ current — cần runtime server verify khi có self-host)_
   - **Root cause DEEP-AUDIT** (4): T-58 (audit resolved 5 class refs via plugin() block scan — KHÔNG cần runtime server), T-59 (issue_relations inline $push/$pull), T-60 (Document interface orphan — 7 tool honest-unavailable + search domain remove), T-54 (create_teamspace honest-unavailable — drive:class:Drive nhưng SpaceType ref inaccessible).
   - **Relations direction** (1): T-61 (add/remove/list relation direction khớp Huly UI — root cause T-59 #63 đảo chiều + thiếu relates-to).
   - 509 tests (+55 baseline 454), CI green, 2 review pass + re-audit CONFIRMED 0 dead class runtime call.
-- **beta.4 follow-up chain (T-62..T-64 — 3 PENDING)**:
-  - **Filter framework** (1): T-62 (gate upstream console spam `console-filter.ts` framework, issue #67).
-  - **Audit hardening** (1): T-63 (42 call site updateDoc/removeDoc schema drift guard, issue #68).
-  - **WS spam + token leak** (1): T-64 (gate `client websocket error` + 7 dòng spam + fix token leak, issue #69 — blocked-by T-62).
-  - T-62 + T-63 độc lập start ngay; T-64 blocked-by T-62 (dùng framework).
+- **beta.4 follow-up chain (T-62..T-64 — ALL DONE 3/3)**:
+  - **Filter framework** (1): T-62 (PR #70 — gate upstream console spam `console-filter.ts` framework + `runWithConsoleFilter` try/finally + DEFAULT_UPSTREAM_NOISE_PATTERNS registry + config escape hatch, issue #67).
+  - **Audit hardening** (1): T-63 (PR #71 — `safeUpdateDoc`/`safeRemoveDoc` helper schema drift guard + migrate 42/42 call site, issue #68).
+  - **WS spam + token leak** (1): T-64 (PR #72 — đăng ký 6 pattern WS error vào framework T-62 + B1 fix `installGlobalConsoleFilter` active toàn session lifetime — token leak gate post-connect, issue #69).
+  - 583 tests (+74 baseline 509), CI green cả ubuntu+macos, 3 review pass (code-review + reality-checker mỗi task) + 1 BLOCKER fix (T-64 B1 token leak post-connect).
 - Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
 - Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).
