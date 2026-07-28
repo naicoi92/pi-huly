@@ -16,15 +16,23 @@ import {
 } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
-  // 1. list_tags
+  // 1. list_tags — T-73: optional targetClass filter (tags scoped theo class attach)
   defineHulyTool({
     name: "list_tags",
     label: "List tags",
-    description: "List tags trong project (project-scoped).",
+    description: "List tags trong project. Optional targetClass filter (vd tracker:class:Issue).",
     needsProject: true,
-    parameters: Type.Object({ workspace: workspaceParam, project: projectParam }),
-    async handler(_params, tctx) {
-      const tags = await tctx.client.findAll(TAG_CLASS, {}, {});
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      project: projectParam,
+      targetClass: Type.Optional(
+        Type.String({ description: "Filter tags theo target class (vd tracker:class:Issue)." }),
+      ),
+    }),
+    async handler(params, tctx) {
+      const query: Record<string, unknown> =
+        params.targetClass !== undefined ? { targetClass: params.targetClass } : {};
+      const tags = await tctx.client.findAll(TAG_CLASS, query as never, {});
       const list = tags.map((t) => ({
         _id: t._id,
         title: (t as { title?: string }).title ?? "",

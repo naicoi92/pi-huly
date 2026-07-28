@@ -56,44 +56,46 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 3. list_space_types
+  // 3. list_space_types — T-73: honest-unavailable (fabricated data removed).
+  // Space types = SpaceTypeDescriptor config (drive/class注册), KHÔNG query tự do.
+  // Pi-huly KHÔNG bundle drive plugin → KHÔNG access descriptors honestly.
   defineHulyTool({
     name: "list_space_types",
     label: "List space types",
-    description: "List space types (categories).",
+    description:
+      "UNAVAILABLE — space types = SpaceTypeDescriptor config (drive plugin not " +
+      "bundled). Create/browse spaces via Huly UI.",
     parameters: Type.Object({ workspace: workspaceParam }),
     async handler(_params, _tctx) {
-      // Space types là const config, không query. Return placeholder list.
       return {
-        content: "Space types: teamspace, tracker, document.",
-        details: {
-          spaceTypes: ["teamspace", "tracker", "document"],
-        },
+        content:
+          "list_space_types KHÔNG khả dụng: space types = SpaceTypeDescriptor " +
+          "config registered qua drive plugin (pi-huly KHÔNG bundle drive). " +
+          "Browse/create spaces qua Huly UI trực tiếp.",
+        isError: true,
+        details: { reason: "spacetype_descriptor_inaccessible" },
       };
     },
   }),
 
-  // 4. get_space_type
+  // 4. get_space_type — T-73: honest-unavailable
   defineHulyTool({
     name: "get_space_type",
     label: "Get space type",
-    description: "Get space type detail by name.",
+    description:
+      "UNAVAILABLE — space type = SpaceTypeDescriptor config (drive plugin not " +
+      "bundled). Browse via Huly UI.",
     parameters: Type.Object({
       workspace: workspaceParam,
       spaceType: Type.String(),
     }),
-    async handler(params, _tctx) {
-      const known = ["teamspace", "tracker", "document"];
-      if (!known.includes(params.spaceType)) {
-        return {
-          content: `Unknown space type "${params.spaceType}". Known: ${known.join(", ")}.`,
-          isError: true,
-          details: { spaceType: params.spaceType, known },
-        };
-      }
+    async handler(_params, _tctx) {
       return {
-        content: `Space type: ${params.spaceType}`,
-        details: { spaceType: params.spaceType },
+        content:
+          "get_space_type KHÔNG khả dụng: space type = SpaceTypeDescriptor config " +
+          "(drive plugin not bundled). Browse via Huly UI.",
+        isError: true,
+        details: { reason: "spacetype_descriptor_inaccessible" },
       };
     },
   }),

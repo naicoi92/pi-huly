@@ -182,26 +182,39 @@ describe("error path coverage", () => {
     expect(result.content[0]?.text).toMatch(/not found/i);
   });
 
-  it("create_issue_status idempotent 2 lần — lần 2 no-op", async () => {
+  it("create_issue_status idempotent 2 lần — lần 2 no-op (T-73: taskType required)", async () => {
     const client = makeClient();
+    // Call 1: taskType → statusClass/parent; existing check undefined; projectType → register
+    // Call 2: taskType → existing check returns doc → idempotent
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce(undefined) // Lần 1: chưa tồn tại
-      .mockResolvedValueOnce({ _id: "s1", name: "Done" }); // Lần 2: tồn tại
+      .mockResolvedValueOnce({
+        _id: "tt-1",
+        statusClass: "tracker:class:IssueStatus",
+        parent: "pt-1",
+      }) // tt call 1
+      .mockResolvedValueOnce(undefined) // existing check call 1
+      .mockResolvedValueOnce({ _id: "pt-1", statuses: [] }) // projectType call 1
+      .mockResolvedValueOnce({
+        _id: "tt-1",
+        statusClass: "tracker:class:IssueStatus",
+        parent: "pt-1",
+      }) // tt call 2
+      .mockResolvedValueOnce({ _id: "s1", name: "Done" }); // existing check call 2
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = allTools.find((t) => t.name === "huly_create_issue_status")!;
     const r1 = await tool.execute(
       "tc1",
-      { name: "Done", category: "Won" },
+      { taskType: "tt-1", name: "Done", category: "Won" },
       undefined,
       undefined,
       ctx,
     );
-    expect(r1.details).toMatchObject({ name: "Done" });
+    expect(r1.details).toMatchObject({ name: "Done", registered: true });
     const r2 = await tool.execute(
       "tc1",
-      { name: "Done", category: "Won" },
+      { taskType: "tt-1", name: "Done", category: "Won" },
       undefined,
       undefined,
       ctx,
