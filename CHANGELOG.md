@@ -275,4 +275,13 @@ MIT © naicoi92. Runtime dependency `@hcengineering/*` is EPL-2.0 (see [NOTICE.m
 
 ## [Unreleased]
 
-_None yet._
+### Fixed
+
+- **#TBD** `list_issue_relations` báo 0 relation dù issue có "blocks" (vd `LST-19 blocks LST-22` → list trên LST-19 rỗng). Root cause: `add/remove/list_issue_relation` lưu/đọc relation **sai hướng** so với Huly thật (T-61). Verified từ Huly source chính thức: `RelationsPopup.svelte:33-41` + `issues.ts:111 updateIssueRelation` + test spec `relations.spec.ts`.
+  - Storage đúng (khớp Huly UI): `blocks`→`target.blockedBy` (A blocks B → `B.blockedBy.push(A)`), `is-blocked-by`→`source.blockedBy` (A blocked-by B → `A.blockedBy.push(B)`), `relates-to`→**bidirectional** (`A.relations.push(B)` + `B.relations.push(A)`).
+  - `list_issue_relations` thêm **reverse query** `findAll(Issue, { 'blockedBy._id': issue._id })` để tìm "blocks" (Issue KHÔNG có field `blocks` — phải compute qua reverse).
+  - T-59 #63 refactor trước đây đã **đảo ngược** `blocks`/`is-blocked-by` + thiếu chiều `relates-to`.
+
+### Known limitations
+
+- Relation `blocks`/`is-blocked-by` tạo bằng `huly_add_issue_relation` ở **beta.3/beta.4** (trước T-61) lưu sai chỗ (`source.relations` thay vì `target.blockedBy`) sẽ KHÔNG hiển thị đúng sau upgrade. **Workaround**: `remove_issue_relation` (relation cũ không match, no-op) → tạo lại relation qua Huly UI Relations panel, hoặc `add_issue_relation` (relationType `blocks` — ghi đúng vào `target.blockedBy`).
