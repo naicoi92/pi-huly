@@ -36,10 +36,11 @@ export const tools: HulyToolDefinition[] = [
     async handler(params, tctx) {
       const limit = typeof params.limit === "number" ? params.limit : 50;
       const employees = await tctx.client.findAll(EMPLOYEE_CLASS, {}, { limit });
+      // T-74: email field KHÔNG tồn tại trên Employee/Person (lives trong Channel).
+      // Drop email claim (was always undefined). name reliable.
       const list = employees.map((e) => ({
         id: e._id,
         name: (e as { name?: string }).name ?? "",
-        email: (e as { email?: string }).email,
       }));
       return {
         content: `Found ${list.length} employee(s).`,

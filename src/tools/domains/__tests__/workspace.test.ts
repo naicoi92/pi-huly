@@ -73,47 +73,33 @@ describe("huly_get_workspace_info", () => {
 });
 
 describe("huly_list_workspaces", () => {
-  it("queries Person + returns count", async () => {
+  // T-74: honest-unavailable (needs account-client HTTP layer).
+  it("→ isError (account-client required), findAll KHÔNG gọi", async () => {
     const client = makeClient();
-    client.findAll = vi.fn().mockResolvedValue([
-      { _id: "p1", name: "Alice" },
-      { _id: "p2", name: "Bob" },
-    ]);
     vi.mocked(getClient).mockResolvedValueOnce(client as never);
 
     const tool = tools.find((t) => t.name === "huly_list_workspaces")!;
     const result = await tool.execute("tc1", {}, undefined, undefined, ctx);
-    expect(client.findAll).toHaveBeenCalledWith("contact:class:Person", {}, { limit: 50 });
-    // T-40: non-TUI mode (hasUI=false) append details → content text để LLM thấy
-    // member list (trước đây chỉ thấy count string). Content gốc + array data.
-    const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Found 2 workspace member(s).");
-    expect(text).toContain("Alice");
-    expect(text).toContain("Bob");
-    expect(text).toContain("p1");
-  });
-
-  it("limit param override default", async () => {
-    const client = makeClient();
-    client.findAll = vi.fn().mockResolvedValue([]);
-    vi.mocked(getClient).mockResolvedValueOnce(client as never);
-
-    const tool = tools.find((t) => t.name === "huly_list_workspaces")!;
-    await tool.execute("tc1", { limit: 10 }, undefined, undefined, ctx);
-    expect(client.findAll).toHaveBeenCalledWith("contact:class:Person", {}, { limit: 10 });
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({ reason: "account_client_layer_required" });
+    expect(client.findAll).not.toHaveBeenCalled();
   });
 });
 
 describe("huly_list_workspace_members", () => {
-  it("queries Employee + returns members", async () => {
+  // T-74: honest-unavailable (account-client for roles).
+  it("→ isError (account-client required), suggests list_employees", async () => {
     const client = makeClient();
-    client.findAll = vi.fn().mockResolvedValue([{ _id: "e1", name: "Alice", email: "a@x.com" }]);
     vi.mocked(getClient).mockResolvedValueOnce(client as never);
 
     const tool = tools.find((t) => t.name === "huly_list_workspace_members")!;
     const result = await tool.execute("tc1", {}, undefined, undefined, ctx);
-    expect(client.findAll).toHaveBeenCalledWith("contact:mixin:Employee", {}, { limit: 50 });
-    expect(result.details).toMatchObject({ count: 1 });
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({
+      reason: "account_client_layer_required",
+      alternative: "huly_list_employees",
+    });
+    expect(client.findAll).not.toHaveBeenCalled();
   });
 });
 
