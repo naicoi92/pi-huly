@@ -613,6 +613,9 @@ describe("T-72: update_issue description MarkupBlobRef (uploadMarkup/updateMarku
     );
 
     expect(result.isError).toBeUndefined();
+    // T-72 review: response success (KHÔNG "No fields to update"), updateDoc KHÔNG gọi
+    expect(result.details).toMatchObject({ updated: true });
+    expect((result.details as { fields: string[] }).fields).toContain("description");
     expect(client.updateMarkup).toHaveBeenCalledWith(
       ISSUE_CLASS,
       "i1",
@@ -621,6 +624,7 @@ describe("T-72: update_issue description MarkupBlobRef (uploadMarkup/updateMarku
       "markdown",
     );
     expect(client.uploadMarkup).not.toHaveBeenCalled();
+    expect(client.updateDoc).not.toHaveBeenCalled();
   });
 });
 
