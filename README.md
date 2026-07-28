@@ -201,6 +201,7 @@ Cả 2 đã adapted: dùng `huly_` prefixed tools (KHÔNG MCP refs), giữ struc
 | `ConnectionError: Huly unreachable` | Check URL, network, self-host Huly running. `/huly status` diagnostic. |
 | `AuthError: token expired` | Refresh token trong `/huly workspace add`. |
 | TS 7 typecheck fail (R6) | Rollback TS 6.x: `pnpm install -D typescript@~6.1`. Xem [R6 rollback](#r6-rollback). |
+| `no document found, failed to apply model transaction` spam | Upstream cache-miss warn khi replay tx cũ cho doc đã expire/removed — vô hại. Filter default ON. `/huly status` hiển thị `pool noise: N filtered`. Debug thật: set `quietUpstreamNoise: false` trong `~/.pi/agent/huly/config.json`. |
 
 ### R6 rollback
 

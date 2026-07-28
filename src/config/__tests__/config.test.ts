@@ -131,6 +131,53 @@ describe("loadConfig", () => {
     await expect(loadConfig(TEST_PATH)).rejects.toThrow(/pool.maxSize must be positive/i);
   });
 
+  // T-62 #67: quietUpstreamNoise + upstreamNoisePatterns schema validation.
+  it("T-62: accepts quietUpstreamNoise boolean + upstreamNoisePatterns string[]", async () => {
+    await writeConfig(
+      TEST_PATH,
+      JSON.stringify({
+        version: 1,
+        projects: {},
+        quietUpstreamNoise: false,
+        upstreamNoisePatterns: ["^custom pattern$", "^another /"],
+      }),
+    );
+    const cfg = await loadConfig(TEST_PATH);
+    expect(cfg.quietUpstreamNoise).toBe(false);
+    expect(cfg.upstreamNoisePatterns).toEqual(["^custom pattern$", "^another /"]);
+  });
+
+  it("T-62: throws khi quietUpstreamNoise không phải boolean", async () => {
+    await writeConfig(
+      TEST_PATH,
+      JSON.stringify({ version: 1, projects: {}, quietUpstreamNoise: "yes" }),
+    );
+    await expect(loadConfig(TEST_PATH)).rejects.toThrow(/quietUpstreamNoise must be boolean/i);
+  });
+
+  it("T-62: throws khi upstreamNoisePatterns không phải array", async () => {
+    await writeConfig(
+      TEST_PATH,
+      JSON.stringify({ version: 1, projects: {}, upstreamNoisePatterns: "not-array" }),
+    );
+    await expect(loadConfig(TEST_PATH)).rejects.toThrow(/upstreamNoisePatterns must be array/i);
+  });
+
+  it("T-62: throws khi upstreamNoisePatterns[i] invalid RegExp", async () => {
+    await writeConfig(
+      TEST_PATH,
+      JSON.stringify({ version: 1, projects: {}, upstreamNoisePatterns: ["[unclosed"] }),
+    );
+    await expect(loadConfig(TEST_PATH)).rejects.toThrow(/not valid RegExp/i);
+  });
+
+  it("T-62: defaults — quietUpstreamNoise undefined khi không set", async () => {
+    await writeConfig(TEST_PATH, JSON.stringify({ version: 1, projects: {} }));
+    const cfg = await loadConfig(TEST_PATH);
+    expect(cfg.quietUpstreamNoise).toBeUndefined();
+    expect(cfg.upstreamNoisePatterns).toBeUndefined();
+  });
+
   it("throws when saveConfig called with invalid transport", async () => {
     // @ts-expect-error — intentionally invalid
     const bad: Config = { version: 1, transport: "grpc", projects: {} };
