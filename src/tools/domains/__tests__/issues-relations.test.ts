@@ -399,19 +399,13 @@ describe("T-61: list_issue_relations — 3 hướng rõ ràng + reverse query ch
       identifier: "PD-19",
     });
     // findAll trả về các issues có blockedBy._id === "i19" → PD-22 (i22)
-    client.findAll = vi.fn().mockResolvedValue([
-      { _id: "i22", _class: "tracker:class:Issue", identifier: "PD-22" },
-    ]);
+    client.findAll = vi
+      .fn()
+      .mockResolvedValue([{ _id: "i22", _class: "tracker:class:Issue", identifier: "PD-22" }]);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_list_issue_relations");
-    const result = await tool.execute(
-      "tc1",
-      { identifier: "PD-19" },
-      undefined,
-      undefined,
-      ctx,
-    );
+    const result = await tool.execute("tc1", { identifier: "PD-19" }, undefined, undefined, ctx);
 
     expect(result.isError).toBeUndefined();
     // T-61: gọi findAll với reverse query 'blockedBy._id' === issue._id
