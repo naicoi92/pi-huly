@@ -58,10 +58,14 @@ export function getUpstreamNoiseCounters(): NoiseCounters {
  */
 function extractMessage(firstArg: unknown): string | undefined {
   if (typeof firstArg === "string") return firstArg;
+  // Structured log: object có field `message` string. KHÔNG match Error instance
+  // (Error.message là real error — filter che là sai). Upstream warn dùng plain
+  // object {message: "..."} không phải Error throw.
   if (
     typeof firstArg === "object" &&
     firstArg !== null &&
     !Array.isArray(firstArg) &&
+    !(firstArg instanceof Error) &&
     typeof (firstArg as { message?: unknown }).message === "string"
   ) {
     return (firstArg as { message: string }).message;
@@ -98,6 +102,8 @@ export class UpstreamConsoleFilter {
       console[method] = ((...args: unknown[]) => {
         const msg = extractMessage(args[0]);
         if (msg !== undefined) {
+          // First-match-wins: chỉ pattern đầu (theo order trong mảng) match được
+          // count — tránh double-count khi nhiều pattern cùng match 1 message.
           const matched = patterns.find((p) => p.test(msg));
           if (matched !== undefined) {
             // Filter: swallow + counter +1
@@ -124,14 +130,6 @@ export class UpstreamConsoleFilter {
         delete this.originals[method];
       }
     }
-  }
-
-  /** Snapshot counters instance đã collect (chỉ local, KHÔNG include module-level). */
-  getCounters(): NoiseCounters {
-    // T-62: counter module-level. Trả về snapshot cho API completeness — caller
-    // thường dùng getUpstreamNoiseCounters() (aggregate). Instance getCounters
-    // giữ cho trường hợp filter rời (debug).
-    return getUpstreamNoiseCounters();
   }
 }
 

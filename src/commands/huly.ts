@@ -382,6 +382,7 @@ async function runStatus(ctx: CommandContext): Promise<CommandResult> {
     } else {
       // T-62 #67: total noise cross entry (module-level counter) — show 1 lần.
       let noiseTotal = 0;
+      let noiseByPattern: Record<string, number> = {};
       for (const s of statuses) {
         const userStr = s.user ? `${s.user.name} <${s.user.email}>` : "(user unknown)";
         lines.push(
@@ -389,10 +390,20 @@ async function runStatus(ctx: CommandContext): Promise<CommandResult> {
         );
         if (s.upstreamNoiseFiltered !== undefined) {
           noiseTotal = Math.max(noiseTotal, s.upstreamNoiseFiltered.total);
+          noiseByPattern = s.upstreamNoiseFiltered.byPattern;
         }
       }
       if (noiseTotal > 0) {
-        lines.push(`pool noise: ${noiseTotal} upstream log filtered (config quietUpstreamNoise)`);
+        // Per-pattern breakdown giúp user phân biệt nguồn noise (vd #67 model-tx
+        // vs T-64 WS error). Sort desc theo count, format "key: N" top 3.
+        const sorted = Object.entries(noiseByPattern)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([pattern, count]) => `${pattern}: ${count}`)
+          .join(", ");
+        lines.push(
+          `pool noise: ${noiseTotal} upstream log filtered${sorted ? ` (${sorted})` : ""}`,
+        );
       }
     }
   } catch (e) {

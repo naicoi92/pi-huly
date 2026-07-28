@@ -13,7 +13,7 @@ import {
 } from "../console-filter.js";
 
 // Spy stderr thật — console.warn/error/log gốc của Node delegate ra process.stderr.
-// Test KHÔNG override toàn局 process — chỉ verify filter override được install/
+// Test KHÔNG override toàn bộ process — chỉ verify filter override được install/
 // restore đúng (KHÔNG leak global). Capture gốc qua spy trước khi filter chạy.
 const originalWarn = console.warn;
 const originalError = console.error;
@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  // Safety net:KHÔNG bao giờ leak override ra test khác.
+  // Safety net: KHÔNG bao giờ leak override ra test khác.
   console.warn = originalWarn;
   console.error = originalError;
   console.log = originalLog;
@@ -74,7 +74,7 @@ describe("UpstreamConsoleFilter — pattern match", () => {
     filter.restore();
     // Pattern match → KHÔNG gọi delegate (spy gốc KHÔNG được invoke với message).
     expect(spy).not.toHaveBeenCalled();
-    expect(filter.getCounters().total).toBe(1);
+    expect(getUpstreamNoiseCounters().total).toBe(1);
     spy.mockRestore();
   });
 
@@ -85,7 +85,7 @@ describe("UpstreamConsoleFilter — pattern match", () => {
     console.warn("No Document Found, failed to apply model transaction");
     filter.restore();
     expect(spy).not.toHaveBeenCalled();
-    expect(filter.getCounters().total).toBe(1);
+    expect(getUpstreamNoiseCounters().total).toBe(1);
     spy.mockRestore();
   });
 
@@ -96,7 +96,7 @@ describe("UpstreamConsoleFilter — pattern match", () => {
     console.warn({ message: "no document found, skipping", _class: "core:class:Issue" });
     filter.restore();
     expect(spy).not.toHaveBeenCalled();
-    expect(filter.getCounters().total).toBe(1);
+    expect(getUpstreamNoiseCounters().total).toBe(1);
     spy.mockRestore();
   });
 
@@ -107,7 +107,7 @@ describe("UpstreamConsoleFilter — pattern match", () => {
     console.warn({ _class: "core:class:Issue", unrelated: true });
     filter.restore();
     expect(spy).toHaveBeenCalled();
-    expect(filter.getCounters().total).toBe(0);
+    expect(getUpstreamNoiseCounters().total).toBe(0);
     spy.mockRestore();
   });
 
@@ -119,7 +119,20 @@ describe("UpstreamConsoleFilter — pattern match", () => {
     console.error(null); // null — KHÔNG match
     filter.restore();
     expect(spy).toHaveBeenCalledTimes(2);
-    expect(filter.getCounters().total).toBe(0);
+    expect(getUpstreamNoiseCounters().total).toBe(0);
+    spy.mockRestore();
+  });
+
+  it("Error instance KHÔNG filter — Error.message là real error (n1 guard)", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const filter = new UpstreamConsoleFilter([/^no document found/i]);
+    filter.install();
+    // Error có field message match pattern NHƯNG đây là real error throw —
+    // KHÔNG filter (che = sai, user cần debug).
+    console.error(new Error("no document found, failed to apply model transaction"));
+    filter.restore();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(getUpstreamNoiseCounters().total).toBe(0);
     spy.mockRestore();
   });
 
@@ -131,7 +144,7 @@ describe("UpstreamConsoleFilter — pattern match", () => {
     console.warn("no document found, skipping again");
     console.warn("measure slow findAll took 5000ms");
     filter.restore();
-    const c = filter.getCounters();
+    const c = getUpstreamNoiseCounters();
     expect(c.total).toBe(3);
     expect(c.byPattern["/^no document found/i"]).toBe(2);
     expect(c.byPattern["/^measure slow findAll/i"]).toBe(1);

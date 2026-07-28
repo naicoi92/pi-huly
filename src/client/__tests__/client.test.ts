@@ -349,6 +349,8 @@ describe("integration: full flow end-to-end", () => {
 });
 
 // T-62 #67: filter wrap quanh connect() — gate upstream console spam.
+// Strategy: mock connect() trigger `console.warn()` nội bộ (giả lập upstream
+// cache-miss warn) → verify filter swallow + counter + restore symmetry.
 describe("T-62 createHulyClient — console filter wrap", () => {
   const realWarn = console.warn;
   const realError = console.error;
@@ -367,20 +369,24 @@ describe("T-62 createHulyClient — console filter wrap", () => {
   });
 
   it("ws: connect() wrap runWithConsoleFilter → upstream warn bị filter", async () => {
-    // Capture stderr thật — filter override console.warn trong scope connect().
-    // Connect mock KHÔNG trigger upstream warn, nhưng verify wrap active bằng
-    // cách spy vào console.warn gốc (sau filter install) KHÔNG nhận upstream msg.
-    const captured: string[] = [];
-    const origWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      captured.push(args.map(String).join(" "));
-    };
+    // Inject warn vào scope connect (giả lập upstream replay warn).
+    // Filter active (default config) → warn bị swallow, counter +1.
+    vi.mocked(connect).mockImplementationOnce(async () => {
+      console.warn("no document found, failed to apply model transaction, skipping");
+      return {} as never;
+    });
+    // Spy install TRƯỚC createHulyClient. Filter install/restore phải tôn trọng
+    // reference hiện tại (= spy) — KHÔNG leak override ra ngoài scope connect.
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const preInstall = console.warn; // = spy (filter restore phải về lại đây)
     await createHulyClient(tokenCreds, "ws");
-    // Filter install trong scope connect → KHÔNG leak override ra ngoài.
-    expect(console.warn).toBe(origWarn === realWarn ? console.warn : origWarn);
-    // Connect thành công (KHÔNG throw dù filter active).
-    expect(connect).toHaveBeenCalledTimes(1);
-    console.warn = origWarn;
+    // Counter tăng → filter đã swallow warn trong scope connect.
+    expect(getUpstreamNoiseCounters().total).toBe(1);
+    // KHÔNG leak override ra ngoài scope: console.warn restored về pre-install (= spy).
+    expect(console.warn).toBe(preInstall);
+    // Spy gốc KHÔNG nhận warn match pattern (filter swallow trước khi delegate).
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   it("config quietUpstreamNoise: false → KHÔNG filter (debug thật)", async () => {
@@ -390,39 +396,67 @@ describe("T-62 createHulyClient — console filter wrap", () => {
       projects: {},
       quietUpstreamNoise: false,
     });
-    const captured: string[] = [];
-    const origWarn = console.warn;
-    console.warn = (...args: unknown[]) => captured.push(String(args[0]));
+    // Inject warn trong scope connect — escape hatch disable → warn vẫn ra.
+    vi.mocked(connect).mockImplementationOnce(async () => {
+      console.warn("no document found, failed to apply model transaction, skipping");
+      return {} as never;
+    });
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     await createHulyClient(tokenCreds, "ws");
-    console.warn = origWarn;
-    // Filter disable → counters KHÔNG tăng dù có warn
+    // Filter disable → counter KHÔNG tăng + warn delegate ra (spy được gọi).
     expect(getUpstreamNoiseCounters().total).toBe(0);
+    expect(spy).toHaveBeenCalledWith(
+      "no document found, failed to apply model transaction, skipping",
+    );
+    spy.mockRestore();
   });
 
   it("connect() throw vẫn restore console (try/finally)", async () => {
     vi.mocked(connect).mockRejectedValueOnce(new Error("connect failed"));
-    const origWarn = console.warn;
+    // Capture pre-install reference — filter restore phải về lại đây dù throw.
+    const preInstallWarn = console.warn;
+    const preInstallError = console.error;
     await expect(createHulyClient(tokenCreds, "ws")).rejects.toThrow();
-    // Override KHÔNG leak dù connect throw
-    expect(console.warn).toBe(origWarn);
+    // Quan trọng: override KHÔNG leak dù connect throw — strict identity check.
+    expect(console.warn).toBe(preInstallWarn);
+    expect(console.error).toBe(preInstallError);
   });
 
-  it("config upstreamNoisePatterns override được apply", async () => {
+  it("config upstreamNoisePatterns override được apply thật", async () => {
     vi.mocked(loadConfig).mockResolvedValueOnce({
       version: 1,
       transport: "ws",
       projects: {},
       upstreamNoisePatterns: ["^custom noise pattern$"],
     });
-    // Capture stderr + assert custom pattern match → filter
-    const captured: string[] = [];
-    const origWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      captured.push(String(args[0]));
-    };
+    // Inject warn match custom pattern → filter active → swallow + counter +1.
+    vi.mocked(connect).mockImplementationOnce(async () => {
+      console.warn("custom noise pattern"); // match override pattern
+      return {} as never;
+    });
     await createHulyClient(tokenCreds, "ws");
-    console.warn = origWarn;
-    // Connect thành công (filter active với custom pattern)
-    expect(connect).toHaveBeenCalledTimes(1);
+    // Custom pattern compiled + apply → counter tăng.
+    expect(getUpstreamNoiseCounters().total).toBe(1);
+    expect(getUpstreamNoiseCounters().byPattern["/^custom noise pattern$/i"]).toBe(1);
+  });
+
+  it("config upstreamNoisePatterns override KHÔNG match default pattern", async () => {
+    // Override toàn bộ registry → default #67 pattern KHÔNG còn active.
+    vi.mocked(loadConfig).mockResolvedValueOnce({
+      version: 1,
+      transport: "ws",
+      projects: {},
+      upstreamNoisePatterns: ["^custom noise pattern$"],
+    });
+    vi.mocked(connect).mockImplementationOnce(async () => {
+      console.warn("no document found, failed to apply model transaction"); // default #67
+      return {} as never;
+    });
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await createHulyClient(tokenCreds, "ws");
+    // Override replace default → #67 warn KHÔNG match → delegate ra (spy gọi).
+    expect(getUpstreamNoiseCounters().total).toBe(0);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

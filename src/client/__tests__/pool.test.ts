@@ -205,8 +205,8 @@ describe("health", () => {
 
   // T-62 #67: expose upstream noise counters qua health().
   it("T-62: include upstreamNoiseFiltered khi total > 0", async () => {
-    const { resetUpstreamNoiseCounters } = await import("../console-filter.js");
-    const { runWithConsoleFilter } = await import("../console-filter.js");
+    const { resetUpstreamNoiseCounters, runWithConsoleFilter } =
+      await import("../console-filter.js");
     resetUpstreamNoiseCounters();
     vi.mocked(createHulyClient).mockResolvedValueOnce(makeMockClient("ws"));
     await getClient("ws-1");

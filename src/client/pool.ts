@@ -13,6 +13,7 @@ import {
   type HulyCredentials,
   type Transport,
 } from "./client.js";
+import { getUpstreamNoiseCounters } from "./console-filter.js";
 
 /** Pool entry: client + metadata. */
 interface PoolEntry {
@@ -22,8 +23,6 @@ interface PoolEntry {
   createdAt: number;
   lastAccess: number;
 }
-
-import { getUpstreamNoiseCounters } from "./console-filter.js";
 
 /** Health status cho /huly diagnostics. */
 export interface HealthStatus {

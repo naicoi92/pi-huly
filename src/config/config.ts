@@ -41,6 +41,9 @@ export type Config = {
    * T-62 #67: Override default pattern registry. Mỗi entry là RegExp source
    * string (case-insensitive). Match first-arg string HOẶC structured log có
    * field `message`. Mặc định: [`/^no document found, failed to apply model transaction/i`].
+   *
+   * Empty array (`[]`) = no-op → fall về DEFAULT_UPSTREAM_NOISE_PATTERNS (KHÔNG
+   * disable filter). Để disable filter hoàn toàn, dùng `quietUpstreamNoise: false`.
    */
   upstreamNoisePatterns?: string[];
 };

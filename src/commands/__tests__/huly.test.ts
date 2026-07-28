@@ -174,7 +174,9 @@ describe("/huly status", () => {
     ]);
     const ctx = makeCtx();
     const result = await runHulyCommand("status", ctx);
+    // Total + per-pattern breakdown (T-64 readiness — phân biệt nguồn noise).
     expect(result.message).toContain("pool noise: 42 upstream log filtered");
+    expect(result.message).toContain("/^no document found/i: 42");
   });
 
   it("T-62: KHÔNG show pool noise line khi total = 0", async () => {
