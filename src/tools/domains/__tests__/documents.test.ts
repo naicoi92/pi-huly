@@ -1,5 +1,5 @@
-// T-66 (2026-07-28): documents domain tests — RE-ENABLED từ honest-unavailable.
-// create_teamspace STAYS unavailable (icon/spaceType refs from document plugin).
+// T-66 (2026-07-28): documents domain tests — RE-ENABLED.
+// T-78 (2026-07-29): create_teamspace IMPLEMENTED (string-literal icon/spaceType).
 // list/get/update/delete teamspace + list/get/create/edit/delete document ENABLED.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +43,7 @@ const ctxConfirmed = {
 function makeClient() {
   return {
     getCurrentUser: vi.fn().mockResolvedValue({ id: "u1", name: "User", email: "u@x.com" }),
+    getAccount: vi.fn().mockResolvedValue({ uuid: "acc-uuid-1", email: "u@x.com" }),
     findAll: vi.fn().mockResolvedValue([]),
     findOne: vi.fn(),
     createDoc: vi.fn().mockResolvedValue("doc-id-1"),
@@ -62,9 +63,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("T-66: create_teamspace STAYS honest-unavailable (icon/spaceType refs)", () => {
-  it("create_teamspace → isError + KHÔNG gọi createDoc (no orphan broken space)", async () => {
+describe("T-78: create_teamspace IMPLEMENTED (string-literal icon/spaceType refs)", () => {
+  it("create → createDoc với icon + spaceType + members/owners + return id", async () => {
     const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue(undefined); // name chưa tồn tại
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_create_teamspace");
@@ -76,44 +78,34 @@ describe("T-66: create_teamspace STAYS honest-unavailable (icon/spaceType refs)"
       ctx,
     );
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeUndefined();
+    const call = client.createDoc.mock.calls[0]!;
+    expect(call[0]).toBe(TEAMSPACE_CLASS); // class
+    expect(call[1]).toBe("core:space:Space"); // parent space
+    const attrs = call[2] as Record<string, unknown>;
+    expect(attrs.icon).toBe("document:icon:Teamspace");
+    expect(attrs.type).toBe("document:spaceType:DefaultTeamspaceType");
+    expect(attrs.members).toEqual(["acc-uuid-1"]);
+    expect(attrs.owners).toEqual(["acc-uuid-1"]);
+    expect(attrs.name).toBe("Design Docs");
+    expect(result.details).toMatchObject({ name: "Design Docs", created: true });
+  });
+
+  it("idempotent: name đã tồn tại → return existing id, created:false, KHÔNG createDoc", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValue({ _id: "existing-ts-1", name: "Design Docs", archived: false });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_create_teamspace");
+    const result = await tool.execute("tc1", { name: "Design Docs" }, undefined, undefined, ctx);
+
     expect(client.createDoc).not.toHaveBeenCalled();
-  });
-
-  it("error message mention icon/spaceType refs + recovery via Huly UI", async () => {
-    const client = makeClient();
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool("huly_create_teamspace");
-    const result = await tool.execute("tc1", { name: "Test Space" }, undefined, undefined, ctx);
-
-    const text = result.content[0]?.text ?? "";
-    expect(text).toContain("documentPlugin.icon.Teamspace");
-    expect(text).toContain("documentPlugin.spaceType.DefaultTeamspaceType");
-    expect(text).toMatch(/Huly UI/i);
-    expect(text).toContain("huly_list_teamspaces");
-  });
-
-  it("details reason=icon_spacetype_ref_inaccessible + missingRefs list", async () => {
-    const client = makeClient();
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool("huly_create_teamspace");
-    const result = await tool.execute(
-      "tc1",
-      { name: "X", private: true },
-      undefined,
-      undefined,
-      ctx,
-    );
-
     expect(result.details).toMatchObject({
-      reason: "icon_spacetype_ref_inaccessible",
-      missingRefs: [
-        "documentPlugin.icon.Teamspace",
-        "documentPlugin.spaceType.DefaultTeamspaceType",
-      ],
-      name: "X",
+      id: "existing-ts-1",
+      name: "Design Docs",
+      created: false,
     });
   });
 });
@@ -172,13 +164,13 @@ describe("T-66: list/get_teamspaces dùng TEAMSPACE_CLASS (KHÔNG SPACE_CLASS)",
   });
 });
 
-describe("T-66: update/delete_teamspace dùng core.space.Space parent", () => {
-  it("update_teamspace → updateDoc TEAMSPACE_CLASS + core.space.Space", async () => {
+describe("T-66: update/delete_teamspace dùng core:space:Space parent", () => {
+  it("update_teamspace → updateDoc TEAMSPACE_CLASS + core:space:Space", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValue({
       _id: "ts-1",
       name: "Old",
-      space: "core.space.Space",
+      space: "core:space:Space",
     });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
@@ -193,17 +185,17 @@ describe("T-66: update/delete_teamspace dùng core.space.Space parent", () => {
 
     expect(result.isError).toBeUndefined();
     expect(client.updateDoc).toHaveBeenCalledTimes(1);
-    expect(client.updateDoc).toHaveBeenCalledWith(TEAMSPACE_CLASS, "core.space.Space", "ts-1", {
+    expect(client.updateDoc).toHaveBeenCalledWith(TEAMSPACE_CLASS, "core:space:Space", "ts-1", {
       name: "New",
     });
   });
 
-  it("delete_teamspace → removeDoc TEAMSPACE_CLASS + core.space.Space", async () => {
+  it("delete_teamspace → removeDoc TEAMSPACE_CLASS + core:space:Space", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValue({
       _id: "ts-1",
       name: "Old",
-      space: "core.space.Space",
+      space: "core:space:Space",
     });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
@@ -217,7 +209,7 @@ describe("T-66: update/delete_teamspace dùng core.space.Space parent", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(client.removeDoc).toHaveBeenCalledWith(TEAMSPACE_CLASS, "core.space.Space", "ts-1");
+    expect(client.removeDoc).toHaveBeenCalledWith(TEAMSPACE_CLASS, "core:space:Space", "ts-1");
   });
 });
 
