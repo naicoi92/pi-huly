@@ -74,6 +74,10 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // T-52 #42: validate targetIssue tồn tại + resolve identifier → _id.
+      // targetIssue cho phép CROSS-PROJECT (raw identifier, KHÔNG resolveIdentifier)
+      // — khác source (identifier dòng 67 dùng resolveIdentifier throw nếu cross).
+      // Khớp Huly UI RelationsPopup: ObjectSearchPopup pick bất kỳ issue nào bất kể
+      // project. Đây là INTENT, không phải bug.
       const target = await tctx.client.findOne(ISSUE_CLASS, {
         identifier: params.targetIssue,
       });
@@ -118,6 +122,12 @@ export const tools: HulyToolDefinition[] = [
         // relates-to → BIDIRECTIONAL: A.relations.push(B) + B.relations.push(A).
         // Khớp RelationsPopup.svelte dòng 34-39 (updateRelation type='relations'
         // gọi updateIssueRelation 2 lần: value→refDocument + refDocument→value).
+        //
+        // NON-ATOMIC (khớp hành vi Huly gốc — RelationsPopup cũng 2 thao tác riêng,
+        // không transaction): nếu forward commit xong nhưng reverse throw (vd network
+        // drop, quyền space khác khi cross-project), A.relations có B nhưng B.relations
+        // chưa có A → lệch 1 chiều. Idempotent guard (forwardExists/reverseExists)
+        // cho phép retry an toàn — lần sau chỉ push chiều còn thiếu, không duplicate.
         const issueRelations = (issue as { relations?: unknown[] }).relations;
         const targetRelations = (target as { relations?: unknown[] }).relations;
         const forwardExists = hasRelation(issueRelations, target._id as string);

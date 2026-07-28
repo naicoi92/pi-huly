@@ -148,3 +148,9 @@ vite.config.ts.timestamp-*
 
 # npm local config (KHÔNG commit — có thể chứa authToken env ref)
 .npmrc
+
+# IDE / agent session state (KHÔNG commit — nội bộ, có thể chứa log nhạy cảm)
+.zcode/
+
+# File rác debug tạm (KHÔNG commit)
+/50

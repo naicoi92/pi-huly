@@ -565,3 +565,126 @@ describe("T-60: link/unlink_document_to_issue honest-unavailable (Document orpha
     });
   });
 });
+
+// Code-review follow-up (m1 fail-path + m2 not-found guards + remove no-op
+// cho 2 nhánh còn thiếu). Khóa behavior chống regression cho các guard path.
+describe("T-61 code-review follow-up: fail-path + not-found guards", () => {
+  // m2a: list_issue_relations identifier không tồn tại → isError
+  it("list_issue_relations: identifier KHÔNG tồn tại → isError + KHÔNG findAll", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce(undefined); // issue not found
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issue_relations");
+    const result = await tool.execute("tc1", { identifier: "PD-999" }, undefined, undefined, ctx);
+
+    expect(result.isError).toBe(true);
+    expect(client.findAll).not.toHaveBeenCalled(); // KHÔNG reverse query nếu issue không tồn tại
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/not found/i);
+  });
+
+  // m2b: remove_issue_relation identifier không tồn tại → isError + KHÔNG updateDoc
+  it("remove_issue_relation: identifier KHÔNG tồn tại → isError + KHÔNG updateDoc", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce(undefined); // issue not found
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_remove_issue_relation");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-999", targetIssue: "PD-2", relationType: "blocks" },
+      undefined,
+      undefined,
+      ctxConfirmed,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(client.updateDoc).not.toHaveBeenCalled();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/not found/i);
+  });
+
+  // m2c: remove no-op cho nhánh is-blocked-by (relation không tồn tại)
+  it("remove is-blocked-by: relation KHÔNG tồn tại → no-op idempotent", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", blockedBy: [] })
+      .mockResolvedValueOnce({ _id: "i2", identifier: "PD-2", space: "sp1" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_remove_issue_relation");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", targetIssue: "PD-2", relationType: "is-blocked-by" },
+      undefined,
+      undefined,
+      ctxConfirmed,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/did not exist|no-op|idempotent/i);
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  // m2d: remove no-op cho nhánh relates-to (relation không tồn tại cả 2 chiều)
+  it("remove relates-to: relation KHÔNG tồn tại (cả 2 chiều) → no-op idempotent", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", relations: [] })
+      .mockResolvedValueOnce({ _id: "i2", identifier: "PD-2", space: "sp1", relations: [] });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_remove_issue_relation");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", targetIssue: "PD-2", relationType: "relates-to" },
+      undefined,
+      undefined,
+      ctxConfirmed,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/did not exist|no-op|idempotent/i);
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  // m1: fail-path — updateDoc reject → framework catch + isError response
+  // relates-to bidirectional: forward OK, reverse throw → KHÔNG crash, framework
+  // wrap thành isError response. Code-review M1: non-atomic, idempotent guard
+  // cho phép retry an toàn (caller retry chỉ push chiều còn thiếu).
+  it("add relates-to: reverse updateDoc REJECT → isError response (KHÔNG nuốt silent thành success)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", relations: [] })
+      .mockResolvedValueOnce({ _id: "i2", identifier: "PD-2", space: "sp2", relations: [] });
+    // Forward OK, reverse reject (giả lập cross-project permission deny)
+    client.updateDoc = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("permission denied: space sp2"));
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_add_issue_relation");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", targetIssue: "PD-2", relationType: "relates-to" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    // Non-atomic: forward đã commit (i1.relations có i2) nhưng reverse throw →
+    // framework catch → isError response (KHÔNG nuốt silent thành "success").
+    // Caller biết có lỗi → retry; idempotent guard chỉ push chiều còn thiếu.
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/permission denied/);
+    // Forward đã commit (1 call), reverse throw (2nd call attempted)
+    expect(client.updateDoc).toHaveBeenCalledTimes(2);
+  });
+});
