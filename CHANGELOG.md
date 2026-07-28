@@ -48,6 +48,8 @@ KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketF
   · spaces (1) · tag-categories (2) · tags (4) · todos (4) · workspace (1, T-50 ref).
 - Regression test: tags schema drift (missing space → isError, missing _id →
   isError), workspace schema drift (T-50 preserved). Helper unit 12 tests.
+  Schema-drift-guard test cho 4 file thiếu test (comments, projects, tag-categories,
+  spaces) — 7 tool-entry regression verify migration wiring thật.
 
 ## [1.0.0-beta.4] - 2026-07-28
 
