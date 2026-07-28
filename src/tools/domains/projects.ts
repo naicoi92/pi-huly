@@ -11,8 +11,14 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { PROJECT_CLASS, ISSUE_STATUS_CLASS, CLASSIC_PROJECT_TYPE_REF } from "./_class-refs.js";
-import { workspaceParam, projectParam, safeUpdateDoc, safeRemoveDoc } from "./_common.js";
+import { PROJECT_CLASS, CLASSIC_PROJECT_TYPE_REF } from "./_class-refs.js";
+import {
+  workspaceParam,
+  projectParam,
+  safeUpdateDoc,
+  safeRemoveDoc,
+  getProjectStatuses,
+} from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_projects
@@ -208,10 +214,19 @@ export const tools: HulyToolDefinition[] = [
     needsProject: true,
     parameters: Type.Object({ workspace: workspaceParam, project: projectParam }),
     async handler(_params, tctx) {
-      const statuses = await tctx.client.findAll(ISSUE_STATUS_CLASS, {}, {});
-      const list = statuses.map((s) => ({
-        name: (s as { name?: string }).name ?? "",
-        category: (s as { category?: string }).category ?? "",
+      // T-71: ProjectType.statuses traversal (KHÔNG findAll global).
+      const result = await getProjectStatuses(tctx.client, tctx.project!);
+      if (!result) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const list = result.statuses.map((s) => ({
+        name: s.name,
+        category: s.category, // enum key (strip Ref prefix)
+        isDefault: s.isDefault,
       }));
       return {
         content: `Found ${list.length} status(es).`,

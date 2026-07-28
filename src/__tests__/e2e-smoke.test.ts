@@ -302,10 +302,13 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
 
   // 2. huly_list_issues
   it("list_issues: returns seeded issues", async () => {
+    store.seed("tracker:class:Project", { identifier: "PD", _id: "space-pd" });
     store.seed("tracker:class:Issue", {
+      _id: "i-1",
       identifier: "PD-1",
       title: "Seeded issue",
       status: "Active",
+      space: "space-pd",
     });
     const tool = findTool(issueCoreTools, "huly_list_issues");
     const result = await tool.execute("call-2", {}, undefined, undefined, makeCtx());
