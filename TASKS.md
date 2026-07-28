@@ -169,20 +169,55 @@ giữ current — cần runtime server verify khi có self-host)_
 - [x] [T-51] [M] fix(create_*): silent space fallback tạo document mồ côi khi project null (4 call site) (issue #41) — high | blocked-by: (none) | blocks: (none) | issue: #41 — [detail](./docs/tasks/T-51.md) — ✅ done (4 call sites fix: components + milestones + issues-templates ×2; isError thay fallback workspace)
 - [x] [T-52] [L] fix(*): validate foreign-key ref tồn tại trước write (7 tool: add_issue_relation, set_issue_component/milestone, move_issue, link/unlink_document, attach_tag) (issue #42) — critical | blocked-by: (none, pattern có sẵn PR #34) | blocks: (none) | issue: #42 — [detail](./docs/tasks/T-52.md) — ✅ done (6/7 tool FK validate + attach_tag shape bonus; unlink_document skip per spec §3 idempotent; move_issue Option A; 435 tests, +24 across 4 new + 1 extend test files)
 
-- [x] [T-53] [M] investigate: verify 3 class refs UNVERIFIED runtime (Label, TsRelation, DocumentSnapshot) trên self-host thật — gộp #39 bug + #43 investigation (issues #39,#43) — high | blocked-by: (none code, cần user cung cấp self-host URL+auth) | blocks: (none, unblock confirm #38/#39) | issues: #39,#43 — [detail](./docs/tasks/T-53.md) — ⏳ done (guide tạo [T-53-runtime-verify-guide.md](./docs/tasks/T-53-runtime-verify-guide.md), pending user runtime verify)
+- [x] [T-53] [M] investigate: verify 3 class refs UNVERIFIED runtime (Label, TsRelation, DocumentSnapshot) trên self-host thật — gộp #39 bug + #43 investigation (issues #39,#43) — high | blocked-by: (none code, cần user cung cấp self-host URL+auth) | blocks: (none, unblock confirm #38/#39) | issues: #39,#43 — [detail](./docs/tasks/T-53.md) — ⏳ done (guide tạo [T-53-runtime-verify-guide.md](./docs/tasks/T-53-runtime-verify-guide.md), pending user runtime verify) — **superseded by T-58** (umbrella root cause audit, up level)
+
+
+---
+
+## beta.3 follow-up hotfixes (post-beta.3 — không thuộc milestone)
+
+> **Context**: Sau khi beta.3 shipped (fix 8 bug #36-#43 qua T-47..T-53), smoke
+> test tiếp tục phát hiện **vấn đề mới + root cause chưa resolve**:
+>
+> - **4 vấn đề là root cause runtime chưa fix thành công** (#38→#55 Document class
+>   report 2 lần, #39 TsRelation open từ beta.2, #43 3 class UNVERIFIED, #58 mới
+>   phát hiện create_teamspace sai class). User nhấn mạnh: **up level cao hơn** —
+>   verify runtime thật + fix class ref đúng, KHÔNG defensive che lỗi nữa.
+> - **3 enhancement** (#54 pool warm, #56 debug log, #57 error mapping) — cải thiện
+>   DX/observability, start ngay.
+>
+> **Nhóm theo bản chất**:
+> - **Runtime class registry audit (L, critical)** — T-58 umbrella gộp toàn bộ
+>   root cause class sai runtime. Block T-59 (relations inline), T-60 (Document
+>   search), resolve #39/#43/#55. Cần user cung cấp self-host probe output.
+> - **Tool-specific bug** — T-54 create_teamspace sai class + thiếu required
+>   fields (pattern giống #28 create_todo đã fix T-46).
+> - **Enhancement/DX** — T-55 pool warm, T-56 debug log, T-57 error mapping.
+>
+> Chi tiết mỗi task ở GitHub issues (link trong cột issue).
+> Theo dõi: [GitHub issues #39, #43, #55, #58-#64](https://github.com/naicoi92/pi-huly/issues).
+
+- [ ] [T-54] [M] fix(create_teamspace): sai class + thiếu required fields → platform:status:UnknownError — high | blocked-by: (none, pair T-58 nếu cần verify class) | blocks: (none) | issue: #58 — **Open**
+- [ ] [T-55] [S] enhancement(pool): eager warm connection at session_start — fix first-call failure — high | blocked-by: (none) | blocks: (none) | issue: #59 — **Open**
+- [ ] [T-56] [S] enhancement(debug): log tool name + params khi gọi tool — subscribe tool_execution_start — medium | blocked-by: (none) | blocks: (none) | issue: #60 — **Open**
+- [ ] [T-57] [S] enhancement(errors): map domain not found → honest "tool unavailable" thay vì generic InternalError — medium | blocked-by: (none) | blocks: (none) | issue: #61 — **Open**
+- [ ] [T-58] [L] runtime audit: verify + fix ALL class refs trên self-host thật (Document, TsRelation, Label, DocumentSnapshot, Space/Teamspace) — root cause, KHÔNG defensive — critical | blocked-by: (user cung cấp self-host probe output) | blocks: T-59, T-60 | issues: #39, #43, #55, #62 — **Open (critical path)**
+- [ ] [T-59] [M] refactor(issue_relations): dùng $push/$pull Issue.relations inline (nếu TsRelation KHÔNG phải class riêng) — high | blocked-by: T-58 (verify TsRelation inline hypothesis) | blocks: (none) | issue: #63 — **Open (blocked)**
+- [ ] [T-60] [M] fix(fulltext_search): Document search root cause — verify + fix class ref (KHÔNG defensive) — high | blocked-by: T-58 (verify Document class runtime) | blocks: (none) | issues: #55, #64 — **Open (blocked)**
 
 
 ---
 
 ## Size / priority distribution
 
-- Size: S ~27 · M ~27 · **L 2** (T-43 fix xong; T-52 mới — 7 tool validate FK ref).
-- Priority: 🔴 critical 2 (T-47, T-52) · 🔴 high 33 · 🟡 medium 19 · 🟢 low 1 (T-22).
+- Size: S ~29 · M ~30 · **L 3** (T-43, T-52 done; T-58 mới — runtime audit critical).
+- Priority: 🔴 critical 3 (T-47, T-52 done; T-58 mới) · 🔴 high 35 · 🟡 medium 21 · 🟢 low 1 (T-22).
 - Critical path: T-01→02/03→04→05→06→09→domains→30→31→33→34→36→38→39.
 - **beta.1 hotfix chain (M6 — all done)**: T-40..T-46 fix #22-#28, PR #29-#35.
-- **beta.2 follow-up chain (T-47..T-53)**:
-  - **Independent, start ngay** (no blocker): T-47 (update_issue), T-50 (space param), T-51 (silent fallback), T-52 (FK validate).
-  - **Investigate**: T-48 (list_* có duplicate #22 không?), T-53 (verify 3 class runtime — cần self-host).
-  - **Pair với T-53 nếu cần server**: T-49 (Document class runtime).
+- **beta.2 follow-up chain (T-47..T-53 — all done)**: fix #36-#43, PR #44-#53.
+- **beta.3 follow-up chain (T-54..T-60)**:
+  - **Independent, start ngay** (no blocker): T-54 (create_teamspace), T-55 (pool warm), T-56 (debug log), T-57 (error mapping).
+  - **Critical path** (block T-59, T-60): T-58 (runtime audit ALL class refs — cần user self-host probe output).
+  - **Blocked by T-58**: T-59 (relations inline refactor), T-60 (Document search root cause).
 - Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
 - Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).
