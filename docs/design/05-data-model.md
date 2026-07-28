@@ -119,7 +119,7 @@ interface TagCategory { _id: Ref; title: string; targetClass: Ref; space: Ref<Sp
 ### `Comment` (`chunter.class.ChatMessage`) / `Attachment` / `Todo` / `TimeSpendReport`
 
 ```typescript
-interface Comment { id: string; body: string /*KHÔNG "message"*/; author?: string; authorId?: string; createdOn?: number; modifiedOn?: number; editedOn?: number | null }
+interface Comment { id: string; message: string /*inline Markup, KHÔNG "body" — T-70 fix*/; author?: string; authorId?: string; createdOn?: number; modifiedOn?: number; editedOn?: number | null }
 interface Attachment { _id: Ref; name: string; contentType: string; attachedTo: Ref; size: number; file?: Blob }
 interface Todo { title: string; attachedTo: { type:'issue', project: string, identifier: string }; done?: boolean; owner?: string; dueDate?: number }
 interface TimeSpendReport { value: number /*minutes*/; description?: string }  // attachedTo=Issue, user implicit

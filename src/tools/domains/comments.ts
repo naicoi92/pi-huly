@@ -1,7 +1,12 @@
 // tools/domains/comments.ts — Comments domain (4 tools).
-// Design: 06-api.md §4 Comments. Body KHÔNG "message" (gotcha).
+// Design: 06-api.md §4 Comments.
 //
-// Comment = chunter:class:ChatMessage attached to issue.
+// T-70 (2026-07-28): field thật là `message` (KHÔNG `body` — gotcha cũ bị
+// ĐẢO ngược). reality-checker CONFIRMED vs trusted comments.ts:150
+// `message: markdownToMarkupString(params.body)`. ChatMessage.message = inline
+// Markup = JSON.stringify(mdToMarkup(md)). KHÔNG MarkupBlobRef (KHÔNG uploadMarkup).
+//
+// Comment = chunter:class:ChatMessage attached to issue (collection "comments").
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
@@ -14,9 +19,26 @@ import {
   safeUpdateDoc,
   safeRemoveDoc,
 } from "./_common.js";
+import { mdToMarkup, markupToMd } from "../../markup/markup.js";
+
+/** Markdown → inline Huly Markup string (JSON.stringify(markupNode)). */
+function markdownToMessage(md: string): string {
+  return JSON.stringify(mdToMarkup(md));
+}
+
+/** Inline Huly Markup string → markdown (round-trip for list read). */
+function messageToMarkdown(message: unknown): string | undefined {
+  if (typeof message !== "string" || message === "") return undefined;
+  try {
+    return markupToMd(JSON.parse(message) as never);
+  } catch {
+    // Non-JSON message (legacy/edge) — return raw.
+    return message;
+  }
+}
 
 export const tools: HulyToolDefinition[] = [
-  // 1. list_comments
+  // 1. list_comments — T-70: filter attachedToClass + read field `message`
   defineHulyTool({
     name: "list_comments",
     label: "List comments",
@@ -38,13 +60,22 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      const comments = await tctx.client.findAll(CHAT_MESSAGE_CLASS, { attachedTo: issue._id }, {});
-      const list = comments.map((c) => ({
-        _id: c._id,
-        body: (c as { body?: string }).body,
-        createdOn: (c as { createdOn?: number }).createdOn,
-        modifiedBy: (c as { modifiedBy?: string }).modifiedBy,
-      }));
+      // T-70: query thêm attachedToClass: ISSUE_CLASS (trusted pattern — tránh
+      // trả comments từ attachment/activity khác attach cùng issue).
+      const comments = await tctx.client.findAll(
+        CHAT_MESSAGE_CLASS,
+        { attachedTo: issue._id, attachedToClass: ISSUE_CLASS } as never,
+        { sort: { createdOn: 1 } } as never,
+      );
+      const list = comments.map((c) => {
+        const raw = c as { message?: string; createdOn?: number; modifiedBy?: string };
+        return {
+          _id: c._id,
+          message: messageToMarkdown(raw.message),
+          createdOn: raw.createdOn,
+          modifiedBy: raw.modifiedBy,
+        };
+      });
       return {
         content: `Found ${list.length} comment(s) on ${params.identifier}.`,
         details: { count: list.length, comments: list },
@@ -52,11 +83,11 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 2. add_comment — body KHÔNG "message" (06-api §4 gotcha)
+  // 2. add_comment — T-70: field `message` (inline Markup), KHÔNG `body`
   defineHulyTool({
     name: "add_comment",
     label: "Add comment",
-    description: 'Add comment to issue. Field "body" (KHÔNG "message" — gotcha).',
+    description: "Add comment to issue. Body param → message field (Huly inline Markup).",
     needsProject: true,
     needsAssignee: true,
     assigneeField: "author",
@@ -83,7 +114,7 @@ export const tools: HulyToolDefinition[] = [
         issue._id as never,
         ISSUE_CLASS,
         "comments",
-        { body: params.body },
+        { message: markdownToMessage(params.body) } as never,
       );
       return {
         content: `Comment added to ${params.identifier}.`,
@@ -92,11 +123,11 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 3. update_comment
+  // 3. update_comment — T-70: field `message` + editedOn timestamp
   defineHulyTool({
     name: "update_comment",
     label: "Update comment",
-    description: "Update comment body.",
+    description: "Update comment body (→ message field + editedOn).",
     parameters: Type.Object({
       workspace: workspaceParam,
       comment: Type.String(),
@@ -112,8 +143,9 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const updResult = await safeUpdateDoc(tctx.client, CHAT_MESSAGE_CLASS, c, {
-        body: params.body,
-      });
+        message: markdownToMessage(params.body),
+        editedOn: Date.now(),
+      } as never);
       if (!updResult.ok) return updResult.error;
       return {
         content: `Updated comment ${params.comment}.`,
@@ -122,7 +154,7 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 4. delete_comment — destructive
+  // 4. delete_comment — destructive (không affected by field name)
   defineHulyTool({
     name: "delete_comment",
     label: "Delete comment",
