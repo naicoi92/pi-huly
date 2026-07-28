@@ -18,12 +18,12 @@ thiếu account-client). 651 tests (baseline 583 → +68), CI green cả ubuntu+
   from `@hcengineering/document` plugin. SUPERSEDES T-58.
 - **document tools re-enabled** (T-66 #74): 10/11 honest-unavailable tools mở
   lại (list/get/update/delete teamspace + list/get/create/edit/delete document
-  + list/get snapshot) dùng class refs mới. `uploadMarkup`/`updateMarkup` wired
-  vào HulyClient (ws delegate + rest throw).
-- **create_* AttachedDoc + sequence** (T-67 #75): create_issue dùng `$inc
-  sequence` (atomic, no race dup identifier) + addCollection + number/kind/
+  - list/get snapshot) dùng class refs mới. `uploadMarkup`/`updateMarkup` wired
+    vào HulyClient (ws delegate + rest throw).
+- _*create_* AttachedDoc + sequence_* (T-67 #75): create_issue dùng `$inc
+sequence` (atomic, no race dup identifier) + addCollection + number/kind/
   identifier/rank/parents. create_project self-ref space + type + members/owners
-  + sequence:0 + idempotent. create_milestone status enum (KHÔNG string).
+  - sequence:0 + idempotent. create_milestone status enum (KHÔNG string).
 - **issue hierarchy** (T-68 #76): move_issue + list_issues dùng AttachedDoc
   fields (attachedTo/attachedToClass/collection/parents/subIssues) thay field
   `parentIssue` (KHÔNG tồn tại). 4 move cases cover + updateDescendantParents
@@ -34,7 +34,7 @@ thiếu account-client). 651 tests (baseline 583 → +68), CI green cả ubuntu+
 - **comments field** (T-70 #78): field `message` (inline Markup) thay `body`
   (KHÔNG tồn tại). ChatMessage.message = `JSON.stringify(mdToMarkup(md))`,
   KHÔNG MarkupBlobRef. list_comments thêm filter `attachedToClass` + sort.
-- **list_* space scoping** (T-71 #79): list_issues/milestones/components/
+- _*list_* space scoping_* (T-71 #79): list_issues/milestones/components/
   templates thêm `space: project._id`. list_issues assignee resolve Person +
   titleSearch no-leak. list_statuses ProjectType.statuses traversal + category
   ref→enum + isDefault.
@@ -45,8 +45,8 @@ thiếu account-client). 651 tests (baseline 583 → +68), CI green cả ubuntu+
 - **workflow registration** (T-73 #81): create_issue_status full flow (statusClass
   dynamic + core.space.Model + category Ref + ofAttribute + register TaskType +
   ProjectType statuses). create_task_type copy sibling template fields + parent
-  + register. list_task_types field `parent`. list_tags targetClass filter.
-  list_space_types/get_space_type honest-unavailable (fabricated removed).
+  - register. list_task_types field `parent`. list_tags targetClass filter.
+    list_space_types/get_space_type honest-unavailable (fabricated removed).
 - **log_time** (T-74 #82): collection "reports" (KHÔNG "timetracking"), value hours
   (Type.Number, fractional 0.25=15min), date + employee best-effort. Off-by-60x
   fixed. list_employees drop email field (KHÔNG tồn tại).
@@ -77,7 +77,8 @@ thiếu account-client). 651 tests (baseline 583 → +68), CI green cả ubuntu+
 Hotfix canary #4. **beta.4 follow-up hotfixes** — 3 task hardening noise + data
 loss class. Verified upstream `@hcengineering/api-client@0.7.423` `connect()`
 KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketFactory
-+ connectionTimeout) → filter ở ranh giới pi-huly.
+
+- connectionTimeout) → filter ở ranh giới pi-huly.
 
 ### Added (T-62 #67 — noise filter framework)
 
@@ -88,7 +89,7 @@ KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketF
   `RegExp[]` (case-insensitive). Đếm per-pattern + total (module-level).
 - Wrap `connect()` trong `createHulyClient` qua `runWithConsoleFilter()` — scope
   hẹp (try/finally restore), KHÔNG global-silent vĩnh viễn.
-- Config escape hatch: `quietUpstreamNoise?: boolean` (default `true`) + 
+- Config escape hatch: `quietUpstreamNoise?: boolean` (default `true`) +
   `upstreamNoisePatterns?: string[]` (override registry).
 - Pool `health()` expose `upstreamNoiseFiltered?: { total; byPattern }` →
   `/huly status` hiển thị `pool noise: N upstream log filtered`.
@@ -105,10 +106,10 @@ KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketF
 ### Changed (T-63 #68 — silent data loss audit hardening)
 
 - `src/tools/domains/_common.ts` — thêm `safeUpdateDoc(client, _class, doc, ops)`
-  + `safeRemoveDoc(client, _class, doc)` helper. Nhận **doc đã lookup** (KHÔNG nhận
-  space/objectId riêng — ép caller lấy từ doc), tự extract `.space`/`._id` + guard
-  undefined → return `isError` rõ ràng (KHÔNG gửi write → silent no-op prevention).
-  Centralize pattern T-50 (`workspace.ts:155-173`).
+  - `safeRemoveDoc(client, _class, doc)` helper. Nhận **doc đã lookup** (KHÔNG nhận
+    space/objectId riêng — ép caller lấy từ doc), tự extract `.space`/`._id` + guard
+    undefined → return `isError` rõ ràng (KHÔNG gửi write → silent no-op prevention).
+    Centralize pattern T-50 (`workspace.ts:155-173`).
 - **Migration 42 call site** (30 updateDoc + 12 removeDoc) sang helper — static
   audit confirm 42/42 NHÓM A (space từ lookup doc), 0 NHÓM B. Trước T-63, 41/42
   thiếu schema drift guard (chỉ workspace.ts có T-50). Giờ 42/42 có guard qua helper.
@@ -124,7 +125,7 @@ KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketF
 
 - **Token leak fix (NFR-04)** — upstream `@hcengineering/client-resources@0.7.423`
   `lib/connection.js:554` in ra stderr: `client websocket error: <id>
-  wss://.../_transactor/<api-token> <ws> <user>`. URL chứa api-token → vi phạm
+wss://.../_transactor/<api-token> <ws> <user>`. URL chứa api-token → vi phạm
   NFR-04 (no-leak) nếu log capture/export. Filter swallow toàn bộ (KHÔNG redact,
   KHÔNG spam màn hình). Verified: stderr captured KHÔNG chứa `_transactor/` +
   token substring.
@@ -132,7 +133,7 @@ KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketF
   `client websocket error` + `Generate new SessionId` + `no ping response` +
   `Connected to server` + `Processing upgrade` + `measure slow findAll`.
 - **KHÔNG filter Error instance** — `console.error(new Error('unknown response
-  id'))` (connection.js:329) + `console.error(err)` decompress (488/496/510/518)
+id'))` (connection.js:329) + `console.error(err)` decompress (488/496/510/518)
   là real error cần debug. Filter chỉ apply plain string / structured log.
   T-62 đã guard `!(firstArg instanceof Error)`.
 - **WS onerror vẫn trigger reconnect** — filter chỉ override `console.error`
@@ -159,7 +160,7 @@ chỉ interface existence). Resolve 5 class ref root cause (#39, #43, #55, #58,
 - **#39** — `add_issue_relation` fail `domain not found: core:class:TsRelation`:
   **TsRelation KHÔNG tồn tại** (0 match toàn packages). Issue relations stored
   **INLINE** (`Issue.relations?: RelatedDocument[]` + `Issue.blockedBy?:
-  RelatedDocument[]`, `RelatedDocument = Pick<Doc, '_id'|'_class'>`). Refactor
+RelatedDocument[]`, `RelatedDocument = Pick<Doc, '_id'|'_class'>`). Refactor
   `add/remove/list_issue_relation` dùng `$push/$pull` trực tiếp trên Issue (T-59).
   Xóa `TS_RELATION_CLASS` dead code.
 - **#43** — `view:class:Label` + `document:class:DocumentSnapshot` **KHÔNG tồn
@@ -316,7 +317,7 @@ thay self-host unavailable — phát hiện root cause thật của 6+ class bro
   tồn tại (lookup title OR _id) → push object shape đúng. Symmetric remove.
   Idempotent. (T-45, PR #34)
 - **#28** — `create_todo` crash `platform:status:UnknownError`: `ToDo extends
-  AttachedDoc` với required fields. Fill đầy `attachedToClass`, `user`,
+AttachedDoc` với required fields. Fill đầy `attachedToClass`, `user`,
   `visibility` (Public), `rank` (lexorank empty), `priority` (number enum map),
   `workslots` (0). Priority param string → number map (urgent→4, high→0, ...).
   Wrap server error generic với context rõ ràng. (T-46, PR #35)

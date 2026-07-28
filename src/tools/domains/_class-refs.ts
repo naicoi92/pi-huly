@@ -76,6 +76,14 @@ export const DOCUMENT_CLASS = classRef("document:class:Document"); // T-65: trac
 export const TEAMSPACE_CLASS = classRef("document:class:Teamspace"); // T-65: expose (từ document pkg)
 export const DOCUMENT_SNAPSHOT_CLASS = classRef("document:class:DocumentSnapshot");
 
+// Teamspace create refs (T-78): verified runtime = plain string literals
+// (plugin() factory prefixes `<pluginId>:<category>:<name>`). KHÔNG cần bundle
+// document plugin — same string-literal pattern as class refs.
+export const TEAMSPACE_ICON = "document:icon:Teamspace";
+export const DEFAULT_TEAMSPACE_TYPE = "document:spaceType:DefaultTeamspaceType";
+// Top-level spaces (Teamspace/Drive/Project) dùng core.space.Space làm parent.
+export const SPACE_PARENT = spaceRef("core:space:Space");
+
 // Space — base abstract class trong @hcengineering/core.
 // READ-ONLY SAFE: findAll/findOne trên SPACE_CLASS trả subclasses qua inheritance
 // (list_teamspaces/get_teamspace OK cross all space types). T-66 sẽ switch

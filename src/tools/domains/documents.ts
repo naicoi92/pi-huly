@@ -23,23 +23,17 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { TEAMSPACE_CLASS, DOCUMENT_CLASS, spaceRef } from "./_class-refs.js";
+import {
+  TEAMSPACE_CLASS,
+  TEAMSPACE_ICON,
+  DEFAULT_TEAMSPACE_TYPE,
+  SPACE_PARENT,
+  DOCUMENT_CLASS,
+} from "./_class-refs.js";
 import { workspaceParam, limitParam, safeRemoveDoc } from "./_common.js";
 
 /** Teamspace CRUD space = core.space.Space (root, top-level space parent). */
-const TEAMSPACE_PARENT_SPACE = spaceRef("core.space.Space");
-
-/** T-66: create_teamspace stays honest-unavailable (icon/spaceType refs). */
-function teamspaceCreateUnavailableMessage(name: string): string {
-  return (
-    `create_teamspace KHÔNG khả dụng: tạo Teamspace cần icon ref ` +
-    `(documentPlugin.icon.Teamspace) + spaceType ref ` +
-    `(documentPlugin.spaceType.DefaultTeamspaceType) từ @hcengineering/document ` +
-    `plugin. Pi-huly dùng string literal class refs (KHÔNG bundle plugin) → ` +
-    `KHÔNG có icon/spaceType Ref values runtime. Recovery: tạo teamspace ` +
-    `"${name}" qua Huly UI trực tiếp, sau đó gọi huly_list_teamspaces để lấy id.`
-  );
-}
+const TEAMSPACE_PARENT_SPACE = SPACE_PARENT;
 
 export const tools: HulyToolDefinition[] = [
   // === Teamspaces (5) ===
@@ -59,8 +53,13 @@ export const tools: HulyToolDefinition[] = [
         description: (s as { description?: string }).description,
         private: (s as { private?: boolean }).private ?? false,
       }));
+      // T-78: surface ids+names trong content (agent đọc content để resolve).
+      const lines = list.map((t) => `- ${t.name} (${t.id})`).join("\n");
       return {
-        content: `Found ${list.length} teamspace(s).`,
+        content:
+          list.length === 0
+            ? "No teamspaces found."
+            : `Found ${list.length} teamspace(s):\n${lines}`,
         details: { count: list.length, teamspaces: list },
       };
     },
@@ -97,32 +96,48 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 3. create_teamspace — T-66: stays honest-unavailable (icon/spaceType refs)
+  // 3. create_teamspace — T-78: implement (string-literal icon/spaceType refs).
+  // Idempotent: return existing nếu name đã tồn tại (archived:false).
   defineHulyTool({
     name: "create_teamspace",
     label: "Create teamspace",
     description:
-      "Create teamspace. UNAVAILABLE — needs documentPlugin.icon.Teamspace + " +
-      "spaceType.DefaultTeamspaceType refs from @hcengineering/document plugin " +
-      "(not bundled in pi-huly). Use Huly UI to create, then list_teamspaces.",
+      "Create teamspace. Idempotent (returns existing if name exists). " +
+      "Returns teamspace id for use in document tools.",
     parameters: Type.Object({
       workspace: workspaceParam,
       name: Type.String(),
       description: Type.Optional(Type.String()),
       private: Type.Optional(Type.Boolean()),
     }),
-    async handler(params, _tctx) {
+    async handler(params, tctx) {
+      // Idempotent: findOne by name (archived:false).
+      const existing = await tctx.client.findOne(TEAMSPACE_CLASS, {
+        name: params.name,
+        archived: false,
+      });
+      if (existing) {
+        return {
+          content: `Teamspace "${params.name}" already exists (id ${existing._id}).`,
+          details: { id: existing._id, name: params.name, created: false },
+        };
+      }
+      // Account UUID for members/owners.
+      const account = await tctx.client.getAccount();
+      const uuid = account.uuid as string;
+      const id = await tctx.client.createDoc(TEAMSPACE_CLASS, TEAMSPACE_PARENT_SPACE, {
+        name: params.name,
+        description: params.description ?? "",
+        private: params.private ?? false,
+        archived: false,
+        members: [uuid],
+        owners: [uuid],
+        icon: TEAMSPACE_ICON,
+        type: DEFAULT_TEAMSPACE_TYPE,
+      } as never);
       return {
-        content: teamspaceCreateUnavailableMessage(params.name),
-        isError: true,
-        details: {
-          reason: "icon_spacetype_ref_inaccessible",
-          missingRefs: [
-            "documentPlugin.icon.Teamspace",
-            "documentPlugin.spaceType.DefaultTeamspaceType",
-          ],
-          name: params.name,
-        },
+        content: `Created teamspace "${params.name}" (id ${id}).`,
+        details: { id, name: params.name, created: true },
       };
     },
   }),
