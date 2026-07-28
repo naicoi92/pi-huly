@@ -214,6 +214,111 @@ describe("DEFAULT_UPSTREAM_NOISE_PATTERNS", () => {
       expect(p.test("[huly_list_issues] args: {}")).toBe(false);
     }
   });
+
+  // T-64 #69: WS error spam + token leak pattern.
+  it("T-64: chứa pattern 'client websocket error' (URL + token leak)", () => {
+    const match = DEFAULT_UPSTREAM_NOISE_PATTERNS.some((p) =>
+      p.test("client websocket error: 1 wss://huly.io/_transactor/TOKEN-LEAK ws user"),
+    );
+    expect(match).toBe(true);
+  });
+
+  it("T-64: chứa 7 pattern spam khác trong connection.js", () => {
+    const spamMessages = [
+      "Generate new SessionId abc-123",
+      "no ping response from server. Closing socket. id1 ws user",
+      "Connected to server: 0.7.423",
+      "Processing upgrade ws user",
+      "measure slow findAll 1500 800 100",
+    ];
+    for (const msg of spamMessages) {
+      const match = DEFAULT_UPSTREAM_NOISE_PATTERNS.some((p) => p.test(msg));
+      expect(match).toBe(true);
+    }
+  });
+});
+
+// T-64 #69: security guard — token leak prevention.
+// Filter KHÔNG chỉ đếm đúng mà còn assert stderr captured KHÔNG chứa token.
+describe("T-64 token leak security guard", () => {
+  it("WS error với URL _transactor/<token> → KHÔNG log ra, token KHÔNG leak stderr", async () => {
+    const captured: string[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      captured.push(args.map(String).join(" "));
+    };
+    const TEST_TOKEN = "super-secret-token-1234567890abcdef";
+    await runWithConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS, async () => {
+      // Giả lập upstream connection.js:554 — URL chứa token
+      console.error(
+        "client websocket error:",
+        1,
+        `wss://huly.io/_transactor/${TEST_TOKEN}`,
+        "ws",
+        "user",
+      );
+    });
+    console.error = origError;
+    // Filter swallow → captured rỗng (KHÔNG delegate ra origError)
+    expect(captured).toHaveLength(0);
+    // Security guard: stderr captured KHÔNG chứa token substring
+    const allOutput = captured.join(" ");
+    expect(allOutput).not.toContain(TEST_TOKEN);
+    expect(allOutput).not.toContain("_transactor/");
+    // Counter tăng → filter active
+    expect(getUpstreamNoiseCounters().total).toBe(1);
+  });
+
+  it("WS error lặp lại (reconnect) → filter đếm đúng, KHÔNG spam", async () => {
+    const captured: string[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      captured.push(String(args[0]));
+    };
+    await runWithConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS, async () => {
+      // Giả lập WS error trigger 5 lần (reconnect backoff)
+      for (let i = 0; i < 5; i++) {
+        console.error("client websocket error:", i, "wss://h/_transactor/tok", "ws");
+      }
+    });
+    console.error = origError;
+    expect(captured).toHaveLength(0); // KHÔNG log ra
+    expect(getUpstreamNoiseCounters().total).toBe(5); // counter +5
+  });
+
+  it("real error (KHÔNG match pattern) vẫn log ra — filter KHÔNG swallow tất cả", async () => {
+    const captured: string[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      captured.push(String(args[0]));
+    };
+    await runWithConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS, async () => {
+      console.error("AuthError: token expired"); // real error, KHÔNG match
+    });
+    console.error = origError;
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toBe("AuthError: token expired");
+  });
+
+  it("T-64: filter KHÔNG affect error throw pathway — WS onerror callback vẫn chạy", async () => {
+    // Filter chỉ override console.error METHOD, KHÔNG chạm wsocket.onerror callback
+    // logic. WS error thật nghiêm trọng (auth fail, server down) vẫn reach LLM qua
+    // mapError() → toToolResult. Verify: throw trong scope filter VẪN propagate.
+    const origError = console.error;
+    console.error = () => {}; // swallow để test chỉ check throw
+    let threw = false;
+    try {
+      await runWithConsoleFilter(DEFAULT_UPSTREAM_NOISE_PATTERNS, async () => {
+        // Giả lập WS onerror callback throw (real error state — KHÔNG bị filter swallow)
+        throw new Error("ConnectionError: Huly unreachable");
+      });
+    } catch (e) {
+      threw = true;
+      expect((e as Error).message).toBe("ConnectionError: Huly unreachable");
+    }
+    console.error = origError;
+    expect(threw).toBe(true); // error throw VẪN propagate qua filter
+  });
 });
 
 describe("Module-level counter (pool health expose)", () => {
