@@ -18,6 +18,7 @@ import {
   TASK_TYPE_CLASS,
   MODEL_SPACE,
   STATUS_CATEGORY_REFS,
+  ISSUE_STATUS_ATTRIBUTE,
 } from "./_class-refs.js";
 import { workspaceParam } from "./_common.js";
 
@@ -103,17 +104,20 @@ export const tools: HulyToolDefinition[] = [
   }),
 
   // 4. create_task_type — T-73: parent field + core.space.Model + register projectType.tasks
+  // T-73 review (M1): copy required fields (statusClass/ofClass/kind/targetClass/
+  // statusCategories/descriptor) từ sibling template TaskType trong cùng projectType.
+  // T-73 review (L1): idempotent check by name+projectType.
   defineHulyTool({
     name: "create_task_type",
     label: "Create task type",
-    description: "Create task type trong project type + register vào projectType.tasks.",
+    description:
+      "Create task type trong project type + register vào projectType.tasks. Copies descriptor fields from a sibling template task type.",
     parameters: Type.Object({
       workspace: workspaceParam,
       name: Type.String(),
       projectType: Type.String(),
     }),
     async handler(params, tctx) {
-      // Resolve projectType (FK validate + read current tasks for registration).
       const projectType = await tctx.client.findOne(PROJECT_TYPE_CLASS, {
         _id: params.projectType,
       });
@@ -124,25 +128,67 @@ export const tools: HulyToolDefinition[] = [
           details: { projectType: params.projectType },
         };
       }
-      // T-73: createDoc TaskType core.space.Model {name, parent: projectType._id}.
-      // NOTE: trusted also creates Mixin + TaskTypeClass doc + copies descriptor
-      // template — DEFERRED (heavy, needs descriptor model). This creates a
-      // minimal usable TaskType linked to projectType.
+      // T-73 review L1: idempotent — findOne existing TaskType by name+parent.
+      const existing = await tctx.client.findOne(TASK_TYPE_CLASS, {
+        name: params.name,
+        parent: params.projectType,
+      } as never);
+      if (existing) {
+        return {
+          content: `Task type "${params.name}" already exists (idempotent — no-op).`,
+          details: { id: existing._id, name: params.name, idempotent: true },
+        };
+      }
+      // T-73 review M1: copy required fields từ sibling template TaskType.
+      // TaskType schema requires descriptor/kind/ofClass/targetClass/statusClass/
+      // statusCategories — derive from an existing sibling trong cùng projectType.
+      const existingTaskIds = ((projectType as { tasks?: string[] }).tasks ?? []) as string[];
+      let template: Record<string, unknown> | undefined;
+      if (existingTaskIds.length > 0) {
+        template = (await tctx.client.findOne(TASK_TYPE_CLASS, {
+          _id: existingTaskIds[0],
+        } as never)) as Record<string, unknown> | undefined;
+      }
+      if (!template) {
+        return {
+          content:
+            `Cannot create task type "${params.name}": no sibling template TaskType ` +
+            `found trong projectType "${params.projectType}" to copy required fields ` +
+            `(descriptor/kind/ofClass/targetClass/statusClass/statusCategories). ` +
+            `Create the first task type via Huly UI, then use this tool for siblings.`,
+          isError: true,
+          details: {
+            projectType: params.projectType,
+            reason: "no_sibling_template",
+          },
+        };
+      }
       const taskTypeId = genId("task:tasktype");
+      // Copy required fields from template + override name/parent.
+      const taskData: Record<string, unknown> = {
+        name: params.name,
+        parent: projectType._id,
+        descriptor: template.descriptor,
+        kind: template.kind,
+        ofClass: template.ofClass,
+        targetClass: template.targetClass,
+        statusClass: template.statusClass,
+        statusCategories: template.statusCategories,
+        statuses: [], // new task type starts empty
+      };
       const id = await tctx.client.createDoc(
         TASK_TYPE_CLASS,
         MODEL_SPACE,
-        { name: params.name, parent: projectType._id } as never,
+        taskData as never,
         taskTypeId as never,
       );
-      // T-73: register vào projectType.tasks (read-modify-write idempotent).
-      const existingTasks = ((projectType as { tasks?: string[] }).tasks ?? []) as string[];
-      if (!existingTasks.includes(taskTypeId)) {
+      // Register vào projectType.tasks (idempotent append).
+      if (!existingTaskIds.includes(taskTypeId)) {
         await tctx.client.updateDoc(
           PROJECT_TYPE_CLASS,
           MODEL_SPACE,
           projectType._id as never,
-          { tasks: [...existingTasks, taskTypeId] } as never,
+          { tasks: [...existingTaskIds, taskTypeId] } as never,
         );
       }
       return {
@@ -203,13 +249,12 @@ export const tools: HulyToolDefinition[] = [
           details: { taskType: params.taskType },
         };
       }
-      // Idempotent: findOne exact name trên target taskType (KHÔNG global — tránh
-      // cross-taskType name collision).
+      // T-73 review H2: idempotent findOne by {name} trên statusClass ONLY (KHÔNG
+      // ofTaskType — that field KHÔNG thuộc Status schema, server strip → query miss).
       const existing = await tctx.client.findOne(
         statusClass as never,
         {
           name: params.name,
-          ofTaskType: params.taskType,
         } as never,
       );
       if (existing) {
@@ -232,14 +277,15 @@ export const tools: HulyToolDefinition[] = [
           details: { invalidCategory: params.category },
         };
       }
-      // T-73: createDoc statusClass (dynamic) core.space.Model.
+      // T-73 review H1: ofAttribute required (Status.ofAttribute: Ref<Attribute<Status>>).
+      // Trusted hardcodes tracker.attribute.IssueStatus cho issue statuses.
       const statusId = genId("tracker:status");
       await tctx.client.createDoc(
         statusClass as never,
         MODEL_SPACE,
         {
           name: params.name,
-          ofTaskType: params.taskType,
+          ofAttribute: ISSUE_STATUS_ATTRIBUTE,
           category: categoryRef,
         } as never,
         statusId as never,

@@ -121,6 +121,10 @@ export const STATUS_CATEGORY_REFS: Record<string, string> = {
   Lost: "task:statusCategory:Lost",
 };
 
+// T-73: IssueStatus.ofAttribute required field (Ref<Attribute<Status>>).
+// Trusted hardcodes tracker.attribute.IssueStatus cho issue statuses.
+export const ISSUE_STATUS_ATTRIBUTE = "tracker:attribute:IssueStatus";
+
 // view — T-58 DEEP-AUDIT: Label KHÔNG tồn tại trong 12 packages (0 match).
 // Deprecated — Huly dùng TagElement (tags:class:TagElement) cho tag/label entity.
 // Labels tools refactor dùng TAG_CLASS (T-45 pattern đã verify).

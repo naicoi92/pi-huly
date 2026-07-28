@@ -91,7 +91,8 @@ describe("T-73: create_issue_status full workflow registration", () => {
     expect(createCall?.[1]).toBe(MODEL_SPACE);
     const attrs = createCall?.[2] as Record<string, unknown>;
     expect(attrs.category).toBe("task:statusCategory:Won"); // Ref (KHÔNG raw "Won")
-    expect(attrs.ofTaskType).toBe("tt-1");
+    expect(attrs.ofAttribute).toBe("tracker:attribute:IssueStatus"); // T-73 H1 required
+    expect(attrs.ofTaskType).toBeUndefined(); // T-73 H2 dropped (fabricated)
     // 2 updateDoc register: TaskType.statuses + ProjectType.statuses
     expect(client.updateDoc).toHaveBeenCalledTimes(2);
     expect(client.updateDoc.mock.calls[0]?.[0]).toBe(TASK_TYPE_CLASS);
@@ -146,9 +147,21 @@ describe("T-73: create_issue_status full workflow registration", () => {
 });
 
 describe("T-73: create_task_type parent field + register projectType.tasks", () => {
-  it("create tasktype → parent field (KHÔNG ofProjectType) + core.space.Model + register", async () => {
+  it("create tasktype → parent + copy sibling template + register", async () => {
     const client = makeClient();
-    client.findOne = vi.fn().mockResolvedValueOnce({ _id: "pt-1", tasks: [] });
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "pt-1", tasks: ["tt-existing"] }) // projectType
+      .mockResolvedValueOnce(undefined) // idempotent check (not exist)
+      .mockResolvedValueOnce({
+        // sibling template
+        descriptor: "desc-1",
+        kind: "task:kind:Task",
+        ofClass: "task:class:Task",
+        targetClass: "tracker:class:Issue",
+        statusClass: "tracker:class:IssueStatus",
+        statusCategories: ["Won"],
+      });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const result = await findTool("huly_create_task_type").execute(
@@ -164,11 +177,32 @@ describe("T-73: create_task_type parent field + register projectType.tasks", () 
     expect(createCall?.[1]).toBe(MODEL_SPACE);
     const attrs = createCall?.[2] as Record<string, unknown>;
     expect(attrs.parent).toBe("pt-1"); // KHÔNG ofProjectType
-    // register projectType.tasks
-    const regCall = client.updateDoc.mock.calls[0];
-    expect(regCall?.[0]).toBe(PROJECT_TYPE_CLASS);
-    expect(((regCall?.[3] as { tasks?: string[] }) ?? {}).tasks?.length).toBe(1);
+    expect(attrs.statusClass).toBe("tracker:class:IssueStatus"); // copied from template
+    expect(attrs.targetClass).toBe("tracker:class:Issue");
+    expect(
+      ((client.updateDoc.mock.calls[0]?.[3] ?? {}) as { tasks?: string[] }).tasks?.length,
+    ).toBe(2);
     expect(result.details).toMatchObject({ registered: true });
+  });
+
+  it("no sibling template → isError (cannot copy required fields)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "pt-1", tasks: [] }) // projectType no tasks
+      .mockResolvedValueOnce(undefined); // idempotent check
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const result = await findTool("huly_create_task_type").execute(
+      "tc1",
+      { name: "Bug", projectType: "pt-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(client.createDoc).not.toHaveBeenCalled();
   });
 
   it("projectType not found → isError", async () => {
