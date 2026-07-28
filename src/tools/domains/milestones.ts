@@ -12,6 +12,26 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { MILESTONE_CLASS, ISSUE_CLASS, PROJECT_CLASS } from "./_class-refs.js";
+
+/**
+ * T-72 #80: MilestoneStatus enum (numeric) ↔ string map.
+ * Verified T-67: Planned=0, InProgress=1, Completed=2, Canceled=3.
+ */
+const MILESTONE_STATUS_MAP: Record<string, number> = {
+  planned: 0,
+  "in-progress": 1,
+  completed: 2,
+  canceled: 3,
+};
+function stringToMilestoneStatus(s: string): number {
+  const v = MILESTONE_STATUS_MAP[s];
+  if (v === undefined) {
+    throw new Error(
+      `Invalid milestone status "${s}". Valid: ${Object.keys(MILESTONE_STATUS_MAP).join(", ")}.`,
+    );
+  }
+  return v;
+}
 import {
   workspaceParam,
   projectParam,
@@ -162,7 +182,17 @@ export const tools: HulyToolDefinition[] = [
       if (params.label !== undefined) ops.label = params.label;
       if (params.description !== undefined) ops.description = params.description;
       if (params.targetDate !== undefined) ops.targetDate = params.targetDate;
-      if (params.status !== undefined) ops.status = params.status;
+      if (params.status !== undefined) {
+        try {
+          ops.status = stringToMilestoneStatus(params.status);
+        } catch (e) {
+          return {
+            content: (e as Error).message,
+            isError: true,
+            details: { milestone: params.milestone, invalidStatus: params.status },
+          };
+        }
+      }
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }

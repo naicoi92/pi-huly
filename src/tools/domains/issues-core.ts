@@ -14,7 +14,6 @@ import {
   ISSUE_CLASS,
   PROJECT_CLASS,
   TAG_CLASS,
-  ISSUE_STATUS_CLASS,
   idRef,
   NO_PARENT_REF,
   ISSUE_KIND_REF,
@@ -37,9 +36,9 @@ import {
   safeUpdateDoc,
   safeRemoveDoc,
   getProjectSpace,
+  getProjectStatuses,
 } from "./_common.js";
 import { findPersonByEmailOrName } from "./contacts.js";
-import { mdToMarkup } from "../../markup/markup.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_issues
@@ -247,15 +246,19 @@ export const tools: HulyToolDefinition[] = [
           : ((project as { sequence?: number }).sequence ?? 0) + 1;
       const identifier = `${(project as { identifier?: string }).identifier ?? tctx.project}-${sequence}`;
 
-      // T-67 #75: Issue = AttachedDoc → addCollection (KHÔNG createDoc).
-      // Top-level issue: attachedTo=NoParent (""), collection="subIssues".
-      // DEFERRED: status Ref resolution (T-71), description MarkupBlobRef (T-72),
-      // parentIssue hierarchy (T-68).
-      const descriptionMarkup =
-        params.description !== undefined
-          ? JSON.stringify(mdToMarkup(params.description))
-          : undefined;
+      // T-72 #80: description = MarkupBlobRef (KHÔNG inline string). uploadMarkup
+      // trả ref → gán vào description. Format "markdown" — client parse md→markup.
       const issueId = `tracker:issue.${Math.random().toString(36).slice(2, 14)}`;
+      let descriptionRef: unknown = null;
+      if (params.description !== undefined && params.description.trim() !== "") {
+        descriptionRef = await tctx.client.uploadMarkup(
+          ISSUE_CLASS,
+          issueId,
+          "description",
+          params.description,
+          "markdown",
+        );
+      }
       const id = await tctx.client.addCollection(
         ISSUE_CLASS,
         project._id as never, // space = project (issues live trong project space)
@@ -264,7 +267,7 @@ export const tools: HulyToolDefinition[] = [
         "subIssues", // collection
         {
           title: params.title,
-          description: descriptionMarkup,
+          description: descriptionRef,
           priority: params.priority,
           assignee: params.assignee,
           status: params.status,
@@ -331,8 +334,29 @@ export const tools: HulyToolDefinition[] = [
       }
       const ops: Record<string, unknown> = {};
       if (params.title !== undefined) ops.title = params.title;
-      if (params.description !== undefined)
-        ops.description = JSON.stringify(mdToMarkup(params.description));
+      // T-72 #80: description = MarkupBlobRef. Nếu issue đã có description ref →
+      // updateMarkup overwrite; chưa có → uploadMarkup create + ops.description = ref.
+      if (params.description !== undefined) {
+        const existingDesc = (issue as { description?: unknown }).description;
+        if (existingDesc) {
+          await tctx.client.updateMarkup(
+            ISSUE_CLASS,
+            issue._id,
+            "description",
+            params.description,
+            "markdown",
+          );
+        } else {
+          const ref = await tctx.client.uploadMarkup(
+            ISSUE_CLASS,
+            issue._id,
+            "description",
+            params.description,
+            "markdown",
+          );
+          ops.description = ref;
+        }
+      }
       if (params.priority !== undefined) ops.priority = params.priority;
       if (params.assignee !== undefined) ops.assignee = params.assignee;
       if (params.dueDate !== undefined) ops.dueDate = params.dueDate;
@@ -354,27 +378,21 @@ export const tools: HulyToolDefinition[] = [
       // - Input trim → match linh hoạt với " Done " / "Done" (caller LLM hay
       //   thêm whitespace). Exact case vẫn giữ (Huly status name verbatim).
       if (params.status !== undefined) {
-        // T-47 review: findAll có thể throw (transport/network/workspace-down).
-        // Wrap → isError rõ ràng + retry hint, KHÔNG để uncaught rejection
-        // propagate ra handler (generic transport error khó hiểu cho LLM).
-        let statuses: unknown[];
-        try {
-          statuses = await tctx.client.findAll(ISSUE_STATUS_CLASS, {}, {});
-        } catch (e) {
+        // T-72 #80: scope status theo project (getProjectStatuses T-71 ProjectType
+        // traversal) — KHÔNG findAll global (cross-project ambiguous match).
+        const projectStatuses = await getProjectStatuses(tctx.client, tctx.project!);
+        if (!projectStatuses) {
           return {
-            content: `Failed to load workflow statuses: ${(e as Error).message}. Retry huly_update_issue.`,
+            content: `Project "${tctx.project}" not found.`,
             isError: true,
-            details: {
-              identifier: params.identifier,
-              requestedStatus: params.status,
-              loadError: (e as Error).message,
-            },
+            details: { identifier: params.identifier, project: tctx.project },
           };
         }
+        const statuses = projectStatuses.statuses;
         if (statuses.length === 0) {
           return {
             content:
-              "No workflow statuses configured for this workspace. " +
+              "No workflow statuses configured for this project. " +
               "Set up project workflow or create statuses first (huly_create_issue_status).",
             isError: true,
             details: {
@@ -385,14 +403,13 @@ export const tools: HulyToolDefinition[] = [
           };
         }
         const requested = params.status.trim();
-        // Ưu tiên _id exact (caller truyền full ref "tracker:status:Done")
-        // trước name (short heuristic) → giảm ambiguity multi-project.
-        const byId = statuses.find((s) => (s as { _id?: string })._id === requested);
-        const byName = statuses.find((s) => (s as { name?: string }).name === requested);
+        // Ưu tiên _id exact trước name short (giảm ambiguity multi-project).
+        const byId = statuses.find((s) => s._id === requested);
+        const byName = statuses.find((s) => s.name === requested);
         const match = byId ?? byName;
         if (match === undefined) {
           const valid = statuses
-            .map((s) => (s as { name?: string }).name ?? "")
+            .map((s) => s.name)
             .filter((n) => n.length > 0)
             .join(", ");
           return {
@@ -401,26 +418,11 @@ export const tools: HulyToolDefinition[] = [
             details: {
               identifier: params.identifier,
               invalidStatus: params.status,
-              validStatuses: statuses.map((s) => (s as { name?: string }).name),
+              validStatuses: statuses.map((s) => s.name),
             },
           };
         }
-        const resolvedId = (match as { _id?: string })._id;
-        if (resolvedId === undefined) {
-          // Schema drift: IssueStatus match nhưng _id missing → KHÔNG fallback
-          // raw params.status (reintroduce bug gốc — silent server reject).
-          return {
-            content: `Status "${params.status}" matched but _id missing (schema drift). Report bug.`,
-            isError: true,
-            details: {
-              identifier: params.identifier,
-              requestedStatus: params.status,
-              matchedDoc: match,
-              schemaDrift: true,
-            },
-          };
-        }
-        ops.status = resolvedId;
+        ops.status = match._id;
       }
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
