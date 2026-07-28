@@ -50,6 +50,8 @@ function makeClient() {
     removeDoc: vi.fn().mockResolvedValue(undefined),
     addCollection: vi.fn().mockResolvedValue("internal-id-abc"),
     fetchMarkup: vi.fn(),
+    uploadMarkup: vi.fn().mockResolvedValue({ blob: "ref" }),
+    updateMarkup: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -399,15 +401,38 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     expect(ops.assignee).not.toBe("u@x.com");
   });
 
-  it("update_issue với status hợp lệ → resolve short name → full ref trước khi gửi", async () => {
-    const client = makeClient();
-    client.findAll = vi.fn().mockResolvedValue(ISSUE_STATUSES);
-    client.findOne = vi.fn().mockResolvedValueOnce({
-      _id: "i1",
-      space: "sp1",
-      identifier: "PD-1",
-      status: "tracker:status:Todo",
-    });
+  // T-72: status resolve scope theo project (getProjectStatuses ProjectType
+  // traversal) — KHÔNG findAll global. Helper mock chain: Issue → Project →
+  // ProjectType → IssueStatus per ref.
+  function seedStatusChain(
+    client: ReturnType<typeof makeClient>,
+    statuses: Array<{ _id: string; name: string; category?: string }>,
+  ) {
+    let chain = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "i1",
+        space: "sp1",
+        identifier: "PD-1",
+        status: "tracker:status:Todo",
+      }) // issue
+      .mockResolvedValueOnce({
+        _id: "sp1",
+        identifier: "PD",
+        type: "pt-1",
+        defaultIssueStatus: statuses[0]?._id ?? "",
+      }) // Project
+      .mockResolvedValueOnce({ statuses: statuses.map((s) => ({ _id: s._id })) }); // ProjectType
+    // IssueStatus per ref — mockResolvedValueOnce each.
+    for (const s of statuses) {
+      chain = chain.mockResolvedValueOnce(s);
+    }
+    client.findOne = chain;
+    return client;
+  }
+
+  it("update_issue status hợp lệ → resolve short name → full ref (scope project)", async () => {
+    const client = seedStatusChain(makeClient(), ISSUE_STATUSES);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_update_issue");
@@ -420,23 +445,12 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    // findAll được gọi để load valid statuses
-    expect(client.findAll).toHaveBeenCalledWith("tracker:class:IssueStatus", {}, {});
-    // ops.status = full ref (KHÔNG phải raw "Done")
-    const updateCall = client.updateDoc.mock.calls[0];
-    const ops = updateCall?.[3] as Record<string, unknown>;
-    expect(ops.status).toBe("tracker:status:Done");
+    const ops = client.updateDoc.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(ops.status).toBe("tracker:status:Done"); // full ref (KHÔNG raw "Done")
   });
 
-  it("update_issue với status SAI → isError + suggest valid statuses", async () => {
-    const client = makeClient();
-    client.findAll = vi.fn().mockResolvedValue(ISSUE_STATUSES);
-    client.findOne = vi.fn().mockResolvedValueOnce({
-      _id: "i1",
-      space: "sp1",
-      identifier: "PD-1",
-      status: "tracker:status:Todo",
-    });
+  it("update_issue status SAI → isError + suggest valid statuses", async () => {
+    const client = seedStatusChain(makeClient(), ISSUE_STATUSES);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_update_issue");
@@ -450,22 +464,13 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
 
     expect(result.isError).toBe(true);
     const text = result.content[0]?.text ?? "";
-    // Message list valid statuses để LLM biết chọn
     expect(text).toMatch(/Done|Todo|Backlog/i);
     expect(text).toMatch(/InvalidStatus/i);
-    // updateDoc KHÔNG gọi (validation failed)
     expect(client.updateDoc).not.toHaveBeenCalled();
   });
 
-  it("update_issue với status dạng full ref ('tracker:status:Done') → accept as-is", async () => {
-    const client = makeClient();
-    client.findAll = vi.fn().mockResolvedValue(ISSUE_STATUSES);
-    client.findOne = vi.fn().mockResolvedValueOnce({
-      _id: "i1",
-      space: "sp1",
-      identifier: "PD-1",
-      status: "tracker:status:Todo",
-    });
+  it("update_issue status dạng full ref → accept as-is (match by _id)", async () => {
+    const client = seedStatusChain(makeClient(), ISSUE_STATUSES);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_update_issue");
@@ -478,38 +483,28 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    const updateCall = client.updateDoc.mock.calls[0];
-    const ops = updateCall?.[3] as Record<string, unknown>;
+    const ops = client.updateDoc.mock.calls[0]?.[3] as Record<string, unknown>;
     expect(ops.status).toBe("tracker:status:Done");
   });
 
-  it("update_issue KHÔNG truyền status → KHÔNG gọi findAll status (skip validation)", async () => {
+  it("update_issue KHÔNG truyền status → KHÔNG gọi getProjectStatuses (skip validation)", async () => {
     const client = makeClient();
-    client.findOne = vi.fn().mockResolvedValueOnce({
-      _id: "i1",
-      space: "sp1",
-      identifier: "PD-1",
-    });
+    client.findOne = vi.fn().mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_update_issue");
     await tool.execute("tc1", { identifier: "PD-1", title: "New" }, undefined, undefined, ctx);
 
-    // findAll KHÔNG gọi (status không phải field update)
-    const statusCalls = client.findAll.mock.calls.filter(
-      (c) => c[0] === "tracker:class:IssueStatus",
-    );
-    expect(statusCalls).toHaveLength(0);
+    // findOne chỉ gọi 1 lần (issue lookup) — KHÔNG ProjectType chain
+    expect(client.findOne).toHaveBeenCalledTimes(1);
   });
 
-  it("findAll trả empty (fresh workspace chưa config workflow) → isError rõ ràng, KHÔNG 'Valid statuses: .'", async () => {
+  it("project không có type (fresh) → isError noStatusesConfigured", async () => {
     const client = makeClient();
-    client.findAll = vi.fn().mockResolvedValue([]); // no statuses configured
-    client.findOne = vi.fn().mockResolvedValueOnce({
-      _id: "i1",
-      space: "sp1",
-      identifier: "PD-1",
-    });
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" }) // issue
+      .mockResolvedValueOnce({ _id: "sp1", identifier: "PD" }); // Project no type
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_update_issue");
@@ -523,48 +518,12 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
 
     expect(result.isError).toBe(true);
     const text = result.content[0]?.text ?? "";
-    // Message hướng dẫn setup workflow, KHÔNG misleading "Valid statuses: ."
-    expect(text).not.toMatch(/Valid statuses:\s*\./);
     expect(text).toMatch(/no workflow statuses/i);
-    // updateDoc KHÔNG gọi
-    expect(client.updateDoc).not.toHaveBeenCalled();
-  });
-
-  it("status match name nhưng _id undefined (schema drift) → isError, KHÔNG fallback raw params.status", async () => {
-    const client = makeClient();
-    client.findAll = vi.fn().mockResolvedValue([{ name: "Done" /* _id missing */ }]);
-    client.findOne = vi.fn().mockResolvedValueOnce({
-      _id: "i1",
-      space: "sp1",
-      identifier: "PD-1",
-    });
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool("huly_update_issue");
-    const result = await tool.execute(
-      "tc1",
-      { identifier: "PD-1", status: "Done" },
-      undefined,
-      undefined,
-      ctx,
-    );
-
-    // isError (KHÔNG fallback raw params.status → reintroduce bug gốc)
-    expect(result.isError).toBe(true);
-    const text = result.content[0]?.text ?? "";
-    expect(text).toMatch(/schema drift/i);
-    // updateDoc KHÔNG gọi
     expect(client.updateDoc).not.toHaveBeenCalled();
   });
 
   it("status có whitespace ' Done ' → trim rồi match name", async () => {
-    const client = makeClient();
-    client.findAll = vi.fn().mockResolvedValue(ISSUE_STATUSES);
-    client.findOne = vi.fn().mockResolvedValueOnce({
-      _id: "i1",
-      space: "sp1",
-      identifier: "PD-1",
-    });
+    const client = seedStatusChain(makeClient(), ISSUE_STATUSES);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_update_issue");
@@ -577,19 +536,16 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    const updateCall = client.updateDoc.mock.calls[0];
-    const ops = updateCall?.[3] as Record<string, unknown>;
+    const ops = client.updateDoc.mock.calls[0]?.[3] as Record<string, unknown>;
     expect(ops.status).toBe("tracker:status:Done");
   });
 
-  it("findAll throw (transport/network) → isError rõ ràng + retry hint, KHÔNG uncaught", async () => {
+  it("project not found → isError", async () => {
     const client = makeClient();
-    client.findAll = vi.fn().mockRejectedValue(new Error("connection refused"));
-    client.findOne = vi.fn().mockResolvedValueOnce({
-      _id: "i1",
-      space: "sp1",
-      identifier: "PD-1",
-    });
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" }) // issue
+      .mockResolvedValueOnce(undefined); // Project not found
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_update_issue");
@@ -601,12 +557,73 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
       ctx,
     );
 
-    // isError rõ ràng (KHÔNG uncaught rejection propagate ra handler)
     expect(result.isError).toBe(true);
-    const text = result.content[0]?.text ?? "";
-    expect(text).toMatch(/failed to load workflow statuses/i);
-    expect(text).toMatch(/connection refused/i);
-    // updateDoc KHÔNG gọi
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe("T-72: update_issue description MarkupBlobRef (uploadMarkup/updateMarkup)", () => {
+  it("description mới (issue chưa có description) → uploadMarkup + ops.description = ref", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", description: null });
+    client.uploadMarkup = vi.fn().mockResolvedValue({ blob: "new-ref" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", description: "# new desc" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(client.uploadMarkup).toHaveBeenCalledWith(
+      ISSUE_CLASS,
+      "i1",
+      "description",
+      "# new desc",
+      "markdown",
+    );
+    const ops = client.updateDoc.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(ops.description).toEqual({ blob: "new-ref" });
+  });
+
+  it("description update (issue đã có description) → updateMarkup overwrite (KHÔNG uploadMarkup)", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce({
+      _id: "i1",
+      space: "sp1",
+      identifier: "PD-1",
+      description: { blob: "existing-ref" },
+    });
+    client.updateMarkup = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_issue");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", description: "# updated" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    // T-72 review: response success (KHÔNG "No fields to update"), updateDoc KHÔNG gọi
+    expect(result.details).toMatchObject({ updated: true });
+    expect((result.details as { fields: string[] }).fields).toContain("description");
+    expect(client.updateMarkup).toHaveBeenCalledWith(
+      ISSUE_CLASS,
+      "i1",
+      "description",
+      "# updated",
+      "markdown",
+    );
+    expect(client.uploadMarkup).not.toHaveBeenCalled();
     expect(client.updateDoc).not.toHaveBeenCalled();
   });
 });
