@@ -4,7 +4,13 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { ISSUE_TEMPLATE_CLASS, ISSUE_CLASS, PROJECT_CLASS } from "./_class-refs.js";
-import { workspaceParam, projectParam, safeUpdateDoc, safeRemoveDoc } from "./_common.js";
+import {
+  workspaceParam,
+  projectParam,
+  safeUpdateDoc,
+  safeRemoveDoc,
+  getProjectSpace,
+} from "./_common.js";
 import { mdToMarkup } from "../../markup/markup.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -16,7 +22,16 @@ export const tools: HulyToolDefinition[] = [
     needsProject: true,
     parameters: Type.Object({ workspace: workspaceParam, project: projectParam }),
     async handler(_params, tctx) {
-      const tpls = await tctx.client.findAll(ISSUE_TEMPLATE_CLASS, {}, {});
+      // T-71: space scoping (KHÔNG findAll global cross-project).
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const tpls = await tctx.client.findAll(ISSUE_TEMPLATE_CLASS, { space } as never, {});
       const list = tpls.map((t) => ({
         _id: t._id,
         title: (t as { title?: string }).title ?? "",

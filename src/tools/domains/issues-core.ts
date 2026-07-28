@@ -36,7 +36,9 @@ import {
   escapeLikePattern,
   safeUpdateDoc,
   safeRemoveDoc,
+  getProjectSpace,
 } from "./_common.js";
+import { findPersonByEmailOrName } from "./contacts.js";
 import { mdToMarkup } from "../../markup/markup.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -61,16 +63,32 @@ export const tools: HulyToolDefinition[] = [
     }),
     async handler(params, tctx) {
       const limit = typeof params.limit === "number" ? params.limit : 50;
-      const query: Record<string, unknown> = {
-        // Filter theo project prefix (vd "PD-%") — issue scoped theo project.
-        identifier: { $like: `${tctx.project!}-%` },
-      };
+      // T-71: space scoping — project._id = space (canonical, thay identifier $like).
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const query: Record<string, unknown> = { space };
       if (params.status !== undefined) query.status = params.status;
       if (params.statusCategory !== undefined) query.statusCategory = params.statusCategory;
-      if (params.assignee !== undefined) query.assignee = params.assignee;
+      // T-71: assignee resolve email/name → Person._id (Issue.assignee = Ref<Person>).
+      if (params.assignee !== undefined) {
+        const personId = await findPersonByEmailOrName(tctx.client, params.assignee);
+        if (!personId) {
+          return {
+            content: `Assignee "${params.assignee}" not found (no Person matching email/name).`,
+            isError: true,
+            details: { assignee: params.assignee },
+          };
+        }
+        query.assignee = personId;
+      }
       if (params.component !== undefined) query.component = params.component;
-      // T-68: parentIssue filter → resolve identifier → _id, query.attachedTo
-      // (field `parentIssue` KHÔNG tồn tại runtime — AttachedDoc hierarchy).
+      // T-68: parentIssue filter → resolve identifier → _id, query.attachedTo.
       if (params.parentIssue !== undefined) {
         const parent = await tctx.client.findOne(ISSUE_CLASS, {
           identifier: resolveIdentifier(tctx.project!, params.parentIssue),
@@ -84,9 +102,8 @@ export const tools: HulyToolDefinition[] = [
         }
         query.attachedTo = parent._id;
       }
+      // T-71: titleSearch ADD filter (KHÔNG xóa space — tránh leak cross-project).
       if (params.titleSearch !== undefined) {
-        // Override identifier filter khi search title (KHÔNG combine $like)
-        delete query.identifier;
         query.title = { $like: `%${escapeLikePattern(params.titleSearch)}%` };
       }
       const issues = await tctx.client.findAll(ISSUE_CLASS, query, { limit });

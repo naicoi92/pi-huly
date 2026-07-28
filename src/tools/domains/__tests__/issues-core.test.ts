@@ -806,6 +806,7 @@ describe("T-68: list_issues parentIssue filter → query.attachedTo", () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
+      .mockResolvedValueOnce({ _id: "sp1", identifier: "PD" }) // T-71: getProjectSpace
       .mockResolvedValueOnce({ _id: "parent-id", identifier: "PD-2", space: "sp1" }); // resolve parent
     client.findAll = vi.fn().mockResolvedValue([{ _id: "c1", identifier: "PD-1", title: "Child" }]);
     vi.mocked(getClient).mockResolvedValue(client as never);
@@ -814,18 +815,20 @@ describe("T-68: list_issues parentIssue filter → query.attachedTo", () => {
     const result = await tool.execute("tc1", { parentIssue: "PD-2" }, undefined, undefined, ctx);
 
     expect(result.isError).toBeUndefined();
-    // findOne called to resolve parent identifier → _id
-    expect(client.findOne).toHaveBeenCalled();
-    // findAll query contains attachedTo: parent-id (NOT parentIssue)
+    // findAll query contains attachedTo: parent-id (NOT parentIssue) + space scoping
     const findAllCall = client.findAll.mock.calls[0];
     const query = findAllCall?.[1] as Record<string, unknown>;
     expect(query.attachedTo).toBe("parent-id");
+    expect(query.space).toBe("sp1");
     expect(query.parentIssue).toBeUndefined();
   });
 
   it("parentIssue filter not found → isError", async () => {
     const client = makeClient();
-    client.findOne = vi.fn().mockResolvedValueOnce(undefined);
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "sp1", identifier: "PD" }) // T-71: getProjectSpace
+      .mockResolvedValueOnce(undefined); // parent not found
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_list_issues");
@@ -833,5 +836,48 @@ describe("T-68: list_issues parentIssue filter → query.attachedTo", () => {
 
     expect(result.isError).toBe(true);
     expect(client.findAll).not.toHaveBeenCalled();
+  });
+});
+
+// T-71: list_issues space scoping + assignee resolve + titleSearch no-leak
+describe("T-71: list_issues space scoping + assignee resolve", () => {
+  it("findAll query chứa space: project._id (KHÔNG identifier $like)", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce({ _id: "sp1", identifier: "PD" });
+    client.findAll = vi.fn().mockResolvedValue([]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issues");
+    await tool.execute("tc1", {}, undefined, undefined, ctx);
+
+    const query = client.findAll.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(query.space).toBe("sp1");
+    expect(query.identifier).toBeUndefined(); // T-71: bỏ identifier $like
+  });
+
+  it("project not found → isError", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce(undefined); // getProjectSpace
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issues");
+    const result = await tool.execute("tc1", {}, undefined, undefined, ctx);
+
+    expect(result.isError).toBe(true);
+    expect(client.findAll).not.toHaveBeenCalled();
+  });
+
+  it("titleSearch KHÔNG xóa space filter (no cross-project leak)", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce({ _id: "sp1", identifier: "PD" });
+    client.findAll = vi.fn().mockResolvedValue([]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issues");
+    await tool.execute("tc1", { titleSearch: "bug" }, undefined, undefined, ctx);
+
+    const query = client.findAll.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(query.space).toBe("sp1"); // KHÔNG bị xóa
+    expect(query.title).toEqual({ $like: "%bug%" });
   });
 });

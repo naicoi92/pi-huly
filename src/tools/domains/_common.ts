@@ -5,6 +5,7 @@ import { Type, type TObject, type TOptional, type TString, type TInteger } from 
 import type { Class, Doc, DocumentUpdate, Ref, Space, TxResult } from "@hcengineering/api-client";
 import type { HulyClient } from "../../client/client.js";
 import type { HulyToolResult } from "../builder.js";
+import { PROJECT_CLASS, ISSUE_STATUS_CLASS, PROJECT_TYPE_CLASS } from "./_class-refs.js";
 
 /** Workspace override param (mọi tool). */
 export const workspaceParam: TOptional<TString> = Type.Optional(
@@ -72,6 +73,66 @@ export function projectParams(): TObject {
  * Cross-project guard: nếu input có prefix "<X>-<num>" mà X != project →
  * throw Error (KHÔNG silently query sai project). Caller catch → isError.
  */
+/**
+ * T-71: Resolve project _id (= space cho AttachedDoc scoping) từ identifier.
+ * Project._id === Project.space (self-ref — T-67 confirmed). Trả undefined nếu
+ * project không tồn tại (caller → isError).
+ */
+export async function getProjectSpace(
+  client: HulyClient,
+  projectIdentifier: string,
+): Promise<string | undefined> {
+  const project = await client.findOne(PROJECT_CLASS, { identifier: projectIdentifier });
+  return project?._id;
+}
+
+/**
+ * T-71: Resolve IssueStatus docs cho project qua ProjectType.statuses traversal.
+ * Flow: Project → project.type (Ref<ProjectType>) → ProjectType.statuses
+ * (Ref<IssueStatus>[]) → resolve docs. Trả {statuses, defaultStatusId}.
+ *
+ * category Ref<StatusCategory> → enum key (strip `*:statusCategory:` prefix).
+ * isDefault = status._id === project.defaultIssueStatus.
+ */
+export async function getProjectStatuses(
+  client: HulyClient,
+  projectIdentifier: string,
+): Promise<
+  | { statuses: Array<{ _id: string; name: string; category: string; isDefault: boolean }> }
+  | undefined
+> {
+  const project = await client.findOne(PROJECT_CLASS, {
+    identifier: projectIdentifier,
+  } as never);
+  if (!project) return undefined;
+  const projectTypeRef = (project as { type?: string }).type;
+  if (!projectTypeRef) return { statuses: [] };
+  const projectType = await client.findOne(PROJECT_TYPE_CLASS, { _id: projectTypeRef } as never);
+  // ProjectType.statuses = ProjectStatus[] (objects {_id: Ref<Status>, taskType, ...}),
+  // KHÔNG Ref[] — extract ._id trước (trusted issues-shared.ts:157 .map(s => s._id)).
+  const rawStatuses =
+    (projectType as { statuses?: Array<{ _id?: string }> } | null)?.statuses ?? [];
+  const statusRefs = rawStatuses
+    .map((s) => s._id)
+    .filter((r): r is string => typeof r === "string");
+  const defaultStatusId = (project as { defaultIssueStatus?: string }).defaultIssueStatus ?? "";
+  const statuses: Array<{ _id: string; name: string; category: string; isDefault: boolean }> = [];
+  for (const ref of statusRefs) {
+    const s = await client.findOne(ISSUE_STATUS_CLASS, { _id: ref } as never);
+    if (!s) continue;
+    const rawCat = (s as { category?: string }).category ?? "";
+    // category = Ref<StatusCategory> (vd "task:statusCategory:UnStarted") → enum key.
+    const category = rawCat.split(":").pop() ?? rawCat;
+    statuses.push({
+      _id: s._id,
+      name: (s as { name?: string }).name ?? "",
+      category,
+      isDefault: s._id === defaultStatusId,
+    });
+  }
+  return { statuses };
+}
+
 export function resolveIdentifier(project: string, identifier: string): string {
   if (/^\d+$/.test(identifier)) {
     return `${project}-${identifier}`;

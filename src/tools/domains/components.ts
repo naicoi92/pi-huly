@@ -11,6 +11,7 @@ import {
   resolveIdentifier,
   safeUpdateDoc,
   safeRemoveDoc,
+  getProjectSpace,
 } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -22,7 +23,16 @@ export const tools: HulyToolDefinition[] = [
     needsProject: true,
     parameters: Type.Object({ workspace: workspaceParam, project: projectParam }),
     async handler(_params, tctx) {
-      const comps = await tctx.client.findAll(COMPONENT_CLASS, {}, {});
+      // T-71: space scoping (KHÔNG findAll global cross-project).
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const comps = await tctx.client.findAll(COMPONENT_CLASS, { space } as never, {});
       const list = comps.map((c) => ({
         id: c._id,
         label: (c as { label?: string }).label ?? "",
