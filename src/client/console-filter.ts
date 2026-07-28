@@ -137,6 +137,10 @@ export class UpstreamConsoleFilter {
  * Wrap async block với console filter active. Install → run → restore (try/finally
  * LUÔN restore — KHÔNG leak override global dù block throw).
  *
+ * **Scope hạn chế**: chỉ cover connect-time spam (cache-miss replay khi buildModel).
+ * WS error post-connect (wsocket.onerror async callback) KHÔNG cover — dùng
+ * `installGlobalConsoleFilter()` cho connection lifetime.
+ *
  * @param patterns RegExp[] match first-arg string (hoặc object.message)
  * @param fn async block (vd quanh connect() / warmPool)
  * @returns giá trị fn trả về
@@ -152,6 +156,42 @@ export async function runWithConsoleFilter<T>(
   } finally {
     filter.restore();
   }
+}
+
+/**
+ * T-64 #69: Global console filter — install 1 lần, active toàn session lifetime
+ * (KHÔNG restore). Cần thiết vì WS error (`wsocket.onerror` async callback trong
+ * `client-resources/lib/connection.js:554`) fires **post-connect** — `runWithConsoleFilter`
+ * chỉ cover connect-time, restore `console.error` trước khi WS error thật sự fire.
+ *
+ * Token leak (URL `_transactor/<token>`) chỉ gate được nếu filter active khi WS
+ * error fire (bất kỳ lúc nào post-connect: reconnect, server down, network blip).
+ *
+ * Install idempotent — gọi 2 lần no-op (return false nếu đã active).
+ *
+ * @param patterns RegExp[] match first-arg string (hoặc object.message)
+ * @returns true nếu install mới, false nếu đã active (no-op)
+ */
+let globalFilterInstalled = false;
+let globalFilter: UpstreamConsoleFilter | null = null;
+
+export function installGlobalConsoleFilter(patterns: RegExp[]): boolean {
+  if (globalFilterInstalled) return false;
+  globalFilter = new UpstreamConsoleFilter(patterns);
+  globalFilter.install();
+  globalFilterInstalled = true;
+  return true;
+}
+
+/**
+ * Restore global filter (test-only — production KHÔNG gọi, filter active toàn session).
+ */
+export function __resetGlobalFilterForTests(): void {
+  if (globalFilter !== null) {
+    globalFilter.restore();
+    globalFilter = null;
+  }
+  globalFilterInstalled = false;
 }
 
 /**

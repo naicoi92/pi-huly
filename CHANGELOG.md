@@ -69,6 +69,13 @@ KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketF
 - **WS onerror vẫn trigger reconnect** — filter chỉ override `console.error`
   METHOD, KHÔNG chạm `wsocket.onerror` callback. Error throw pathway (auth fail,
   server down) vẫn reach LLM qua `mapError()` → `toToolResult`.
+- **B1 fix (review)** — `runWithConsoleFilter` chỉ cover connect-time (restore
+  `console.error` trước khi `wsocket.onerror` async callback thật fire → token
+  leak post-connect). Thêm `installGlobalConsoleFilter()` install 1 lần tại
+  `setup()` (index.ts), active toàn session lifetime. WS error fires bất kỳ lúc
+  nào post-connect (reconnect, server down, network blip) đều bị gate. Test verify
+  post-connect timing (setTimeout gap) + reconnect spam 10 lần + Error instance
+  vẫn log ra downstream.
 
 ## [1.0.0-beta.4] - 2026-07-28
 
