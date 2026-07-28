@@ -29,8 +29,8 @@ import {
   TAG_CATEGORY_CLASS,
   LABEL_CLASS,
   TIME_SPEND_REPORT_CLASS,
-  TS_RELATION_CLASS,
   TODO_CLASS,
+  DRIVE_CLASS,
 } from "../_class-refs.js";
 
 /**
@@ -105,17 +105,33 @@ describe("T-44 §1 class registry truth (audit 11-runtime-audit.md)", () => {
     });
   });
 
-  describe("UNVERIFIED (audit §7 — cần runtime server hoặc audit sâu hơn)", () => {
-    it("LABEL_CLASS giữ view:class:Label (chưa tìm thấy trong audited packages)", () => {
+  describe("T-58 DEEP-AUDIT verdict (12 packages @0.7.423 — 2026-07-28)", () => {
+    // T-58: STRONG confirm qua plugin() class block scan (KHÔNG chỉ interface).
+    // Document interface exists nhưng KHÔNG register class → runtime fail.
+    it("DOCUMENT_CLASS giữ tracker:class:Document (interface orphan — NOT registered runtime)", () => {
+      expect(raw(DOCUMENT_CLASS)).toBe("tracker:class:Document");
+    });
+
+    // T-58: Label 0 match toàn packages → deprecated (Huly dùng TagElement).
+    it("LABEL_CLASS giữ view:class:Label (DEPRECATED — 0 match, dùng TAG_CLASS)", () => {
       expect(raw(LABEL_CLASS)).toBe("view:class:Label");
     });
 
-    it("TS_RELATION_CLASS giữ core:class:TsRelation (Issue relations có thể stored inline)", () => {
-      expect(raw(TS_RELATION_CLASS)).toBe("core:class:TsRelation");
+    // T-58: DocumentSnapshot 0 match toàn packages → deprecated.
+    it("DOCUMENT_SNAPSHOT_CLASS giữ document:class:DocumentSnapshot (DEPRECATED)", () => {
+      expect(raw(DOCUMENT_SNAPSHOT_CLASS)).toBe("document:class:DocumentSnapshot");
     });
 
-    it("DOCUMENT_SNAPSHOT_CLASS giữ document:class:DocumentSnapshot (chưa confirm)", () => {
-      expect(raw(DOCUMENT_SNAPSHOT_CLASS)).toBe("document:class:DocumentSnapshot");
+    // T-54: DRIVE_CLASS = Documents Teamspace thật (extends TypedSpace, registered).
+    it("DRIVE_CLASS = drive:class:Drive (Documents/Files Teamspace — T-54)", () => {
+      expect(raw(DRIVE_CLASS)).toBe("drive:class:Drive");
+    });
+
+    // T-59: TS_RELATION_CLASS XÓA — Issue.relations inline RelatedDocument[].
+    // Regression guard: KHÔNG còn export TS_RELATION_CLASS (dead code removed).
+    it("TS_RELATION_CLASS KHÔNG còn export (T-59 xóa — inline relations)", async () => {
+      const mod = await import("../_class-refs.js");
+      expect((mod as Record<string, unknown>).TS_RELATION_CLASS).toBeUndefined();
     });
   });
 
@@ -141,8 +157,8 @@ describe("T-44 §1 class registry truth (audit 11-runtime-audit.md)", () => {
       TAG_CATEGORY_CLASS,
       LABEL_CLASS,
       TIME_SPEND_REPORT_CLASS,
-      TS_RELATION_CLASS,
       TODO_CLASS,
+      DRIVE_CLASS,
     ];
 
     it("mọi class ref match pattern <plugin>:class:<Name> hoặc <plugin>:mixin:<Name>", () => {

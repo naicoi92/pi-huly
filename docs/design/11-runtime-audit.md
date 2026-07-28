@@ -278,11 +278,39 @@ Cần audit thêm `Visibility` enum + `Rank` format từ `@hcengineering/calenda
 
 ## 7. Unverified items (cần runtime server hoặc audit sâu hơn)
 
-- **Label class** (`view:class:Label`) — không có trong view class/mixin block.
-  Cần search packages khác hoặc runtime verify.
-- **TsRelation** (`core:class:TsRelation`) — không có trong core. Issue relations
-  có thể stored inline (`relations?: RelatedDocument[]` trong Issue interface).
-- **DocumentSnapshot class** (`document:class:DocumentSnapshot`) — không tìm thấy.
+> **T-58 UPDATE (2026-07-28)**: DEEP-AUDIT 12 packages @0.7.423 — scan plugin()
+> class block registration (KHÔNG chỉ interface existence). Resolve 4/5
+> previously UNVERIFIED items. Chỉ 1 còn lại (Document class — interface orphan).
+
+### RESOLVED by T-58 (STRONG evidence — plugin class block scan)
+
+| Item | Verdict | Evidence | Action |
+|---|---|---|---|
+| **Label** (`view:class:Label`) | **DEPRECATED** — 0 match toàn 12 packages (interface + class) | plugin() class block scan: core/tracker/task/contact/chunter/tags/attachment/drive/view/platform/calendar/templates — 0 match | T-58: labels tools honest-unavailable (redirect tag tools) |
+| **TsRelation** (`core:class:TsRelation`) | **KHÔNG TỒN TẠI** — 0 match. Issue relations **INLINE** (`Issue.relations?: RelatedDocument[]` + `Issue.blockedBy?: RelatedDocument[]`) | tracker/src/index.ts:195-196 + core/classes.ts:777 `RelatedDocument = Pick<Doc, '_id' \| '_class'>` | T-59: refactor $push/$pull inline, xóa TS_RELATION_CLASS dead code |
+| **DocumentSnapshot** (`document:class:DocumentSnapshot`) | **DEPRECATED** — 0 match toàn 12 packages | plugin() class block scan: 0 match | T-58: snapshots tools honest-unavailable |
+| **Space/Teamspace** (`core:class:Space`) | **base abstract** — KHÔNG có SpaceTypeDescriptor. Documents Teamspace thật = `drive:class:Drive` (extends TypedSpace, registered drive plugin:31) | core SpaceTypeDescriptor.baseClass + drive plugin class block | T-54: create_teamspace honest-unavailable (SpaceType ref inaccessible) |
+
+### STILL UNVERIFIED (1 item — interface orphan)
+
+- **Document class** (`tracker:class:Document`) — interface exists trong tracker
+  source (src/index.ts:338 `interface Document extends Doc`) NHƯNG **KHÔNG register**
+  trong tracker plugin() class block (chỉ Project/Issue/IssueTemplate/Component/
+  IssueStatus/Milestone/TimeSpendReport). → runtime fail "domain not found"
+  (interface orphan). T-60: Document search honest remove domain. Class thật
+  (nếu có) cần runtime verify hoặc audit packages chưa check (candidates:
+  `chunter:class:Doc` — hypothesis, chưa verify).
+
+### Key methodology insight (T-58)
+
+Audit T-44 trước chỉ check **interface existence** trong source map — KHÔNG đủ.
+`tracker:class:Document` interface exists NHƯNG runtime KHÔNG register → fail.
+T-58 audit check **plugin() class block** (registration truth) — đây mới là
+runtime contract. Huly packages publish interface + plugin IDs; runtime lookup
+dựa vào class registration trong plugin() block.
+
+### Remaining items (deferred — không block user)
+
 - **Visibility enum** (time package) — cần audit `@hcengineering/calendar`.
 - **Rank format** — cần audit `@hcengineering/rank`.
 - **TagReference shape chính xác** — cần audit tags source map chi tiết.

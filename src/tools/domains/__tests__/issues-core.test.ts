@@ -210,13 +210,13 @@ describe("T-41: get_issue description ref → markdown (#23)", () => {
 
 // T-45: add_issue_label validate tồn tại + TagReference object shape (#27)
 describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
-  it("label KHÔNG tồn tại → isError + suggest create_label trước", async () => {
+  it("label KHÔNG tồn tại → isError + suggest create_tag trước (T-58 redirect)", async () => {
     const client = makeClient();
-    // findOne: lần 1 = issue lookup, lần 2 = label lookup (not found)
+    // findOne: lần 1 = issue lookup, lần 2 = tag lookup (not found)
     client.findOne = vi
       .fn()
       .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", labels: [] }) // issue
-      .mockResolvedValue(undefined); // label not found (cả 2 lần lookup)
+      .mockResolvedValue(undefined); // tag not found (cả 2 lần lookup)
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_add_issue_label");
@@ -231,7 +231,9 @@ describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
     expect(result.isError).toBe(true);
     const text = result.content[0]?.text ?? "";
     expect(text).toMatch(/not found/i);
-    expect(text).toMatch(/create_label/i);
+    // T-58: redirect sang create_tag (Label deprecated — dùng TagElement)
+    expect(text).toMatch(/create_tag/i);
+    expect(text).not.toMatch(/create_label/i);
     // updateDoc KHÔNG gọi (validate failed)
     expect(client.updateDoc).not.toHaveBeenCalled();
   });

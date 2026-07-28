@@ -7,6 +7,17 @@
 // source map (npm tarball extraction). Source of truth:
 // docs/design/11-runtime-audit.md. 6+ class broken root cause từng loại riêng
 // (mixin vs class / cross-package import / rename / base abstract).
+//
+// T-58 fix (2026-07-28): DEEP-AUDIT 12 packages @0.7.423 — verify plugin()
+// class block registration (KHÔNG chỉ interface existence). Key findings:
+//   - Document interface exists trong tracker source NHƯNG KHÔNG register class
+//     → `tracker:class:Document` runtime fail (interface orphan). Document search
+//     marked honest-unavailable (T-60).
+//   - Label: 0 match toàn packages → deprecated (Huly dùng TagElement).
+//   - TsRelation: 0 match → Issue.relations inline RelatedDocument[] (T-59
+//     refactor $push/$pull inline, xóa TS_RELATION_CLASS dead code).
+//   - DocumentSnapshot: 0 match → deprecated (T-58 honest-unavailable).
+//   - Space base abstract → Teamspace = drive:class:Drive (T-54).
 
 /**
  * Cast plain string thành Huly _class Ref (branded type bypass).
@@ -52,14 +63,31 @@ export const TIME_SPEND_REPORT_CLASS = classRef("tracker:class:TimeSpendReport")
 export const TASK_TYPE_CLASS = classRef("task:class:TaskType"); // T-43: tracker → task
 export const PROJECT_TYPE_CLASS = classRef("task:class:ProjectType"); // T-43: tracker → task
 
-// Document — define trong tracker source (NOT document pkg, deprecated v0.7.0).
-export const DOCUMENT_CLASS = classRef("tracker:class:Document"); // T-43: document → tracker
-// UNVERIFIED: DocumentSnapshot class chưa confirm runtime — keep current ref,
-// cần runtime verify hoặc audit sâu hơn (audit §7).
+// Document — T-58 DEEP-AUDIT (2026-07-28): interface exists trong tracker source
+// (src/index.ts:338 `interface Document extends Doc`) NHƯNG KHÔNG register trong
+// plugin() class block (chỉ Project/Issue/IssueTemplate/Component/IssueStatus/
+// Milestone/TimeSpendReport). → `tracker:class:Document` runtime fail "domain
+// not found" (interface orphan — #55 report 2 lần). Document search marked
+// honest-unavailable (T-60) cho đến khi Huly register class hoặc pi-huly switch
+// sang class thật (candidates: chunter:class:Doc — cần verify).
+export const DOCUMENT_CLASS = classRef("tracker:class:Document");
+// T-58 DEEP-AUDIT: DocumentSnapshot KHÔNG tồn tại trong 12 packages audited
+// (0 match interface + class). Deprecated — tool marked honest-unavailable.
 export const DOCUMENT_SNAPSHOT_CLASS = classRef("document:class:DocumentSnapshot");
 
 // Space — base abstract class trong @hcengineering/core (KHÔNG phải document).
+// T-54 reality-checker (2026-07-28) STRONG confirm: `core:class:Space` là base
+// class KHÔNG có SpaceTypeDescriptor → KHÔNG thể instantiate trực tiếp cho user
+// space (UI vô hình, không permission model). User spaces phải đi qua TypedSpace
+// subclass (tracker:class:Project / drive:class:Drive / chunter:class:ChunterSpace).
+// KHÔNG có class "Teamspace" runtime — đây là UI label only.
+//
+// READ-ONLY SAFE: findAll/findOne trên SPACE_CLASS trả subclasses qua inheritance
+// (list_teamspaces/get_teamspace OK). CREATE dùng DRIVE_CLASS (Documents space).
 export const SPACE_CLASS = classRef("core:class:Space"); // T-43: document → core
+// T-54: drive:class:Drive = Documents/Files Teamspace thật (extends TypedSpace,
+// có SpaceTypeDescriptor). Register trong drive plugin() class block line 31.
+export const DRIVE_CLASS = classRef("drive:class:Drive");
 
 // chunter (Comments = ChatMessage)
 export const CHAT_MESSAGE_CLASS = classRef("chunter:class:ChatMessage");
@@ -72,16 +100,16 @@ export const ATTACHMENT_CLASS = classRef("attachment:class:Attachment");
 export const TAG_CLASS = classRef("tags:class:TagElement"); // T-43: Tag → TagElement
 export const TAG_CATEGORY_CLASS = classRef("tags:class:TagCategory");
 
-// view — UNVERIFIED: Label không có trong audited packages (view class/mixin block).
-// Có thể: (a) Label thuộc package khác chưa audit, (b) Huly dùng TagElement thay
-// Label (deprecated). Cần runtime verify (audit §7).
+// view — T-58 DEEP-AUDIT: Label KHÔNG tồn tại trong 12 packages (0 match).
+// Deprecated — Huly dùng TagElement (tags:class:TagElement) cho tag/label entity.
+// Labels tools refactor dùng TAG_CLASS (T-45 pattern đã verify).
 export const LABEL_CLASS = classRef("view:class:Label");
 
 // time (ToDo — chữ viết hoa D, NOT "Todo")
 // ToDo extends AttachedDoc, define trong @hcengineering/time (KHÔNG phải task).
 export const TODO_CLASS = classRef("time:class:ToDo"); // T-43: task:Todo → time:ToDo
 
-// core — UNVERIFIED: TsRelation không có trong core/class block.
-// Issue relations có thể stored inline (relations?: RelatedDocument[] trong Issue).
-// Cần runtime verify hoặc đổi approach (audit §7).
-export const TS_RELATION_CLASS = classRef("core:class:TsRelation");
+// T-59 (2026-07-28): TS_RELATION_CLASS XÓA — Issue relations KHÔNG phải class
+// riêng. Issue.relations?: RelatedDocument[] + Issue.blockedBy?: RelatedDocument[]
+// inline (RelatedDocument = Pick<Doc, '_id' | '_class'>). add/remove/list dùng
+// $push/$pull trực tiếp trên Issue, KHÔNG addCollection.

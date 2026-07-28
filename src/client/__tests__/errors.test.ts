@@ -8,8 +8,10 @@ import {
   HulyError,
   InternalError,
   NotFoundError,
+  UnavailableError,
   ValidationError,
   mapError,
+  matchDomainNotFound,
   toToolResult,
 } from "../errors.js";
 
@@ -36,7 +38,7 @@ describe("HulyError class hierarchy", () => {
     expect(err).toBeInstanceOf(Error);
   });
 
-  it("7 subclasses each set correct class", () => {
+  it("8 subclasses each set correct class", () => {
     expect(new AuthError("x").class).toBe("Auth");
     expect(new ConnectionError("x").class).toBe("Connection");
     expect(new NotFoundError("x").class).toBe("NotFound");
@@ -44,6 +46,19 @@ describe("HulyError class hierarchy", () => {
     expect(new ValidationError("x").class).toBe("Validation");
     expect(new InternalError("x").class).toBe("Internal");
     expect(new ExternalError("x").class).toBe("External");
+    // T-57: Unavailable = class ref sai runtime (domain not found).
+    expect(new UnavailableError("x").class).toBe("Unavailable");
+    expect(new UnavailableError("x").name).toBe("UnavailableError");
+  });
+
+  it("UnavailableError preserves hulyClass for context", () => {
+    const err = new UnavailableError("msg", undefined, "tracker:class:Document");
+    expect(err.hulyClass).toBe("tracker:class:Document");
+  });
+
+  it("UnavailableError hulyClass optional (undefined)", () => {
+    const err = new UnavailableError("msg");
+    expect(err.hulyClass).toBeUndefined();
   });
 
   it("preserves cause when provided", () => {
@@ -150,6 +165,79 @@ describe("mapError — network errors (plain Error)", () => {
     const err = mapError(new Error("something unexpected"));
     expect(err).toBeInstanceOf(InternalError);
     expect(err.message).toContain("something unexpected");
+  });
+});
+
+// T-57 #61: "domain not found: <class>" → UnavailableError (class ref sai runtime).
+// Pattern xuất hiện cả trong PlatformError UnknownError (server-side) lẫn plain
+// Error (api-client raw). Phải map honest, KHÔNG generic InternalError.
+describe("mapError — domain not found → UnavailableError (T-57)", () => {
+  it("matchDomainNotFound extracts class ref", () => {
+    expect(matchDomainNotFound("domain not found: tracker:class:Document")).toBe(
+      "tracker:class:Document",
+    );
+    expect(matchDomainNotFound("Error: domain not found: core:class:TsRelation")).toBe(
+      "core:class:TsRelation",
+    );
+  });
+
+  it("matchDomainNotFound returns null khi không match", () => {
+    expect(matchDomainNotFound("some other error")).toBeNull();
+    expect(matchDomainNotFound("")).toBeNull();
+  });
+
+  it("plain Error 'domain not found: tracker:class:Document' → UnavailableError", () => {
+    const err = mapError(new Error("domain not found: tracker:class:Document"));
+    expect(err).toBeInstanceOf(UnavailableError);
+    expect(err.class).toBe("Unavailable");
+    expect(err.message).toContain("tracker:class:Document");
+    // Honest message: list possible causes để user/LLM debug
+    expect(err.message).toContain("package");
+    expect(err.message).toContain("report bug");
+  });
+
+  it("plain Error 'domain not found: core:class:TsRelation' → UnavailableError", () => {
+    const err = mapError(new Error("domain not found: core:class:TsRelation"));
+    expect(err).toBeInstanceOf(UnavailableError);
+    expect((err as UnavailableError).hulyClass).toBe("core:class:TsRelation");
+  });
+
+  it("PlatformError UnknownError wrapping 'domain not found' → UnavailableError (upgrade)", () => {
+    // Huly server throw UnknownError khi class sai (vd createDoc) — message
+    // thường chứa "domain not found: <class>". Phải upgrade sang Unavailable.
+    const platformErr = Object.assign(new Error("domain not found: tracker:class:Document"), {
+      status: { severity: "ERROR", code: "platform:status:UnknownError", params: {} },
+    });
+    const err = mapError(platformErr);
+    expect(err).toBeInstanceOf(UnavailableError);
+    expect(err.class).toBe("Unavailable");
+    expect((err as UnavailableError).hulyClass).toBe("tracker:class:Document");
+  });
+
+  it("PlatformError UnknownError KHÔNG chứa 'domain not found' → vẫn InternalError (no upgrade)", () => {
+    // Regression guard: chỉ upgrade khi message có pattern, tránh over-eager.
+    const err = mapError(new MockPlatformError("platform:status:UnknownError"));
+    expect(err).toBeInstanceOf(InternalError);
+    expect(err).not.toBeInstanceOf(UnavailableError);
+  });
+
+  it("HulyError passthrough khi đã là UnavailableError", () => {
+    const original = new UnavailableError("already unavailable");
+    const err = mapError(original);
+    expect(err).toBe(original);
+  });
+
+  it("ExternalError unwrap → UnavailableError nếu cause match domain not found", () => {
+    const root = new Error("domain not found: view:class:Label");
+    const wrapped = new ExternalError("api-client threw", root);
+    const err = mapError(wrapped);
+    expect(err).toBeInstanceOf(UnavailableError);
+    expect((err as UnavailableError).hulyClass).toBe("view:class:Label");
+  });
+
+  it("case-insensitive 'Domain Not Found' match", () => {
+    const err = mapError(new Error("Domain Not Found: tracker:class:Document"));
+    expect(err).toBeInstanceOf(UnavailableError);
   });
 });
 

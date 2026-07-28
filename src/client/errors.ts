@@ -12,7 +12,11 @@
 //
 // Security (08 §A): toToolResult strips token/password/stack — KHÔNG leak secrets.
 
-/** Error class identifier (04 §3 taxonomy, 7 classes). */
+/**
+ * Error class identifier (04 §3 taxonomy, 8 classes).
+ * T-57 #61: thêm "Unavailable" — class ref sai runtime (domain not found),
+ * distinct khỏi NotFound (entity không tồn tại) và Internal (bug pi-huly).
+ */
 export type ErrorClass =
   | "Auth"
   | "Connection"
@@ -20,7 +24,8 @@ export type ErrorClass =
   | "Conflict"
   | "Validation"
   | "Internal"
-  | "External";
+  | "External"
+  | "Unavailable";
 
 /** Base HulyError — all 7 subclasses extend this. */
 export class HulyError extends Error {
@@ -76,6 +81,23 @@ export class InternalError extends HulyError {
 export class ExternalError extends HulyError {
   constructor(message: string, cause?: unknown) {
     super("External", message, cause);
+  }
+}
+
+/**
+ * T-57 #61: Class ref sai runtime (domain not found) — distinct từ NotFound/
+ * Internal. Khi Huly throw "domain not found: <class>", class đích KHÔNG tồn
+ * tại trong workspace (package chưa enable HOẶC pi-huly dùng sai class ref).
+ * Tool không chạy được → báo honest cho LLM thay vì generic InternalError.
+ */
+export class UnavailableError extends HulyError {
+  /** Class ref bị reject (vd "tracker:class:Document"). */
+  readonly hulyClass?: string;
+  constructor(message: string, cause?: unknown, hulyClass?: string) {
+    super("Unavailable", message, cause);
+    if (hulyClass !== undefined) {
+      this.hulyClass = hulyClass;
+    }
   }
 }
 
@@ -199,6 +221,23 @@ function classifyPlatformError(e: PlatformErrorLike): HulyError {
 }
 
 /**
+ * T-57 #61: Detect "domain not found: <class>" pattern trong error message.
+ * Huly throw pattern này khi class ref KHÔNG tồn tại runtime (package chưa
+ * enable HOẶC pi-huly dùng sai class ref). Match cả 2 dạng:
+ *   - "domain not found: tracker:class:Document"
+ *   - "Error: domain not found: core:class:TsRelation"
+ *
+ * Trả class ref thật (group 1) hoặc null nếu không match.
+ */
+// Capture đến whitespace/EOL (code-review MINOR #5) — defensive nếu Huly thêm
+// class ref có ký tự lạ (vd dash). Trước đây `[\w:]+` cắt tại ký tự không match.
+const DOMAIN_NOT_FOUND_RE = /domain\s+not\s+found:\s*(\S+)/i;
+export function matchDomainNotFound(message: string): string | null {
+  const m = DOMAIN_NOT_FOUND_RE.exec(message);
+  return m ? m[1] : null;
+}
+
+/**
  * Map any error (PlatformError, network Error, generic) → HulyError subclass.
  * Order:
  *   1. Already HulyError → return as-is
@@ -207,6 +246,9 @@ function classifyPlatformError(e: PlatformErrorLike): HulyError {
  *   4. Plain Error 'Workspace not found' → AuthError (run /huly init)
  *   5. ExternalError → unwrap cause, mapError recursive
  *   6. Else → InternalError (wrap)
+ *
+ * T-57 #61: trước InternalError fallback, check "domain not found" pattern
+ * (xuất hiện trong cả PlatformError UnknownError + plain Error) → UnavailableError.
  */
 export function mapError(e: unknown): HulyError {
   // 0. Already HulyError
@@ -220,7 +262,18 @@ export function mapError(e: unknown): HulyError {
 
   // 1. PlatformError (duck-type)
   if (isPlatformError(e)) {
-    return classifyPlatformError(e);
+    const classified = classifyPlatformError(e);
+    // T-57: PlatformError UnknownError có thể wrap "domain not found" trong
+    // raw message (vd createDoc class sai → server throw UnknownError với
+    // message "domain not found: <class>"). classifyPlatformError build message
+    // từ status.code (chỉ "UnknownError") KHÔNG giữ raw text → check cả 2.
+    if (classified.class === "Internal") {
+      const cls = matchDomainNotFound(e.message) ?? matchDomainNotFound(classified.message);
+      if (cls !== null) {
+        return new UnavailableError(buildUnavailableMessage(cls), e, cls);
+      }
+    }
+    return classified;
   }
 
   // 2. Plain Error
@@ -229,6 +282,12 @@ export function mapError(e: unknown): HulyError {
     // Network patterns
     if (NETWORK_PATTERNS.some((re) => re.test(msg) || re.test(e.name))) {
       return new ConnectionError(`Huly unreachable: ${msg}`, e);
+    }
+    // T-57 #61: "domain not found: <class>" → UnavailableError (trước fallback
+    // generic InternalError — Huly raw error message thường chứa pattern này).
+    const cls = matchDomainNotFound(msg);
+    if (cls !== null) {
+      return new UnavailableError(buildUnavailableMessage(cls), e, cls);
     }
     // api-client own: 'Workspace <name> not found'
     if (/^Workspace\s+\S+\s+not\s+found/i.test(msg)) {
@@ -241,6 +300,20 @@ export function mapError(e: unknown): HulyError {
   // 3. Non-Error (string, object, null, undefined) → wrap
   const detail = typeof e === "string" ? e : JSON.stringify(e);
   return new InternalError(`Internal: ${detail}`, e);
+}
+
+/**
+ * T-57 #61: Build honest message cho UnavailableError — list possible causes
+ * giúp LLM/user debug (package chưa enable / sai class ref / report bug).
+ */
+function buildUnavailableMessage(cls: string): string {
+  return (
+    `Class "${cls}" không khả dụng trong workspace này. ` +
+    `Có thể: (1) workspace chưa enable package chứa class này ` +
+    `(vd Document/Tags feature opt-in); (2) pi-huly dùng sai class ref ` +
+    `(report bug kèm workspace Huly version); (3) class đã bị rename/deprecated ` +
+    `trong phiên bản Huly mới hơn.`
+  );
 }
 
 /**

@@ -6,7 +6,9 @@
 //   2. wire render hooks vào 3 high-value tools (huly_get_issue/list_issues/get_document)
 //   3. registerHulyCommand(pi) — unified /huly command (commands/huly.ts)
 //   4. pi.on("session_shutdown") → pool.closeAll() — cleanup WS connections (FR-12)
-//   5. Skills qua package manifest `pi.skills` (declarative, KHÔNG runtime register)
+//   5. T-55: pi.on("session_start") → warm pool (fire-and-forget) — fix first-call failure
+//   6. T-56: pi.on("tool_execution_start") → log tool name + args (debug, stderr)
+//   7. Skills qua package manifest `pi.skills` (declarative, KHÔNG runtime register)
 //
 // R6 verification: type-only import force load pi types → typecheck catch TS 7
 // incompatibility với pi types sớm (design 03 §8 R6).
@@ -24,7 +26,9 @@ export { HULY_VERSION };
 
 import { allTools, registerAllTools } from "./tools/register.js";
 import { registerHulyCommand } from "./commands/huly.js";
-import { closeAll } from "./client/pool.js";
+import { closeAll, getClient } from "./client/pool.js";
+import { loadCredentials, type Credentials } from "./config/credentials.js";
+import { sanitize } from "./client/errors.js";
 import { renderIssueListResult, renderIssueResult } from "./render/issue.js";
 import { renderDocumentResult } from "./render/document.js";
 
@@ -68,6 +72,73 @@ export function __resetSetupGuardForTests(): void {
 }
 
 /**
+ * T-55 #59: Warm pool cho workspace đầu tiên trong credentials (fire-and-forget).
+ * Fix first-call failure — WS chỉ kết nối khi tool đầu tiên gọi getClient (lazy),
+ * gây delay/fail nếu credentials init chậm. Warm at session_start → connection
+ * sẵn sàng trước khi LLM gọi tool đầu tiên.
+ *
+ * Bounds:
+ * - KHÔNG block startup (fire-and-forget — không await trong caller).
+ * - Skip khi credentials rỗng / NeedsInitError (no-op, không log lỗi).
+ * - KHÔNG crash nếu warm fail (swallow — lazy retry ở lần gọi tool đầu tiên).
+ * - Qua getClient(workspace) (KHÔNG bypass pool — D14 shared state nhất quán).
+ */
+async function warmPool(): Promise<void> {
+  try {
+    const creds: Credentials = await loadCredentials();
+    const ids = Object.keys(creds.workspaces);
+    if (ids.length === 0) return; // chưa init → no-op im lặng
+    // Warm workspace đầu tiên (default). Multi-workspace warm là overkill — lazy
+    // connect còn lại khi tool resolve workspace khác.
+    await getClient(ids[0]!);
+  } catch {
+    // Swallow — warm là best-effort. Lần gọi tool đầu tiên sẽ retry lazy connect
+    // như cũ (getClient throw → builder return error result rõ ràng cho LLM).
+  }
+}
+
+/**
+ * T-55 #59: Reason hợp lệ để warm pool. Chỉ warm khi "startup" (session mới hoàn
+ * toàn) hoặc "resume" (tiếp tục session trước — pool module-level đã clear khi
+ * process exit). Skip "reload" (dev-reload pool vẫn còn) + "new"/"fork" (user
+ * chủ động tạo session mới, có thể KHÔNG muốn connect ngay).
+ */
+const WARM_REASONS = new Set(["startup", "resume"]);
+
+/** Bound JSON length cho log tool args (T-56 #60) — tránh bloat stderr. */
+const LOG_ARGS_CAP = 500;
+
+/**
+ * T-56 #60: Log tool call khi LLM gọi Huly tool (debug observability).
+ * Subscribe tool_execution_start → log `[huly_<tool>] args: <json>` ra stderr.
+ *
+ * Bounds:
+ * - Filter `toolName.startsWith("huly_")` — skip built-in tool (bash, read, ...).
+ * - Sanitize args qua `sanitize()` (strip LEAK_PATTERNS — token/secret) trước log.
+ * - Truncate JSON > LOG_ARGS_CAP chars (500) + đuôi `... (truncated, N chars total)`.
+ * - console.error (stderr) — pi TUI hiển thị nhưng JSON/print mode KHÔNG parse
+ *   thành output → an toàn cho programmatic consumer.
+ */
+function logToolCall(event: { toolName: string; args: unknown }): void {
+  if (!event.toolName.startsWith("huly_")) return;
+  let json: string;
+  try {
+    json = JSON.stringify(event.args ?? {});
+  } catch {
+    json = "<unserializable>";
+  }
+  // Truncate TRƯỚC sanitize (code-review MINOR #1) — đảm bảo sanitize luôn chạy
+  // sau cùng, không có secret nào lọt qua vì slice cắt giữa (vd token có ký tự
+  // lạ KHÔNG match LEAK_PATTERNS → nếu sanitize trước truncate, phần raw token
+  // có thể nằm trong phần bị truncate khỏi log).
+  const capped =
+    json.length > LOG_ARGS_CAP
+      ? `${json.slice(0, LOG_ARGS_CAP)}... (truncated, ${json.length} chars total)`
+      : json;
+  console.error(`[${event.toolName}] args: ${sanitize(capped)}`);
+}
+
+/**
  * pi-huly extension factory — pi gọi default export khi load extension.
  *
  * Idempotent: lần 2+ là no-op (return 0) — tránh dev-reload leak
@@ -103,7 +174,27 @@ export default function setup(pi: ExtensionAPI): number {
     }
   });
 
-  // 5. Skills qua package manifest `pi.skills` (declarative — pi auto-load, KHÔNG runtime)
+  // 5. T-55 #59: session_start → warm pool fire-and-forget (fix first-call failure).
+  // Chỉ warm khi reason ∈ {startup, resume} — skip reload/new/fork. Handler
+  // fire-and-forget (KHÔNG await trong subscribe — pi có thể xử lý sync, warm
+  // chạy nền). warmPool swallow mọi error (best-effort).
+  pi.on("session_start", (event) => {
+    if (!WARM_REASONS.has(event.reason)) return;
+    void warmPool(); // fire-and-forget — KHÔNG await, KHÔNG crash setup
+  });
+
+  // 6. T-56 #60: tool_execution_start → log tool name + args (debug observability).
+  // Filter huly_ prefix, sanitize args (strip secret), truncate JSON > 500 chars.
+  // Log ra stderr (pi TUI hiển thị, JSON/print mode không parse → safe).
+  pi.on("tool_execution_start", (event) => {
+    try {
+      logToolCall(event);
+    } catch {
+      // Logging KHÔNG block tool execution — swallow mọi error (vd args circular).
+    }
+  });
+
+  // 7. Skills qua package manifest `pi.skills` (declarative — pi auto-load, KHÔNG runtime)
 
   return toolCount;
 }

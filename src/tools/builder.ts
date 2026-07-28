@@ -452,6 +452,26 @@ function toErrorResult<TDetails = unknown>(
 
   // HulyError + PlatformError + network → mapError classify + sanitize
   const hulyErr = mapError(e);
+  // T-57 #61: UnavailableError (domain not found) → render honest message với
+  // class ref thật + recovery hint, distinct generic InternalError. Dùng duck-type
+  // `class === "Unavailable"` (taxonomy identity) thay `instanceof` — compatible
+  // với test mock (mock tạo object cùng shape, KHÔNG phải subclass thật).
+  if (hulyErr.class === "Unavailable") {
+    const cls = (hulyErr as { hulyClass?: string }).hulyClass ?? "<unknown>";
+    return {
+      content: [
+        {
+          type: "text",
+          text:
+            `[UnavailableError] ${sanitize(hulyErr.message)}\n\n` +
+            `Recovery: kiểm tra workspace đã enable package chứa class "${cls}". ` +
+            `Nếu workspace OK → report bug pi-huly (sai class ref) kèm Huly version.`,
+        },
+      ],
+      details: { errorClass: "Unavailable", hulyClass: cls } as unknown as TDetails,
+      isError: true,
+    };
+  }
   return {
     content: [{ type: "text", text: `[${hulyErr.class}Error] ${sanitize(hulyErr.message)}` }],
     details: { errorClass: hulyErr.class } as unknown as TDetails,
