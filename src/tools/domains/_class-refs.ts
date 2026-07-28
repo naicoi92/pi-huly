@@ -63,28 +63,25 @@ export const TIME_SPEND_REPORT_CLASS = classRef("tracker:class:TimeSpendReport")
 export const TASK_TYPE_CLASS = classRef("task:class:TaskType"); // T-43: tracker → task
 export const PROJECT_TYPE_CLASS = classRef("task:class:ProjectType"); // T-43: tracker → task
 
-// Document — T-58 DEEP-AUDIT (2026-07-28): interface exists trong tracker source
-// (src/index.ts:338 `interface Document extends Doc`) NHƯNG KHÔNG register trong
-// plugin() class block (chỉ Project/Issue/IssueTemplate/Component/IssueStatus/
-// Milestone/TimeSpendReport). → `tracker:class:Document` runtime fail "domain
-// not found" (interface orphan — #55 report 2 lần). Document search marked
-// honest-unavailable (T-60) cho đến khi Huly register class hoặc pi-huly switch
-// sang class thật (candidates: chunter:class:Doc — cần verify).
-export const DOCUMENT_CLASS = classRef("tracker:class:Document");
-// T-58 DEEP-AUDIT: DocumentSnapshot KHÔNG tồn tại trong 12 packages audited
-// (0 match interface + class). Deprecated — tool marked honest-unavailable.
+// Document / Teamspace / DocumentSnapshot — T-65 (2026-07-28): SUPERSEDES
+// T-58 interface-orphan conclusion. Real class registered trong
+// `@hcengineering/document` plugin() (KHÔNG phải tracker). T-58 audited chỉ
+// tracker package + missed document package. Verified vs trusted huly-mcp v0.45
+// (`/tmp/huly-mcp-trusted/src/huly/huly-plugins.ts` loads
+// `@hcengineering/document` → `documentPlugin.class.{Document,Teamspace,
+// DocumentSnapshot}`). Server-side: standard Huly installation bundles document
+// plugin → string ref resolves. Pi-huly dùng string literal (giống tất cả class
+// khác) — KHÔNG cần load plugin client-side (server resolves class by string).
+export const DOCUMENT_CLASS = classRef("document:class:Document"); // T-65: tracker → document pkg
+export const TEAMSPACE_CLASS = classRef("document:class:Teamspace"); // T-65: expose (từ document pkg)
 export const DOCUMENT_SNAPSHOT_CLASS = classRef("document:class:DocumentSnapshot");
 
-// Space — base abstract class trong @hcengineering/core (KHÔNG phải document).
-// T-54 reality-checker (2026-07-28) STRONG confirm: `core:class:Space` là base
-// class KHÔNG có SpaceTypeDescriptor → KHÔNG thể instantiate trực tiếp cho user
-// space (UI vô hình, không permission model). User spaces phải đi qua TypedSpace
-// subclass (tracker:class:Project / drive:class:Drive / chunter:class:ChunterSpace).
-// KHÔNG có class "Teamspace" runtime — đây là UI label only.
-//
+// Space — base abstract class trong @hcengineering/core.
 // READ-ONLY SAFE: findAll/findOne trên SPACE_CLASS trả subclasses qua inheritance
-// (list_teamspaces/get_teamspace OK). CREATE dùng DRIVE_CLASS (Documents space).
-export const SPACE_CLASS = classRef("core:class:Space"); // T-43: document → core
+// (list_teamspaces/get_teamspace OK cross all space types). T-66 sẽ switch
+// list_teamspaces sang TEAMSPACE_CLASS (chỉ trả Teamspace, không lẫn Project/
+// Drive/ChunterSpace).
+export const SPACE_CLASS = classRef("core:class:Space");
 // T-54: drive:class:Drive = Documents/Files Teamspace thật (extends TypedSpace,
 // có SpaceTypeDescriptor). Register trong drive plugin() class block line 31.
 export const DRIVE_CLASS = classRef("drive:class:Drive");
