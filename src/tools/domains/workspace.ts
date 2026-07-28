@@ -14,6 +14,7 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { PERSON_CLASS, EMPLOYEE_CLASS, idRef } from "./_class-refs.js";
+import { safeUpdateDoc } from "./_common.js";
 
 /**
  * Workspace + profile domain tools (5).
@@ -153,24 +154,11 @@ export const tools: HulyToolDefinition[] = [
           details: { userId: tctx.currentUser.id },
         };
       }
-      // T-50 review fix: schema drift guard — Person record tồn tại nhưng
-      // space/_id field missing (data corruption, partial import). KHÔNG gửi
-      // updateDoc với undefined → silent no-op (reintroduce bug gốc class).
-      const personSpace = (person as { space?: unknown }).space;
-      const personId = (person as { _id?: unknown })._id;
-      if (personSpace === undefined || personId === undefined) {
-        return {
-          content: `Person "${tctx.currentUser.id}" record missing space/_id field (schema drift). Cannot update profile.`,
-          isError: true,
-          details: { userId: tctx.currentUser.id, personRecord: person },
-        };
-      }
-      await tctx.client.updateDoc(
-        PERSON_CLASS,
-        personSpace as never,
-        personId as never,
-        operations,
-      );
+      // T-50 review fix → T-63 centralized: schema drift guard qua safeUpdateDoc.
+      // Helper extract .space/._id từ doc + guard undefined → isError rõ ràng
+      // (KHÔNG gửi updateDoc với undefined → silent no-op prevention).
+      const result = await safeUpdateDoc(tctx.client, PERSON_CLASS, person, operations);
+      if (!result.ok) return result.error;
       return {
         content: `Updated profile: ${Object.keys(operations).join(", ")}`,
         details: { updated: true, fields: Object.keys(operations) },

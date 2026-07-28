@@ -4,7 +4,7 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { SPACE_CLASS } from "./_class-refs.js";
-import { workspaceParam } from "./_common.js";
+import { workspaceParam, safeUpdateDoc } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_spaces
@@ -124,7 +124,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(SPACE_CLASS, s.space as never, s._id as never, ops);
+      const updResult = await safeUpdateDoc(tctx.client, SPACE_CLASS, s, ops);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated space ${params.space}.`,
         details: { updated: true, fields: Object.keys(ops) },

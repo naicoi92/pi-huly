@@ -4,7 +4,14 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { COMPONENT_CLASS, ISSUE_CLASS, PROJECT_CLASS } from "./_class-refs.js";
-import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
+import {
+  workspaceParam,
+  projectParam,
+  identifierParam,
+  resolveIdentifier,
+  safeUpdateDoc,
+  safeRemoveDoc,
+} from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_components
@@ -128,7 +135,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(COMPONENT_CLASS, c.space as never, c._id as never, ops);
+      const updResult = await safeUpdateDoc(tctx.client, COMPONENT_CLASS, c, ops);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated component ${params.component}.`,
         details: { updated: true, fields: Object.keys(ops) },
@@ -168,9 +176,10 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier, component: params.component },
         };
       }
-      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
         component: component._id as never,
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Set ${params.identifier} → component ${params.component}.`,
         details: { identifier: params.identifier, component: params.component },
@@ -203,7 +212,8 @@ export const tools: HulyToolDefinition[] = [
           details: { component: params.component },
         };
       }
-      await tctx.client.removeDoc(COMPONENT_CLASS, c.space as never, c._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, COMPONENT_CLASS, c);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted component ${params.component}.`,
         details: { deleted: true, component: params.component },

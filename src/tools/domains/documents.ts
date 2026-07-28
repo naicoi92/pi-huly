@@ -8,7 +8,7 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { SPACE_CLASS } from "./_class-refs.js";
-import { workspaceParam, limitParam } from "./_common.js";
+import { workspaceParam, limitParam, safeUpdateDoc, safeRemoveDoc } from "./_common.js";
 
 /** T-60: Honest-unavailable message cho document CRUD tools (interface orphan). */
 function documentUnavailableMessage(operation: string): string {
@@ -154,7 +154,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(SPACE_CLASS, s.space as never, s._id as never, ops);
+      const updResult = await safeUpdateDoc(tctx.client, SPACE_CLASS, s, ops);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated teamspace ${params.teamspace}.`,
         details: { updated: true, fields: Object.keys(ops) },
@@ -185,7 +186,8 @@ export const tools: HulyToolDefinition[] = [
           details: { teamspace: params.teamspace },
         };
       }
-      await tctx.client.removeDoc(SPACE_CLASS, s.space as never, s._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, SPACE_CLASS, s);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted teamspace ${params.teamspace}.`,
         details: { deleted: true, teamspace: params.teamspace },

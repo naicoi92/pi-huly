@@ -6,7 +6,14 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { TAG_CLASS, ISSUE_CLASS, spaceRef, idRef } from "./_class-refs.js";
-import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
+import {
+  workspaceParam,
+  projectParam,
+  identifierParam,
+  resolveIdentifier,
+  safeUpdateDoc,
+  safeRemoveDoc,
+} from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_tags
@@ -82,7 +89,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(TAG_CLASS, t.space as never, t._id as never, ops);
+      const updResult = await safeUpdateDoc(tctx.client, TAG_CLASS, t, ops);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated tag ${params.tag}.`,
         details: { updated: true, fields: Object.keys(ops) },
@@ -115,7 +123,8 @@ export const tools: HulyToolDefinition[] = [
           details: { tag: params.tag },
         };
       }
-      await tctx.client.removeDoc(TAG_CLASS, t.space as never, t._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, TAG_CLASS, t);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted tag ${params.tag}.`,
         details: { deleted: true, tag: params.tag },
@@ -204,7 +213,7 @@ export const tools: HulyToolDefinition[] = [
       }
       // $push TagReference object shape (audit §4 — NOT raw string, giống
       // add_issue_label T-45 nhưng color string thay vì number).
-      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
         $push: {
           tags: {
             tag: tagDoc._id,
@@ -213,6 +222,7 @@ export const tools: HulyToolDefinition[] = [
           },
         },
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Attached tag ${params.tag} to ${params.identifier}.`,
         details: { identifier: params.identifier, tag: params.tag, tagId: tagDoc._id },
@@ -267,9 +277,10 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // $pull bằng tag ref object (match shape khi push).
-      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
         $pull: { tags: { tag: tagDoc._id } },
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Detached tag ${params.tag} from ${params.identifier}.`,
         details: { identifier: params.identifier, tag: params.tag, tagId: tagDoc._id },

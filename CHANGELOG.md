@@ -33,6 +33,22 @@ KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketF
 - **T-64 pending** (blocked-by T-62) — WS error spam + token leak (URL
   `_transactor/<token>`) sẽ đăng ký thêm pattern vào framework này ở task kế.
 
+### Changed (T-63 #68 — silent data loss audit hardening)
+
+- `src/tools/domains/_common.ts` — thêm `safeUpdateDoc(client, _class, doc, ops)`
+  + `safeRemoveDoc(client, _class, doc)` helper. Nhận **doc đã lookup** (KHÔNG nhận
+  space/objectId riêng — ép caller lấy từ doc), tự extract `.space`/`._id` + guard
+  undefined → return `isError` rõ ràng (KHÔNG gửi write → silent no-op prevention).
+  Centralize pattern T-50 (`workspace.ts:155-173`).
+- **Migration 42 call site** (30 updateDoc + 12 removeDoc) sang helper — static
+  audit confirm 42/42 NHÓM A (space từ lookup doc), 0 NHÓM B. Trước T-63, 41/42
+  thiếu schema drift guard (chỉ workspace.ts có T-50). Giờ 42/42 có guard qua helper.
+- Migration file: comments (2) · components (3) · documents (2) · issues-core (6)
+  · issues-relations (8) · issues-templates (4) · milestones (3) · projects (2)
+  · spaces (1) · tag-categories (2) · tags (4) · todos (4) · workspace (1, T-50 ref).
+- Regression test: tags schema drift (missing space → isError, missing _id →
+  isError), workspace schema drift (T-50 preserved). Helper unit 12 tests.
+
 ## [1.0.0-beta.4] - 2026-07-28
 
 Hotfix canary #3. **Root cause fix** beta.3 follow-up hotfixes — DEEP-AUDIT 12

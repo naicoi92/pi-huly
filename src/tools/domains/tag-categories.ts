@@ -4,7 +4,7 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { TAG_CATEGORY_CLASS, spaceRef } from "./_class-refs.js";
-import { workspaceParam } from "./_common.js";
+import { workspaceParam, safeUpdateDoc, safeRemoveDoc } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_tag_categories
@@ -75,7 +75,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(TAG_CATEGORY_CLASS, c.space as never, c._id as never, ops);
+      const updResult = await safeUpdateDoc(tctx.client, TAG_CATEGORY_CLASS, c, ops);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated tag category ${params.category}.`,
         details: { updated: true, fields: Object.keys(ops) },
@@ -106,7 +107,8 @@ export const tools: HulyToolDefinition[] = [
           details: { category: params.category },
         };
       }
-      await tctx.client.removeDoc(TAG_CATEGORY_CLASS, c.space as never, c._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, TAG_CATEGORY_CLASS, c);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted tag category ${params.category}.`,
         details: { deleted: true, category: params.category },

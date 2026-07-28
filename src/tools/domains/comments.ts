@@ -6,7 +6,14 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { CHAT_MESSAGE_CLASS, ISSUE_CLASS } from "./_class-refs.js";
-import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
+import {
+  workspaceParam,
+  projectParam,
+  identifierParam,
+  resolveIdentifier,
+  safeUpdateDoc,
+  safeRemoveDoc,
+} from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_comments
@@ -104,9 +111,10 @@ export const tools: HulyToolDefinition[] = [
           details: { comment: params.comment },
         };
       }
-      await tctx.client.updateDoc(CHAT_MESSAGE_CLASS, c.space as never, c._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, CHAT_MESSAGE_CLASS, c, {
         body: params.body,
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated comment ${params.comment}.`,
         details: { updated: true, comment: params.comment },
@@ -137,7 +145,8 @@ export const tools: HulyToolDefinition[] = [
           details: { comment: params.comment },
         };
       }
-      await tctx.client.removeDoc(CHAT_MESSAGE_CLASS, c.space as never, c._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, CHAT_MESSAGE_CLASS, c);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted comment ${params.comment}.`,
         details: { deleted: true, comment: params.comment },
