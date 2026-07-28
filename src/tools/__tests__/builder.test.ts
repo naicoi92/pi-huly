@@ -31,7 +31,8 @@ vi.mock("../../config/resolver.js", () => {
 vi.mock("../../client/errors.js", async (importOriginal) => {
   const actual = (await importOriginal()) as typeof import("../../client/errors.js");
   // Real sanitize + LEAK_PATTERNS (test verify leak strip thật), mock chỉ mapError
-  // để test kiểm soát error class trả về.
+  // để test kiểm soát error class trả về. Mock delegate domain-not-found pattern
+  // sang real matchDomainNotFound (T-57) — test builder render honest message.
   class HulyError extends Error {
     readonly class: string;
     constructor(c: string, m: string) {
@@ -44,8 +45,19 @@ vi.mock("../../client/errors.js", async (importOriginal) => {
     ...actual,
     HulyError,
     mapError: vi.fn((e: unknown) => {
-      if (e instanceof Error && /network/i.test(e.message)) {
-        return new HulyError("Connection", `Huly unreachable: ${e.message}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (e instanceof Error && /network/i.test(msg)) {
+        return new HulyError("Connection", `Huly unreachable: ${msg}`);
+      }
+      // T-57: delegate sang real matchDomainNotFound để builder test verify render.
+      const cls = actual.matchDomainNotFound(msg);
+      if (cls !== null) {
+        const err = new HulyError(
+          "Unavailable",
+          `Class "${cls}" không khả dụng trong workspace này.`,
+        );
+        Object.assign(err, { hulyClass: cls });
+        return err as never;
       }
       return new HulyError("Internal", String(e));
     }),
@@ -374,6 +386,46 @@ describe("defineHulyTool execute — error gate coverage (FR-14)", () => {
     });
     const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
     expect(result.content[0]?.text).not.toContain("AKIAIOSFODNN7EXAMPLE");
+  });
+
+  // T-57 #61: handler throw "domain not found" → UnavailableError, render
+  // honest message với class ref + recovery hint (KHÔNG generic InternalError).
+  it("handler throw 'domain not found' → UnavailableError + recovery hint (T-57)", async () => {
+    const tool = defineHulyTool({
+      name: "list_documents",
+      label: "List docs",
+      description: "list",
+      parameters: Type.Object({}),
+      handler: async () => {
+        throw new Error("domain not found: tracker:class:Document");
+      },
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({
+      errorClass: "Unavailable",
+      hulyClass: "tracker:class:Document",
+    });
+    expect(result.content[0]?.text).toContain("[UnavailableError]");
+    expect(result.content[0]?.text).toContain("tracker:class:Document");
+    expect(result.content[0]?.text).toContain("Recovery:");
+  });
+
+  it("handler throw generic error → vẫn InternalError (no false Unavailable)", async () => {
+    // Regression guard: KHÔNG over-eager classify mọi error thành Unavailable.
+    const tool = defineHulyTool({
+      name: "list_issues",
+      label: "List",
+      description: "list",
+      parameters: Type.Object({}),
+      handler: async () => {
+        throw new Error("unexpected runtime glitch");
+      },
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx());
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({ errorClass: "Internal" });
+    expect(result.content[0]?.text).toContain("[InternalError]");
   });
 });
 

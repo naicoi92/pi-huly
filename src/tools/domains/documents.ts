@@ -67,10 +67,24 @@ export const tools: HulyToolDefinition[] = [
   }),
 
   // 3. create_teamspace
+  // T-54 #58 reality-checker STRONG confirm (2026-07-28): `core:class:Space` là
+  // base abstract KHÔNG có SpaceTypeDescriptor → createDoc fail hoặc tạo space
+  // vô hình (UI không hiển thị, không permission). KHÔNG có class "Teamspace"
+  // runtime (UI label only). User spaces phải đi qua TypedSpace subclass:
+  //   - tracker:class:Project (Issues space)
+  //   - drive:class:Drive (Documents/Files space)
+  //   - chunter:class:ChunterSpace (Chat space)
+  //
+  // Pi-huly KHÔNG đoán class (sai loại space = hậu quả tệ hơn fail rõ ràng).
+  // Honest-unavailable cho đến khi T-58 verify class Teamspace thật runtime.
+  // Recovery: user tạo space qua Huly UI trực tiếp (UI chọn đúng subclass theo
+  // SpaceType), sau đó list_teamspaces thấy được.
   defineHulyTool({
     name: "create_teamspace",
     label: "Create teamspace",
-    description: "Create teamspace.",
+    description:
+      "Create teamspace. UNAVAILABLE — Huly runtime class unverified (T-58 pending). " +
+      "Use Huly UI to create space, then list_teamspaces to see it.",
     parameters: Type.Object({
       workspace: workspaceParam,
       name: Type.String(),
@@ -78,14 +92,21 @@ export const tools: HulyToolDefinition[] = [
       private: Type.Optional(Type.Boolean()),
     }),
     async handler(params, tctx) {
-      const id = await tctx.client.createDoc(SPACE_CLASS, spaceRef(tctx.workspace), {
-        name: params.name,
-        description: params.description,
-        private: params.private,
-      });
       return {
-        content: `Created teamspace "${params.name}".`,
-        details: { id, name: params.name },
+        content:
+          `create_teamspace KHÔNG khả dụng: Huly runtime class "Teamspace" chưa ` +
+          `verify (pi-huly T-58 pending — cần self-host probe output). ` +
+          `core:class:Space là base abstract, createDoc sẽ tạo space vô hình ` +
+          `(KHÔNG có SpaceTypeDescriptor). Recovery: tạo space "${params.name}" ` +
+          `qua Huly UI trực tiếp (UI chọn đúng TypedSpace subclass theo SpaceType), ` +
+          `sau đó gọi huly_list_teamspaces để lấy id.`,
+        isError: true,
+        details: {
+          reason: "class_unverified",
+          blockedBy: "T-58",
+          workspace: tctx.workspace,
+          name: params.name,
+        },
       };
     },
   }),

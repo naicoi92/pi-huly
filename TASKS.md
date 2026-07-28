@@ -197,13 +197,13 @@ giữ current — cần runtime server verify khi có self-host)_
 > Chi tiết mỗi task ở GitHub issues (link trong cột issue).
 > Theo dõi: [GitHub issues #39, #43, #55, #58-#64](https://github.com/naicoi92/pi-huly/issues).
 
-- [ ] [T-54] [M] fix(create_teamspace): sai class + thiếu required fields → platform:status:UnknownError — high | blocked-by: (none, pair T-58 nếu cần verify class) | blocks: (none) | issue: #58 — **Open**
-- [ ] [T-55] [S] enhancement(pool): eager warm connection at session_start — fix first-call failure — high | blocked-by: (none) | blocks: (none) | issue: #59 — **Open**
-- [ ] [T-56] [S] enhancement(debug): log tool name + params khi gọi tool — subscribe tool_execution_start — medium | blocked-by: (none) | blocks: (none) | issue: #60 — **Open**
-- [ ] [T-57] [S] enhancement(errors): map domain not found → honest "tool unavailable" thay vì generic InternalError — medium | blocked-by: (none) | blocks: (none) | issue: #61 — **Open**
-- [ ] [T-58] [L] runtime audit: verify + fix ALL class refs trên self-host thật (Document, TsRelation, Label, DocumentSnapshot, Space/Teamspace) — root cause, KHÔNG defensive — critical | blocked-by: (user cung cấp self-host probe output) | blocks: T-59, T-60 | issues: #39, #43, #55, #62 — **Open (critical path)**
-- [ ] [T-59] [M] refactor(issue_relations): dùng $push/$pull Issue.relations inline (nếu TsRelation KHÔNG phải class riêng) — high | blocked-by: T-58 (verify TsRelation inline hypothesis) | blocks: (none) | issue: #63 — **Open (blocked)**
-- [ ] [T-60] [M] fix(fulltext_search): Document search root cause — verify + fix class ref (KHÔNG defensive) — high | blocked-by: T-58 (verify Document class runtime) | blocks: (none) | issues: #55, #64 — **Open (blocked)**
+- [x] [T-54] [M] fix(create_teamspace): sai class + thiếu required fields → platform:status:UnknownError — high | blocked-by: (none, pair T-58 nếu cần verify class) | blocks: (none) | issue: #58 — [detail](./docs/tasks/T-54.md) — ✅ done (honest-unavailable: reality-checker STRONG confirm `core:class:Space` base abstract KHÔNG instantiate được; KHÔNG đoán class mới — đợi T-58 verify; read path list/get_teamspaces vẫn OK; 5 tests)
+- [x] [T-55] [S] enhancement(pool): eager warm connection at session_start — fix first-call failure — high | blocked-by: (none) | blocks: (none) | issue: #59 — [detail](./docs/tasks/T-55.md) — ✅ done (subscribe session_start reason∈{startup,resume} → warmPool fire-and-forget; swallow error; skip empty creds; 7 tests)
+- [x] [T-56] [S] enhancement(debug): log tool name + params khi gọi tool — subscribe tool_execution_start — medium | blocked-by: (none) | blocks: (none) | issue: #60 — [detail](./docs/tasks/T-56.md) — ✅ done (log `[huly_<tool>] args: <json>` ra stderr; filter huly_ prefix; truncate>500 + sanitize sau truncate; circular safe; 7 tests)
+- [x] [T-57] [S] enhancement(errors): map domain not found → honest "tool unavailable" thay vì generic InternalError — medium | blocked-by: (none) | blocks: (none) | issue: #61 — [detail](./docs/tasks/T-57.md) — ✅ done (ErrorClass "Unavailable" + UnavailableError + matchDomainNotFound; mapError detect PlatformError+plain Error; builder render honest; 11 tests)
+- [ ] [T-58] [L] runtime audit: verify + fix ALL class refs trên self-host thật (Document, TsRelation, Label, DocumentSnapshot, Space/Teamspace) — root cause, KHÔNG defensive — critical | blocked-by: (user cung cấp self-host probe output) | blocks: T-59, T-60 | issues: #39, #43, #55, #62 — [detail](./docs/tasks/T-53-runtime-verify-guide.md) — ⏳ **design-conflict-escalate** (cần user probe output — comment #62)
+- [ ] [T-59] [M] refactor(issue_relations): dùng $push/$pull Issue.relations inline (nếu TsRelation KHÔNG phải class riêng) — high | blocked-by: T-58 (verify TsRelation inline hypothesis) | blocks: (none) | issue: #63 — ⏳ **blocked-stop** (by T-58 — comment #63)
+- [ ] [T-60] [M] fix(fulltext_search): Document search root cause — verify + fix class ref (KHÔNG defensive) — high | blocked-by: T-58 (verify Document class runtime) | blocks: (none) | issues: #55, #64 — ⏳ **blocked-stop** (by T-58 — T-57 đã map honest error; comment #64)
 
 
 ---
@@ -216,8 +216,8 @@ giữ current — cần runtime server verify khi có self-host)_
 - **beta.1 hotfix chain (M6 — all done)**: T-40..T-46 fix #22-#28, PR #29-#35.
 - **beta.2 follow-up chain (T-47..T-53 — all done)**: fix #36-#43, PR #44-#53.
 - **beta.3 follow-up chain (T-54..T-60)**:
-  - **Independent, start ngay** (no blocker): T-54 (create_teamspace), T-55 (pool warm), T-56 (debug log), T-57 (error mapping).
-  - **Critical path** (block T-59, T-60): T-58 (runtime audit ALL class refs — cần user self-host probe output).
-  - **Blocked by T-58**: T-59 (relations inline refactor), T-60 (Document search root cause).
+  - **Done** (4/7): T-54 (create_teamspace honest-unavailable), T-55 (pool warm), T-56 (debug log), T-57 (error mapping) — 486 tests, CI green, 2 review pass (code-review + reality-check).
+  - **design-conflict-escalate** (critical path): T-58 (runtime audit ALL class refs — cần user self-host probe output, comment #62).
+  - **blocked-stop** (by T-58): T-59 (relations inline refactor — comment #63), T-60 (Document search root cause — T-57 đã map honest error, comment #64).
 - Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
 - Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).

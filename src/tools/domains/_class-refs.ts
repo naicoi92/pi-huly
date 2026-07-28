@@ -59,6 +59,15 @@ export const DOCUMENT_CLASS = classRef("tracker:class:Document"); // T-43: docum
 export const DOCUMENT_SNAPSHOT_CLASS = classRef("document:class:DocumentSnapshot");
 
 // Space — base abstract class trong @hcengineering/core (KHÔNG phải document).
+// T-54 reality-checker (2026-07-28) STRONG confirm: `core:class:Space` là base
+// class KHÔNG có SpaceTypeDescriptor → KHÔNG thể instantiate trực tiếp cho user
+// space (UI vô hình, không permission model). User spaces phải đi qua TypedSpace
+// subclass (tracker:class:Project / drive:class:Drive / chunter:class:ChunterSpace).
+// KHÔNG có class "Teamspace" runtime — đây là UI label only.
+//
+// READ-ONLY SAFE: findAll/findOne trên SPACE_CLASS trả subclasses qua inheritance
+// (list_teamspaces/get_teamspace OK). CREATE KHÔNG safe → create_teamspace phải
+// honest-unavailable cho đến khi T-58 verify class Teamspace thật runtime.
 export const SPACE_CLASS = classRef("core:class:Space"); // T-43: document → core
 
 // chunter (Comments = ChatMessage)
