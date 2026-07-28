@@ -3,6 +3,75 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.6] - 2026-07-29
+
+Hotfix canary #5. **beta.5 follow-up** — audit toàn diện 102 tool vs trusted
+`@firfi/huly-mcp` v0.45 phát hiện ~40/102 tool có bug, ~22 hỏng hoàn toàn.
+Slash goal complete-milestone beta.5: 13/13 task (T-65..T-77), 5 root-cause
+(sai class ref · sai data model · sai field name/type · thiếu space scoping ·
+thiếu account-client). 651 tests (baseline 583 → +68), CI green cả ubuntu+macos.
+
+### Fixed (root-cause, verified vs trusted)
+
+- **class refs** (T-65 #73): `tracker:class:Document` interface orphan (T-58
+  conclusion sai) → `document:class:Document`/`Teamspace`/`DocumentSnapshot`
+  from `@hcengineering/document` plugin. SUPERSEDES T-58.
+- **document tools re-enabled** (T-66 #74): 10/11 honest-unavailable tools mở
+  lại (list/get/update/delete teamspace + list/get/create/edit/delete document
+  + list/get snapshot) dùng class refs mới. `uploadMarkup`/`updateMarkup` wired
+  vào HulyClient (ws delegate + rest throw).
+- **create_* AttachedDoc + sequence** (T-67 #75): create_issue dùng `$inc
+  sequence` (atomic, no race dup identifier) + addCollection + number/kind/
+  identifier/rank/parents. create_project self-ref space + type + members/owners
+  + sequence:0 + idempotent. create_milestone status enum (KHÔNG string).
+- **issue hierarchy** (T-68 #76): move_issue + list_issues dùng AttachedDoc
+  fields (attachedTo/attachedToClass/collection/parents/subIssues) thay field
+  `parentIssue` (KHÔNG tồn tại). 4 move cases cover + updateDescendantParents
+  recursive + dec old parent subIssues.
+- **tags TagReference** (T-69 #77): attach/detach/list_attached dùng addCollection/
+  findAll/removeDoc trên `tags:class:TagReference` (collection "labels", KHÔNG
+  "tags") thay $push/$pull inline array. color coerce Number().
+- **comments field** (T-70 #78): field `message` (inline Markup) thay `body`
+  (KHÔNG tồn tại). ChatMessage.message = `JSON.stringify(mdToMarkup(md))`,
+  KHÔNG MarkupBlobRef. list_comments thêm filter `attachedToClass` + sort.
+- **list_* space scoping** (T-71 #79): list_issues/milestones/components/
+  templates thêm `space: project._id`. list_issues assignee resolve Person +
+  titleSearch no-leak. list_statuses ProjectType.statuses traversal + category
+  ref→enum + isDefault.
+- **markup + enum** (T-72 #80): create/update issue description = MarkupBlobRef
+  (uploadMarkup/updateMarkup) thay inline string. update_milestone status
+  enum map (planned=0..canceled=3). update_issue status scope theo project
+  (getProjectStatuses T-71 reuse).
+- **workflow registration** (T-73 #81): create_issue_status full flow (statusClass
+  dynamic + core.space.Model + category Ref + ofAttribute + register TaskType +
+  ProjectType statuses). create_task_type copy sibling template fields + parent
+  + register. list_task_types field `parent`. list_tags targetClass filter.
+  list_space_types/get_space_type honest-unavailable (fabricated removed).
+- **log_time** (T-74 #82): collection "reports" (KHÔNG "timetracking"), value hours
+  (Type.Number, fractional 0.25=15min), date + employee best-effort. Off-by-60x
+  fixed. list_employees drop email field (KHÔNG tồn tại).
+- **attachments blob** (T-75 #83): storageClient wired (lazy connectStorage) →
+  uploadBlob/getBlob trên HulyClient. add base64→Buffer→uploadBlob→addCollection
+  {file: Ref<Blob>, size, type, lastModified}. download getBlob→base64. list/get
+  read field `type` (KHÔNG contentType).
+- **templates** (T-76 #84): add/remove_template_child IssueTemplateChild object +
+  replace array (KHÔNG $push/$pull string). create_template defaults. create_
+  issue_from_template copy priority/assignee/component.
+- **search + misc** (T-77 #85): fulltext_search prefer `searchFulltext` API (ws
+  fallback $like). preview_deletion cascade counters (subIssues/reverseBlocks/
+  inline blockedBy/relations) + warnings. tag-category field `label` (KHÔNG
+  title) + defaults.
+
+### Known limitations (deferred)
+
+- **T-74 sub-slice 2**: account-client HTTP layer cho list_workspaces + list_
+  workspace_members (roles) — deferred behind ADR. 2 tools honest-unavailable.
+- **T-76**: recursive child issue creation từ template.children — deferred.
+- **T-73**: create_task_type Mixin + TaskTypeClass doc — template-copy covers
+  usability.
+- **Self-host runtime verify** (T-53) — class refs verified via trusted source,
+  chưa test server thật (workvps unavailable).
+
 ## [1.0.0-beta.5] - 2026-07-28
 
 Hotfix canary #4. **beta.4 follow-up hotfixes** — 3 task hardening noise + data

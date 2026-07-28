@@ -39,7 +39,7 @@ erDiagram
 ## 2. Entity Shapes (interface level — audited vs api-client thật)
 
 > _class refs từ `@hcengineering/{tracker,task,contact,document,chunter,
-> attachment,tags,view,core}`. Field type chi tiết → Bước 9. Doc chỉ entity
+attachment,tags,view,core}`. Field type chi tiết → Bước 9. Doc chỉ entity
 > shape. Audited vs huly-mcp `src/domain/schemas/*.ts` (mirror api-client
 > types). Read model dùng **friendly identifier** (string), KHÔNG raw Ref
 > (trừ `id`/`issueId` dual).
@@ -48,21 +48,22 @@ erDiagram
 
 ```typescript
 interface Issue {
-  issueId: string          // raw _id
-  identifier: string       // "PD-123" friendly
-  title: string            // Huly cho phép empty
-  description?: string     // Huly markup (FR-13 convert)
-  status: string           // StatusName; statusCategory DERIVED (filter param)
-  priority?: 'urgent'|'high'|'medium'|'low'|'no-priority'
-  assignee?: string        // PersonName "LastName,FirstName"
-  assigneeRef?: PersonRef  // {id, name?, email?} — D15
-  labels?: { title: string, color?: ColorCode }[]
-  project: string          // ProjectIdentifier "PD"
-  parentIssue?: string     // IssueIdentifier
-  subIssues?: number       // count
-  dueDate?: number | null
-  estimation?: number      // minutes
-  modifiedOn?: number; createdOn?: number
+  issueId: string; // raw _id
+  identifier: string; // "PD-123" friendly
+  title: string; // Huly cho phép empty
+  description?: string; // Huly markup (FR-13 convert)
+  status: string; // StatusName; statusCategory DERIVED (filter param)
+  priority?: "urgent" | "high" | "medium" | "low" | "no-priority";
+  assignee?: string; // PersonName "LastName,FirstName"
+  assigneeRef?: PersonRef; // {id, name?, email?} — D15
+  labels?: { title: string; color?: ColorCode }[];
+  project: string; // ProjectIdentifier "PD"
+  parentIssue?: string; // IssueIdentifier
+  subIssues?: number; // count
+  dueDate?: number | null;
+  estimation?: number; // minutes
+  modifiedOn?: number;
+  createdOn?: number;
   // milestone/components/tags/reporter: KHÔNG inline read model — relation-only (§3)
 }
 ```
@@ -71,14 +72,20 @@ interface Issue {
 
 ```typescript
 interface Document {
-  id: string; title: string; content?: string  // markup
-  teamspace: string        // name/id (KHÔNG Ref<Space>)
-  url: string              // browse URL — FR-13 interlink
-  modifiedOn?: number; createdOn?: number
+  id: string;
+  title: string;
+  content?: string; // markup
+  teamspace: string; // name/id (KHÔNG Ref<Space>)
+  url: string; // browse URL — FR-13 interlink
+  modifiedOn?: number;
+  createdOn?: number;
 }
 interface TeamspaceSummary {
-  id: string; name: string; description?: string
-  archived: boolean; private: boolean
+  id: string;
+  name: string;
+  description?: string;
+  archived: boolean;
+  private: boolean;
 }
 ```
 
@@ -86,70 +93,145 @@ interface TeamspaceSummary {
 
 ```typescript
 interface Milestone {
-  id: string; label: string; description?: string
-  status: 'planned'|'in-progress'|'completed'|'canceled'
-  targetDate: number; project: string  // ProjectIdentifier
-  modifiedOn?: number; createdOn?: number
+  id: string;
+  label: string;
+  description?: string;
+  status: "planned" | "in-progress" | "completed" | "canceled";
+  targetDate: number;
+  project: string; // ProjectIdentifier
+  modifiedOn?: number;
+  createdOn?: number;
 }
 ```
 
 ### `Project` / `ProjectType` / `TaskType` / `Status`
 
 ```typescript
-interface Project { identifier: string; name: string; description?: string; archived: boolean; defaultStatus?: string; statuses?: string[] }
-interface ProjectType { _id: Ref; targetClass: Ref; taskTypes: Ref<TaskType>[] }
-interface TaskType { _id: Ref; name: string; statuses: Ref<Status>[] }
-interface Status { _id: Ref; name: string; category: StatusCategory; ofTaskType: Ref<TaskType> }
+interface Project {
+  identifier: string;
+  name: string;
+  description?: string;
+  archived: boolean;
+  defaultStatus?: string;
+  statuses?: string[];
+}
+interface ProjectType {
+  _id: Ref;
+  targetClass: Ref;
+  taskTypes: Ref<TaskType>[];
+}
+interface TaskType {
+  _id: Ref;
+  name: string;
+  statuses: Ref<Status>[];
+}
+interface Status {
+  _id: Ref;
+  name: string;
+  category: StatusCategory;
+  ofTaskType: Ref<TaskType>;
+}
 ```
 
 ### `Component` (`tracker.class.Component`)
 
 ```typescript
-interface Component { id: string; label: string; description?: string; lead?: string /*PersonName*/; project: string /*ProjectIdentifier*/ }
+interface Component {
+  id: string;
+  label: string;
+  description?: string;
+  lead?: string /*PersonName*/;
+  project: string; /*ProjectIdentifier*/
+}
 ```
 
 ### `Label` / `Tag` / `TagCategory`
 
 ```typescript
-interface Label { title: string; color?: ColorCode }  // summary minimal; full trên tag def (description/category)
-interface Tag { _id: Ref; title: string; color?: ColorCode; space: Ref<Space> }
-interface TagCategory { _id: Ref; title: string; targetClass: Ref; space: Ref<Space> }
+interface Label {
+  title: string;
+  color?: ColorCode;
+} // summary minimal; full trên tag def (description/category)
+interface Tag {
+  _id: Ref;
+  title: string;
+  color?: ColorCode;
+  space: Ref<Space>;
+}
+interface TagCategory {
+  _id: Ref;
+  title: string;
+  targetClass: Ref;
+  space: Ref<Space>;
+}
 ```
 
 ### `Comment` (`chunter.class.ChatMessage`) / `Attachment` / `Todo` / `TimeSpendReport`
 
 ```typescript
-interface Comment { id: string; message: string /*inline Markup, KHÔNG "body" — T-70 fix*/; author?: string; authorId?: string; createdOn?: number; modifiedOn?: number; editedOn?: number | null }
-interface Attachment { _id: Ref; name: string; contentType: string; attachedTo: Ref; size: number; file?: Blob }
-interface Todo { title: string; attachedTo: { type:'issue', project: string, identifier: string }; done?: boolean; owner?: string; dueDate?: number }
-interface TimeSpendReport { value: number /*minutes*/; description?: string }  // attachedTo=Issue, user implicit
+interface Comment {
+  id: string;
+  message: string /*inline Markup, KHÔNG "body" — T-70 fix*/;
+  author?: string;
+  authorId?: string;
+  createdOn?: number;
+  modifiedOn?: number;
+  editedOn?: number | null;
+}
+interface Attachment {
+  _id: Ref;
+  name: string;
+  contentType: string;
+  attachedTo: Ref;
+  size: number;
+  file?: Blob;
+}
+interface Todo {
+  title: string;
+  attachedTo: { type: "issue"; project: string; identifier: string };
+  done?: boolean;
+  owner?: string;
+  dueDate?: number;
+}
+interface TimeSpendReport {
+  value: number /*minutes*/;
+  description?: string;
+} // attachedTo=Issue, user implicit
 ```
 
 ### `Person` (`contact.class.Person`) — assignee / currentUser
 
 ```typescript
 interface Person {
-  id: string; name: string  // "LastName,FirstName"
-  firstName?: string; lastName?: string
-  email?: string            // key cho D15 assignee resolution
-  city?: string; channels?: ChannelSummary[]; organizations?: OrgMembership[]
-  url: string               // browse URL
+  id: string;
+  name: string; // "LastName,FirstName"
+  firstName?: string;
+  lastName?: string;
+  email?: string; // key cho D15 assignee resolution
+  city?: string;
+  channels?: ChannelSummary[];
+  organizations?: OrgMembership[];
+  url: string; // browse URL
 }
-interface PersonRef { id: string; name?: string; email?: string }  // assigneeRef
+interface PersonRef {
+  id: string;
+  name?: string;
+  email?: string;
+} // assigneeRef
 ```
 
 ## 3. Relations (2 hệ thống độc lập — khớp huly-tasks)
 
-| Loại | Tool | Shape | Ghi chú |
-|---|---|---|---|
-| **DAG dependency** | add/remove/list_issue_relation | `Issue --[blocks\|is-blocked-by\|relates-to]--> Issue` | native cross-project |
-| **Parent-child** | move_issue / create_issue(parentIssue) | `Issue ⊃ Issue` (epic/sub) | promote top-level = newParent=null |
-| **Doc↔issue** | link/unlink_document_to_issue | `Issue ↔ Document` | native Relations panel |
-| **Issue↔milestone** | set_issue_milestone | `Issue → Milestone` | — |
-| **Issue↔component** | set_issue_component | `Issue → Component` | — |
-| **Issue↔label** | add/remove_issue_label | `Issue ↔ Label` (**global!**) | namespace prefix |
-| **Issue↔tag** | attach/detach_tag | `Issue ↔ Tag` (project-scoped) | — |
-| **Comment/attachment/todo/time↔issue** | add_comment/log_time/create_todo/add_issue_attachment | attachedTo=Issue | collection pattern |
+| Loại                                   | Tool                                                  | Shape                                                  | Ghi chú                            |
+| -------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------ | ---------------------------------- |
+| **DAG dependency**                     | add/remove/list_issue_relation                        | `Issue --[blocks\|is-blocked-by\|relates-to]--> Issue` | native cross-project               |
+| **Parent-child**                       | move_issue / create_issue(parentIssue)                | `Issue ⊃ Issue` (epic/sub)                             | promote top-level = newParent=null |
+| **Doc↔issue**                          | link/unlink_document_to_issue                         | `Issue ↔ Document`                                     | native Relations panel             |
+| **Issue↔milestone**                    | set_issue_milestone                                   | `Issue → Milestone`                                    | —                                  |
+| **Issue↔component**                    | set_issue_component                                   | `Issue → Component`                                    | —                                  |
+| **Issue↔label**                        | add/remove_issue_label                                | `Issue ↔ Label` (**global!**)                          | namespace prefix                   |
+| **Issue↔tag**                          | attach/detach_tag                                     | `Issue ↔ Tag` (project-scoped)                         | —                                  |
+| **Comment/attachment/todo/time↔issue** | add_comment/log_time/create_todo/add_issue_attachment | attachedTo=Issue                                       | collection pattern                 |
 
 ## 4. Config Schemas (pi-huly OWN data — global-only, D8)
 
@@ -162,9 +244,14 @@ interface PersonRef { id: string; name?: string; email?: string }  // assigneeRe
 {
   "version": 1,
   "workspaces": {
-    "myteam":    { "url": "https://huly.a.com", "workspace": "myteam", "token": "..." },
-    "corp-prod": { "url": "https://huly.corp.com", "workspace": "corp", "email": "...", "password": "..." },
-    "corp-stg":  { "url": "https://huly.stg.com", "workspace": "corp", "token": "..." }
+    "myteam": { "url": "https://huly.a.com", "workspace": "myteam", "token": "..." },
+    "corp-prod": {
+      "url": "https://huly.corp.com",
+      "workspace": "corp",
+      "email": "...",
+      "password": "..."
+    },
+    "corp-stg": { "url": "https://huly.stg.com", "workspace": "corp", "token": "..." }
   }
 }
 ```
@@ -185,7 +272,7 @@ interface PersonRef { id: string; name?: string; email?: string }  // assigneeRe
   "version": 1,
   "transport": "ws",
   "projects": {
-    "/Users/me/Projects/myapp":   { "workspace": "myteam", "project": "APP" },
+    "/Users/me/Projects/myapp": { "workspace": "myteam", "project": "APP" },
     "/Users/me/Projects/website": { "workspace": "myteam", "project": "WEB" }
   },
   "pool": { "maxSize": 8 }
@@ -214,21 +301,21 @@ interface PersonRef { id: string; name?: string; email?: string }  // assigneeRe
 
 ## 5. Validation Rules
 
-| Field | Rule | Error |
-|---|---|---|
-| `workspace` (id handle) | non-empty, match key trong credentials.json | NotFoundError |
-| `url` | valid http(s); `huly.app` → warn (FR-15) | ValidationError |
-| `token` | non-empty | AuthError nếu Huly reject |
-| `identifier` (issue) | `<PROJECT>-<num>` (vd `PD-123`) HOẶC raw num | NotFoundError |
-| `assignee` | email (preferred, D15) HOẶC `LastName,FirstName` (KHÔNG space) | Person not found |
-| `priority` | enum `urgent\|high\|medium\|low\|no-priority` | ValidationError |
-| `statusCategory` | enum `UnStarted\|ToDo\|Active\|Won\|Lost` | ValidationError |
-| `targetDate` (milestone) | Unix ms, BẮT BUỘC | ValidationError |
-| `color` (label/tag) | palette index HOẶC hex | ValidationError |
-| `milestone status` | enum `planned\|in-progress\|completed\|canceled` | ValidationError |
-| project `identifier` | 1-5 chars uppercase, start letter | ValidationError |
-| `old_text` (edit_document) | match exactly 1; multiple → ConflictError (gợi ý replace_all) | ConflictError |
-| destructive op (delete_*) | confirm gate (FR-09); non-TUI auto-deny | deny → no-op |
+| Field                      | Rule                                                           | Error                     |
+| -------------------------- | -------------------------------------------------------------- | ------------------------- |
+| `workspace` (id handle)    | non-empty, match key trong credentials.json                    | NotFoundError             |
+| `url`                      | valid http(s); `huly.app` → warn (FR-15)                       | ValidationError           |
+| `token`                    | non-empty                                                      | AuthError nếu Huly reject |
+| `identifier` (issue)       | `<PROJECT>-<num>` (vd `PD-123`) HOẶC raw num                   | NotFoundError             |
+| `assignee`                 | email (preferred, D15) HOẶC `LastName,FirstName` (KHÔNG space) | Person not found          |
+| `priority`                 | enum `urgent\|high\|medium\|low\|no-priority`                  | ValidationError           |
+| `statusCategory`           | enum `UnStarted\|ToDo\|Active\|Won\|Lost`                      | ValidationError           |
+| `targetDate` (milestone)   | Unix ms, BẮT BUỘC                                              | ValidationError           |
+| `color` (label/tag)        | palette index HOẶC hex                                         | ValidationError           |
+| `milestone status`         | enum `planned\|in-progress\|completed\|canceled`               | ValidationError           |
+| project `identifier`       | 1-5 chars uppercase, start letter                              | ValidationError           |
+| `old_text` (edit_document) | match exactly 1; multiple → ConflictError (gợi ý replace_all)  | ConflictError             |
+| destructive op (delete_*)  | confirm gate (FR-09); non-TUI auto-deny                        | deny → no-op              |
 
 ## 6. Migration Strategy
 
@@ -255,16 +342,16 @@ interface PersonRef { id: string; name?: string; email?: string }  // assigneeRe
 
 ## 8. Trace
 
-| Doc section | Requirement/ADR |
-|---|---|
-| §1-2 entity shapes | FR-04 (19 domain), D4 |
-| §3 relations | FR-04, huly-tasks 2-hệ thống |
-| §4 credentials.json (id handle + workspace?) | FR-05, D8 |
-| §4 config.json (projects cwd-map + pool) | FR-06, D8 |
-| §5 validation | FR-14 (error class), D9 (confirm) |
-| §5 assignee format | FR-18, D15 |
-| §6 migration | NFR-09 (forward-compat) |
-| §7 protocol | FR-03 (WS api-client), D3, D10 |
+| Doc section                                  | Requirement/ADR                   |
+| -------------------------------------------- | --------------------------------- |
+| §1-2 entity shapes                           | FR-04 (19 domain), D4             |
+| §3 relations                                 | FR-04, huly-tasks 2-hệ thống      |
+| §4 credentials.json (id handle + workspace?) | FR-05, D8                         |
+| §4 config.json (projects cwd-map + pool)     | FR-06, D8                         |
+| §5 validation                                | FR-14 (error class), D9 (confirm) |
+| §5 assignee format                           | FR-18, D15                        |
+| §6 migration                                 | NFR-09 (forward-compat)           |
+| §7 protocol                                  | FR-03 (WS api-client), D3, D10    |
 
 ---
 
