@@ -107,6 +107,20 @@ export const TAG_CLASS = classRef("tags:class:TagElement"); // T-43: Tag → Tag
 export const TAG_REFERENCE_CLASS = classRef("tags:class:TagReference"); // T-69: AttachedDoc cho tag attachments
 export const TAG_CATEGORY_CLASS = classRef("tags:class:TagCategory");
 
+// T-73: core.space.Model = root model space (workflow docs IssueStatus/TaskType
+// live here, KHÔNG project space). Verified trusted task-management.ts.
+export const MODEL_SPACE = spaceRef("core:space:Model");
+
+// T-73: StatusCategory Ref<StatusCategory> map (5 values, format task:statusCategory:<Key>).
+// IssueStatus.category = Ref<StatusCategory> (KHÔNG enum string). Verified T-71 + trusted.
+export const STATUS_CATEGORY_REFS: Record<string, string> = {
+  UnStarted: "task:statusCategory:UnStarted",
+  ToDo: "task:statusCategory:ToDo",
+  Active: "task:statusCategory:Active",
+  Won: "task:statusCategory:Won",
+  Lost: "task:statusCategory:Lost",
+};
+
 // view — T-58 DEEP-AUDIT: Label KHÔNG tồn tại trong 12 packages (0 match).
 // Deprecated — Huly dùng TagElement (tags:class:TagElement) cho tag/label entity.
 // Labels tools refactor dùng TAG_CLASS (T-45 pattern đã verify).
