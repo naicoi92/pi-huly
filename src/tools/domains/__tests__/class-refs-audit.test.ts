@@ -21,6 +21,7 @@ import {
   ISSUE_TEMPLATE_CLASS,
   PROJECT_TYPE_CLASS,
   DOCUMENT_CLASS,
+  TEAMSPACE_CLASS,
   DOCUMENT_SNAPSHOT_CLASS,
   SPACE_CLASS,
   CHAT_MESSAGE_CLASS,
@@ -84,8 +85,8 @@ describe("T-44 §1 class registry truth (audit 11-runtime-audit.md)", () => {
       expect(raw(PROJECT_TYPE_CLASS)).toBe("task:class:ProjectType");
     });
 
-    it("Document: document → tracker pkg (Document define trong tracker source)", () => {
-      expect(raw(DOCUMENT_CLASS)).toBe("tracker:class:Document");
+    it("Document: tracker → document pkg (T-65 supersedes T-58 — class registered trong document plugin)", () => {
+      expect(raw(DOCUMENT_CLASS)).toBe("document:class:Document");
     });
 
     it("Space: document → core pkg (base abstract class)", () => {
@@ -105,21 +106,24 @@ describe("T-44 §1 class registry truth (audit 11-runtime-audit.md)", () => {
     });
   });
 
-  describe("T-58 DEEP-AUDIT verdict (12 packages @0.7.423 — 2026-07-28)", () => {
-    // T-58: STRONG confirm qua plugin() class block scan (KHÔNG chỉ interface).
-    // Document interface exists nhưng KHÔNG register class → runtime fail.
-    it("DOCUMENT_CLASS giữ tracker:class:Document (interface orphan — NOT registered runtime)", () => {
-      expect(raw(DOCUMENT_CLASS)).toBe("tracker:class:Document");
+  describe("T-65 SUPersedes T-58 (2026-07-28 — document plugin class registered)", () => {
+    // T-65: SUPERSEDES T-58 interface-orphan conclusion. T-58 audited chỉ tracker
+    // package + missed `@hcengineering/document` package. Real class registered
+    // trong document plugin() block. Verified vs trusted huly-mcp v0.45.
+    it("DOCUMENT_CLASS = document:class:Document (T-65 fix — registered runtime)", () => {
+      expect(raw(DOCUMENT_CLASS)).toBe("document:class:Document");
     });
 
-    // T-58: Label 0 match toàn packages → deprecated (Huly dùng TagElement).
+    it("TEAMSPACE_CLASS = document:class:Teamspace (T-65 expose)", () => {
+      expect(raw(TEAMSPACE_CLASS)).toBe("document:class:Teamspace");
+    });
+
+    it("DOCUMENT_SNAPSHOT_CLASS = document:class:DocumentSnapshot (registered runtime)", () => {
+      expect(raw(DOCUMENT_SNAPSHOT_CLASS)).toBe("document:class:DocumentSnapshot");
+    });
+
     it("LABEL_CLASS giữ view:class:Label (DEPRECATED — 0 match, dùng TAG_CLASS)", () => {
       expect(raw(LABEL_CLASS)).toBe("view:class:Label");
-    });
-
-    // T-58: DocumentSnapshot 0 match toàn packages → deprecated.
-    it("DOCUMENT_SNAPSHOT_CLASS giữ document:class:DocumentSnapshot (DEPRECATED)", () => {
-      expect(raw(DOCUMENT_SNAPSHOT_CLASS)).toBe("document:class:DocumentSnapshot");
     });
 
     // T-54: DRIVE_CLASS = Documents Teamspace thật (extends TypedSpace, registered).
@@ -149,6 +153,7 @@ describe("T-44 §1 class registry truth (audit 11-runtime-audit.md)", () => {
       ISSUE_TEMPLATE_CLASS,
       PROJECT_TYPE_CLASS,
       DOCUMENT_CLASS,
+      TEAMSPACE_CLASS,
       DOCUMENT_SNAPSHOT_CLASS,
       SPACE_CLASS,
       CHAT_MESSAGE_CLASS,
