@@ -198,6 +198,27 @@ class MockHulyStore {
 
   async close(): Promise<void> {}
 
+  // T-66: markup ops mock — fetchMarkup echo, uploadMarkup return ref.
+  async fetchMarkup(
+    _c: string,
+    _id: string,
+    _attr: string,
+    _ref: unknown,
+    _format: string,
+  ): Promise<string> {
+    return "# mock content";
+  }
+  async uploadMarkup(
+    _c: string,
+    _id: string,
+    _attr: string,
+    _markup: string,
+    _format: string,
+  ): Promise<{ blob: string }> {
+    return { blob: `blob-${_id.slice(0, 8)}` };
+  }
+  async updateMarkup(): Promise<void> {}
+
   /** Seed helper — inject doc directly (bypass createDoc cho test setup). */
   seed(_class: string, doc: Record<string, unknown>): string {
     const id = (doc._id as string) ?? this.genId(_class.split(":").pop() ?? "seed");
@@ -314,8 +335,9 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
     expect(result.details).toMatchObject({ identifier: "PD-42", title: "Detail issue" });
   });
 
-  // 4. huly_create_document — T-60: honest-unavailable (Document interface orphan)
-  it("create_document: honest-unavailable (Document not registered runtime)", async () => {
+  // 4. huly_create_document — T-66: ENABLED (DOCUMENT_CLASS + uploadMarkup)
+  it("create_document: creates document + returns id", async () => {
+    store.seed("document:class:Teamspace", { _id: "ts-1", name: "Docs" });
     const tool = findTool(documentTools, "huly_create_document");
     const result = await tool.execute(
       "call-4",
@@ -324,24 +346,29 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
       undefined,
       makeCtx(),
     );
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/KHÔNG khả dụng|interface orphan/i);
-    expect(result.details).toMatchObject({ reason: "interface_orphan" });
+    expect(result.isError).toBeUndefined();
+    expect(result.details).toMatchObject({ title: "Smoke doc" });
+    expect(result.details.id).toBeTruthy();
   });
 
-  // 5. huly_edit_document — T-60: honest-unavailable
-  it("edit_document: honest-unavailable (Document not registered runtime)", async () => {
+  // 5. huly_edit_document — T-66: ENABLED (search-replace)
+  it("edit_document: updates content via search-replace", async () => {
+    store.seed("document:class:Document", {
+      _id: "doc-1",
+      title: "Smoke",
+      content: { blob: "ref-1" },
+      space: "ts-1",
+    });
     const tool = findTool(documentTools, "huly_edit_document");
     const result = await tool.execute(
       "call-5",
-      { document: "doc-1", content: "Updated markdown" },
+      { document: "doc-1", old_text: "mock", new_text: "updated" },
       undefined,
       undefined,
       makeCtx(),
     );
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/KHÔNG khả dụng|interface orphan/i);
-    expect(result.details).toMatchObject({ reason: "interface_orphan" });
+    expect(result.isError).toBeUndefined();
+    expect(result.details).toMatchObject({ updated: true, mode: "search-replace" });
   });
 
   // 6. huly_create_milestone

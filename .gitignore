@@ -154,3 +154,6 @@ vite.config.ts.timestamp-*
 
 # File rác debug tạm (KHÔNG commit)
 /50
+
+# pi-subagents runtime artifacts
+.pi-subagents/

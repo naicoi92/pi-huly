@@ -113,9 +113,11 @@ export interface HulyClient {
     attributes: WithMarkup<MixinData<D, M>>,
   ): Promise<TxResult>;
 
-  // MarkupOperations (T-41 — fetch markup content từ MarkupBlobRef)
-  // Issue.description là MarkupBlobRef (document ref), KHÔNG inline string.
+  // MarkupOperations (T-41 — fetch markup content từ MarkupBlobRef; T-66 — upload/update)
+  // Issue.description / Document.content là MarkupBlobRef (document ref), KHÔNG inline string.
   // fetchMarkup resolve ref → markdown/html/markup string theo format.
+  // uploadMarkup/upload-save markup → trả MarkupBlobRef (cho create/edit document).
+  // updateMarkup overwrite markup blob đã có (edit document khi doc.content đã tồn tại).
   // Ref branded types bypass (string runtime, Ref compile-time).
   fetchMarkup(
     objectClass: string,
@@ -124,6 +126,20 @@ export interface HulyClient {
     markup: unknown,
     format: "markdown" | "html" | "markup",
   ): Promise<string>;
+  uploadMarkup(
+    objectClass: string,
+    objectId: string,
+    objectAttr: string,
+    markup: string,
+    format: "markdown" | "html" | "markup",
+  ): Promise<unknown>;
+  updateMarkup(
+    objectClass: string,
+    objectId: string,
+    objectAttr: string,
+    markup: string,
+    format: "markdown" | "html" | "markup",
+  ): Promise<void>;
 
   // Account
   getAccount(): Promise<Account>;
@@ -217,8 +233,17 @@ function makeWsClient(client: PlatformClient): HulyClient {
     createMixin: (...args) => client.createMixin(...args),
     // T-41: PlatformClient có fetchMarkup built-in (delegate MarkupOperations).
     // Signature branded Ref<Class>/Ref<Doc> nhưng runtime string — cast bypass.
+    // T-66: uploadMarkup/updateMarkup cùng MarkupOperations interface.
     fetchMarkup: (...args) =>
       (client as unknown as { fetchMarkup: (...a: unknown[]) => Promise<string> }).fetchMarkup(
+        ...args,
+      ),
+    uploadMarkup: (...args) =>
+      (client as unknown as { uploadMarkup: (...a: unknown[]) => Promise<unknown> }).uploadMarkup(
+        ...args,
+      ),
+    updateMarkup: (...args) =>
+      (client as unknown as { updateMarkup: (...a: unknown[]) => Promise<void> }).updateMarkup(
         ...args,
       ),
     getAccount: () => client.getAccount(),
@@ -249,11 +274,23 @@ function makeRestClient(rest: RestClient, tx: TxOperations): HulyClient {
     // T-41: RestClient KHÔNG có fetchMarkup built-in (chỉ PlatformClient ws có).
     // REST transport fallback: throw rõ ràng — user đổi sang ws transport nếu cần
     // resolve MarkupBlobRef (vd get_issue description). Default transport = ws
-    // (config.ts D3) nên path này hiếm khi hit.
+    // (config.ts D3) nên path này hiếm khi hit. T-66: upload/updateMarkup cùng.
     fetchMarkup: () => {
       throw new Error(
         "fetchMarkup not supported on REST transport. Use WS transport (default) " +
           "to resolve MarkupBlobRef fields like issue description.",
+      );
+    },
+    uploadMarkup: () => {
+      throw new Error(
+        "uploadMarkup not supported on REST transport. Use WS transport (default) " +
+          "to save document content (MarkupBlobRef).",
+      );
+    },
+    updateMarkup: () => {
+      throw new Error(
+        "updateMarkup not supported on REST transport. Use WS transport (default) " +
+          "to update document content (MarkupBlobRef).",
       );
     },
     getAccount: () => rest.getAccount(),
