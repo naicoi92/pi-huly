@@ -5,7 +5,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { TAG_CLASS, ISSUE_CLASS, spaceRef, idRef } from "./_class-refs.js";
+import { TAG_CLASS, TAG_REFERENCE_CLASS, ISSUE_CLASS, spaceRef, idRef } from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -132,7 +132,7 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 5. list_attached_tags
+  // 5. list_attached_tags — T-69: findAll TagReference (KHÔNG issue.tags inline)
   defineHulyTool({
     name: "list_attached_tags",
     label: "List attached tags",
@@ -154,10 +154,20 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      const tags = ((issue as { tags?: unknown[] }).tags ?? []) as Array<{
-        _id?: string;
-        title?: string;
-      }>;
+      // T-69: TagReference là AttachedDoc — findAll collection "labels".
+      const refs = await tctx.client.findAll(
+        TAG_REFERENCE_CLASS,
+        {
+          attachedTo: issue._id,
+          attachedToClass: ISSUE_CLASS,
+          collection: "labels",
+        } as never,
+        {},
+      );
+      const tags = refs.map((r) => {
+        const ref = r as { _id: string; tag?: string; title?: string; color?: number };
+        return { _id: ref._id, tag: ref.tag, title: ref.title, color: ref.color };
+      });
       return {
         content: `Found ${tags.length} tag(s) attached to ${params.identifier}.`,
         details: { count: tags.length, tags },
@@ -165,7 +175,7 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 6. attach_tag
+  // 6. attach_tag — T-69: addCollection TagReference (collection "labels")
   defineHulyTool({
     name: "attach_tag",
     label: "Attach tag",
@@ -188,10 +198,7 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // T-52 #42: validate tag tồn tại (tránh ref rác).
-      // T-52 bonus shape fix: idempotent check + $push dùng ref resolved (KHÔNG
-      // raw string). Bug cũ: existing.includes(params.tag) so sánh raw string
-      // với mảng ref → luôn false → re-push duplicate (giống T-45 add_issue_label).
+      // Lookup tag (FK validate + fill attributes từ resolved doc).
       const tag = await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.tag) });
       if (!tag) {
         return {
@@ -200,37 +207,52 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier, tag: params.tag },
         };
       }
-      const tagDoc = tag as { _id: string; title?: string; color?: string };
-      // Idempotent: match by ref resolved (KHÔNG raw string).
-      const existingTags = ((issue as { tags?: Array<{ tag?: string }> }).tags ?? []) as Array<{
-        tag?: string;
-      }>;
-      if (existingTags.some((t) => t?.tag === tagDoc._id)) {
+      const tagDoc = tag as { _id: string; title?: string; color?: number | string };
+      // Idempotent: findAll TagReference collection "labels" check exists.
+      const existing = await tctx.client.findAll(
+        TAG_REFERENCE_CLASS,
+        {
+          attachedTo: issue._id,
+          attachedToClass: ISSUE_CLASS,
+          collection: "labels",
+          tag: tagDoc._id,
+        } as never,
+        {},
+      );
+      if (existing.length > 0) {
         return {
           content: `Tag ${params.tag} already attached (no-op).`,
           details: { attached: true, tag: params.tag, idempotent: true },
         };
       }
-      // $push TagReference object shape (audit §4 — NOT raw string, giống
-      // add_issue_label T-45 nhưng color string thay vì number).
-      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
-        $push: {
-          tags: {
-            tag: tagDoc._id,
-            title: tagDoc.title ?? params.tag,
-            color: tagDoc.color ?? "",
-          },
-        },
-      });
-      if (!updResult.ok) return updResult.error;
+      // addCollection TagReference AttachedDoc (collection "labels"). Attributes
+      // {tag, title, color:Number} — weight optional, omit khi undefined.
+      const attrs: Record<string, unknown> = {
+        tag: tagDoc._id,
+        title: tagDoc.title ?? params.tag,
+        color: Number(tagDoc.color ?? 0),
+      };
+      const id = await tctx.client.addCollection(
+        TAG_REFERENCE_CLASS,
+        issue.space as never,
+        issue._id as never,
+        ISSUE_CLASS,
+        "labels",
+        attrs as never,
+      );
       return {
         content: `Attached tag ${params.tag} to ${params.identifier}.`,
-        details: { identifier: params.identifier, tag: params.tag, tagId: tagDoc._id },
+        details: {
+          identifier: params.identifier,
+          tag: params.tag,
+          tagId: tagDoc._id,
+          tagRefId: id,
+        },
       };
     },
   }),
 
-  // 7. detach_tag
+  // 7. detach_tag — T-69: findAll TagReference + removeDoc matching
   defineHulyTool({
     name: "detach_tag",
     label: "Detach tag",
@@ -253,10 +275,6 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // T-52 review fix: symmetric với attach_tag — resolve tag._id + $pull
-      // bằng { tag: _id } object (KHÔNG raw string). Trước đây $pull raw string
-      // không match TagReference objects attach_tag push → tag undeletable
-      // (regression introduced bởi attach_tag shape fix).
       const tag = await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.tag) });
       if (!tag) {
         return {
@@ -266,24 +284,40 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const tagDoc = tag as { _id: string };
-      // Idempotent: nếu tag không có trên issue → no-op (KHÔNG crash).
-      const existingTags = ((issue as { tags?: Array<{ tag?: string }> }).tags ?? []) as Array<{
-        tag?: string;
-      }>;
-      if (!existingTags.some((t) => t?.tag === tagDoc._id)) {
+      // findAll TagReference matching tag trên issue.
+      const refs = await tctx.client.findAll(
+        TAG_REFERENCE_CLASS,
+        {
+          attachedTo: issue._id,
+          attachedToClass: ISSUE_CLASS,
+          collection: "labels",
+          tag: tagDoc._id,
+        } as never,
+        {},
+      );
+      if (refs.length === 0) {
         return {
           content: `Tag ${params.tag} not on ${params.identifier} (no-op).`,
           details: { detached: false, idempotent: true, tag: params.tag },
         };
       }
-      // $pull bằng tag ref object (match shape khi push).
-      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
-        $pull: { tags: { tag: tagDoc._id } },
-      });
-      if (!updResult.ok) return updResult.error;
+      // removeDoc each matching TagReference.
+      for (const r of refs) {
+        const ref = r as { _id: string; space?: string };
+        await tctx.client.removeDoc(
+          TAG_REFERENCE_CLASS,
+          (ref.space ?? issue.space) as never,
+          ref._id as never,
+        );
+      }
       return {
         content: `Detached tag ${params.tag} from ${params.identifier}.`,
-        details: { identifier: params.identifier, tag: params.tag, tagId: tagDoc._id },
+        details: {
+          identifier: params.identifier,
+          tag: params.tag,
+          tagId: tagDoc._id,
+          removed: refs.length,
+        },
       };
     },
   }),
