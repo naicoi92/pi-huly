@@ -37,6 +37,7 @@ function makeClient() {
     findOne: vi.fn(),
     createDoc: vi.fn().mockResolvedValue("new-id"),
     updateDoc: vi.fn().mockResolvedValue(undefined),
+    addCollection: vi.fn().mockResolvedValue("coll-id"),
     searchFulltext: undefined as unknown,
   };
 }
@@ -202,5 +203,30 @@ describe("T-77: tag-categories field label (KHÔNG title)", () => {
     const ops = client.updateDoc.mock.calls[0]?.[3] as Record<string, unknown>;
     expect(ops.label).toBe("New");
     expect(ops.title).toBeUndefined();
+  });
+});
+
+// T-74: log_time collection "reports" + hours + date + employee best-effort.
+describe("T-74: log_time collection reports + hours unit", () => {
+  it('addCollection với collection "reports" + value hours + date', async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" });
+    client.getCurrentUser = vi.fn().mockResolvedValue({ id: "u1", name: "U", email: "u@x" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+    const timeTools = (await import("../time.js")).tools;
+    const tool = timeTools.find((t) => t.name === "huly_log_time")!;
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", value: 2.5 },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(result.isError).toBeUndefined();
+    const call = client.addCollection.mock.calls[0];
+    expect(call?.[4]).toBe("reports"); // KHÔNG "timetracking"
+    const attrs = call?.[5] as Record<string, unknown>;
+    expect(attrs.value).toBe(2.5); // hours (fractional OK)
+    expect(attrs.date).toEqual(expect.any(Number));
   });
 });
