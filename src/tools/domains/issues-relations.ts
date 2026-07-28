@@ -1,19 +1,25 @@
 // tools/domains/issues-relations.ts — Issue relations + doclink domain (5 tools).
 // Design: 06-api.md §4 Issue relations. DAG + doc↔issue links.
 //
-// T-59 #63 refactor (2026-07-28): Issue relations KHÔNG phải class riêng —
-// stored INLINE trong 2 mảng trên Issue:
-//   - Issue.relations?: RelatedDocument[]    (blocks / relates-to direction)
-//   - Issue.blockedBy?: RelatedDocument[]    (is-blocked-by direction)
-// RelatedDocument = Pick<Doc, '_id' | '_class'> = { _id, _class } — KHÔNG có
-// relationType field. add/remove dùng $push/$pull trực tiếp trên Issue (KHÔNG
-// addCollection — TS_RELATION_CLASS KHÔNG tồn tại runtime, dead code đã xóa).
+// T-61 fix (2026-07-28): storage pattern KHỚP 100% với Huly thật, verified từ:
+//   - plugins/tracker-resources/src/components/RelationsPopup.svelte:33-41
+//   - plugins/tracker-resources/src/issues.ts:111 updateIssueRelation
+//   - tests/sanity/tests/tracker/relations.spec.ts ("Mark as blocked by" / "Mark as blocking")
 //
-// Mapping relationType → storage:
-//   - "blocks" / "relates-to" → source.relations[] push { _id: target, _class }
-//     (KHÔNG phân biệt được 2 loại sau khi lưu — Huly data model không có type)
-//   - "is-blocked-by" → target.blockedBy[] push { _id: source, _class }
-//     (reverse direction — push lên Issue ĐÍCH, không phải nguồn)
+// Issue interface (Huly thật) CHỈ có 2 field relation:
+//   - Issue.blockedBy?: RelatedDocument[]    — issues đang BLOCK issue này
+//   - Issue.relations?: RelatedDocument[]    — related-to (bidirectional)
+// RelatedDocument = Pick<Doc, '_id' | '_class'> = { _id, _class } — KHÔNG có
+// relationType field. KHÔNG có field `blocks` — "blocks" được COMPUTE bằng
+// reverse query (tìm issues có blockedBy._id === currentIssue._id).
+//
+// Mapping relationType → storage (T-61, đúng Huly pattern):
+//   - "blocks"        → target.blockedBy[] push { _id: source, _class }
+//                       (A blocks B → B.blockedBy.push(A) — push lên ĐÍCH B)
+//   - "is-blocked-by" → source.blockedBy[] push { _id: target, _class }
+//                       (A blocked-by B → A.blockedBy.push(B) — push lên NGUỒN A)
+//   - "relates-to"    → BIDIRECTIONAL: A.relations.push(B) + B.relations.push(A)
+//                       (2 updateDoc call, khớp RelationsPopup dòng 34-39)
 //
 // Tools (5, FR-04 D4):
 //   1. add_issue_relation     2. remove_issue_relation  3. list_issue_relations
@@ -42,8 +48,8 @@ export const tools: HulyToolDefinition[] = [
     label: "Add issue relation",
     description:
       "Add relation between issues. relationType: blocks | is-blocked-by | relates-to. " +
-      "Note: Huly stores relations inline (Issue.relations / blockedBy) — blocks và " +
-      "relates-to KHÔNG phân biệt được sau khi lưu (cùng mảng relations).",
+      "Storage (T-61, khớp Huly UI): blocks→target.blockedBy, is-blocked-by→source.blockedBy, " +
+      "relates-to→bidirectional (cả 2 issue.relations).",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
@@ -68,6 +74,10 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // T-52 #42: validate targetIssue tồn tại + resolve identifier → _id.
+      // targetIssue cho phép CROSS-PROJECT (raw identifier, KHÔNG resolveIdentifier)
+      // — khác source (identifier dòng 67 dùng resolveIdentifier throw nếu cross).
+      // Khớp Huly UI RelationsPopup: ObjectSearchPopup pick bất kỳ issue nào bất kể
+      // project. Đây là INTENT, không phải bug.
       const target = await tctx.client.findOne(ISSUE_CLASS, {
         identifier: params.targetIssue,
       });
@@ -79,32 +89,67 @@ export const tools: HulyToolDefinition[] = [
         };
       }
 
-      // T-59 #63: inline $push trên Issue.relations (blocks/relates-to) HOẶC
-      // target.blockedBy (is-blocked-by — reverse direction).
-      if (params.relationType === "is-blocked-by") {
-        // Reverse: A is-blocked-by B → B.blockedBy[] push A. Push trên target.
+      // T-61 fix: storage pattern KHỚP Huly thật (RelationsPopup.svelte +
+      // updateIssueRelation). 3 nhánh rõ ràng:
+      //   - blocks         → target.blockedBy push source (A blocks B → B.blockedBy.push(A))
+      //   - is-blocked-by  → source.blockedBy push target (A blocked-by B → A.blockedBy.push(B))
+      //   - relates-to     → BIDIRECTIONAL: A.relations.push(B) + B.relations.push(A)
+      if (params.relationType === "blocks") {
+        // A blocks B → B.blockedBy.push(A). Push lên ĐÍCH B.
         const targetBlockedBy = (target as { blockedBy?: unknown[] }).blockedBy;
         if (hasRelation(targetBlockedBy, issue._id as string)) {
           return {
-            content: `Relation ${params.identifier} -[is-blocked-by]-> ${params.targetIssue} already exists (no-op).`,
+            content: `Relation ${params.identifier} -[blocks]-> ${params.targetIssue} already exists (no-op).`,
             details: { idempotent: true, relationType: params.relationType },
           };
         }
         await tctx.client.updateDoc(ISSUE_CLASS, target.space as never, target._id as never, {
           $push: { blockedBy: makeRelatedDoc(issue._id as string) },
         });
-      } else {
-        // Forward: A blocks/relates-to B → A.relations[] push B.
-        const issueRelations = (issue as { relations?: unknown[] }).relations;
-        if (hasRelation(issueRelations, target._id as string)) {
+      } else if (params.relationType === "is-blocked-by") {
+        // A is-blocked-by B → A.blockedBy.push(B). Push trên NGUỒN A.
+        const issueBlockedBy = (issue as { blockedBy?: unknown[] }).blockedBy;
+        if (hasRelation(issueBlockedBy, target._id as string)) {
           return {
-            content: `Relation ${params.identifier} -[${params.relationType}]-> ${params.targetIssue} already exists (no-op).`,
+            content: `Relation ${params.identifier} -[is-blocked-by]-> ${params.targetIssue} already exists (no-op).`,
             details: { idempotent: true, relationType: params.relationType },
           };
         }
         await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
-          $push: { relations: makeRelatedDoc(target._id as string) },
+          $push: { blockedBy: makeRelatedDoc(target._id as string) },
         });
+      } else {
+        // relates-to → BIDIRECTIONAL: A.relations.push(B) + B.relations.push(A).
+        // Khớp RelationsPopup.svelte dòng 34-39 (updateRelation type='relations'
+        // gọi updateIssueRelation 2 lần: value→refDocument + refDocument→value).
+        //
+        // NON-ATOMIC (khớp hành vi Huly gốc — RelationsPopup cũng 2 thao tác riêng,
+        // không transaction): nếu forward commit xong nhưng reverse throw (vd network
+        // drop, quyền space khác khi cross-project), A.relations có B nhưng B.relations
+        // chưa có A → lệch 1 chiều. Idempotent guard (forwardExists/reverseExists)
+        // cho phép retry an toàn — lần sau chỉ push chiều còn thiếu, không duplicate.
+        const issueRelations = (issue as { relations?: unknown[] }).relations;
+        const targetRelations = (target as { relations?: unknown[] }).relations;
+        const forwardExists = hasRelation(issueRelations, target._id as string);
+        const reverseExists = hasRelation(targetRelations, issue._id as string);
+        if (forwardExists && reverseExists) {
+          return {
+            content: `Relation ${params.identifier} -[relates-to]-> ${params.targetIssue} already exists (no-op).`,
+            details: { idempotent: true, relationType: params.relationType },
+          };
+        }
+        // Forward: A.relations.push(B)
+        if (!forwardExists) {
+          await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+            $push: { relations: makeRelatedDoc(target._id as string) },
+          });
+        }
+        // Reverse: B.relations.push(A)
+        if (!reverseExists) {
+          await tctx.client.updateDoc(ISSUE_CLASS, target.space as never, target._id as never, {
+            $push: { relations: makeRelatedDoc(issue._id as string) },
+          });
+        }
       }
       return {
         content: `Added relation ${params.identifier} -[${params.relationType}]-> ${params.targetIssue}.`,
@@ -125,7 +170,8 @@ export const tools: HulyToolDefinition[] = [
     label: "Remove issue relation",
     description:
       "Remove relation between issues. Pass targetIssue + relationType (KHÔNG dùng relation _id — " +
-      "Huly stores relations inline trong Issue.relations / blockedBy array).",
+      "Huly stores relations inline trong Issue.relations / blockedBy array). Storage (T-61, khớp " +
+      "Huly UI): blocks→target.blockedBy, is-blocked-by→source.blockedBy, relates-to→bidirectional.",
     destructive: true,
     needsProject: true,
     destructiveContext: (p) => ({
@@ -165,32 +211,60 @@ export const tools: HulyToolDefinition[] = [
         };
       }
 
-      // T-59: $pull theo { _id: targetId } — match array element.
-      // code-review M2: early-return khi !existed — tránh waste network call +
-      // message "no-op" misleading (server side KHÔNG nhận update).
+      // T-61 fix: $pull đối xứng add. 3 nhánh rõ ràng:
+      //   - blocks         → $pull target.blockedBy (xóa source khỏi blockedBy của đích)
+      //   - is-blocked-by  → $pull source.blockedBy (xóa target khỏi blockedBy của nguồn)
+      //   - relates-to     → BIDIRECTIONAL: $pull cả 2 chiều issue.relations + target.relations
       const pullRef = makeRelatedDoc(target._id as string);
       const pullSourceRef = makeRelatedDoc(issue._id as string);
-      if (params.relationType === "is-blocked-by") {
-        // Reverse: remove A khỏi B.blockedBy[]
+      if (params.relationType === "blocks") {
+        // A blocks B → xóa A khỏi B.blockedBy[]. Pull trên ĐÍCH B.
         if (!hasRelation((target as { blockedBy?: unknown[] }).blockedBy, issue._id as string)) {
           return {
-            content: `Relation ${params.identifier} -[is-blocked-by]-> ${params.targetIssue} did not exist (no-op, idempotent).`,
+            content: `Relation ${params.identifier} -[blocks]-> ${params.targetIssue} did not exist (no-op, idempotent).`,
             details: { idempotent: true, relationType: params.relationType },
           };
         }
         await tctx.client.updateDoc(ISSUE_CLASS, target.space as never, target._id as never, {
           $pull: { blockedBy: pullSourceRef },
         });
-      } else {
-        if (!hasRelation((issue as { relations?: unknown[] }).relations, target._id as string)) {
+      } else if (params.relationType === "is-blocked-by") {
+        // A is-blocked-by B → xóa B khỏi A.blockedBy[]. Pull trên NGUỒN A.
+        if (!hasRelation((issue as { blockedBy?: unknown[] }).blockedBy, target._id as string)) {
           return {
-            content: `Relation ${params.identifier} -[${params.relationType}]-> ${params.targetIssue} did not exist (no-op, idempotent).`,
+            content: `Relation ${params.identifier} -[is-blocked-by]-> ${params.targetIssue} did not exist (no-op, idempotent).`,
             details: { idempotent: true, relationType: params.relationType },
           };
         }
         await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
-          $pull: { relations: pullRef },
+          $pull: { blockedBy: pullRef },
         });
+      } else {
+        // relates-to → BIDIRECTIONAL: $pull cả 2 chiều.
+        const forwardExists = hasRelation(
+          (issue as { relations?: unknown[] }).relations,
+          target._id as string,
+        );
+        const reverseExists = hasRelation(
+          (target as { relations?: unknown[] }).relations,
+          issue._id as string,
+        );
+        if (!forwardExists && !reverseExists) {
+          return {
+            content: `Relation ${params.identifier} -[relates-to]-> ${params.targetIssue} did not exist (no-op, idempotent).`,
+            details: { idempotent: true, relationType: params.relationType },
+          };
+        }
+        if (forwardExists) {
+          await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+            $pull: { relations: pullRef },
+          });
+        }
+        if (reverseExists) {
+          await tctx.client.updateDoc(ISSUE_CLASS, target.space as never, target._id as never, {
+            $pull: { relations: pullSourceRef },
+          });
+        }
       }
       return {
         content: `Removed relation ${params.identifier} -[${params.relationType}]-> ${params.targetIssue}.`,
@@ -208,8 +282,10 @@ export const tools: HulyToolDefinition[] = [
     name: "list_issue_relations",
     label: "List issue relations",
     description:
-      "List relations (blocks/blocked-by/relates) của issue. Huly KHÔNG lưu relationType — " +
-      "blocks và relates-to KHÔNG phân biệt được (cùng mảng relations).",
+      "List relations (blocks/is-blocked-by/relates-to) của issue. " +
+      "blocks: reverse query findAll (issues có blockedBy._id === issue._id). " +
+      "is-blocked-by: đọc issue.blockedBy trực tiếp. " +
+      "relates-to: đọc issue.relations (bidirectional).",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
@@ -227,27 +303,40 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // T-59: read inline arrays trực tiếp (KHÔNG findAll TS_RELATION_CLASS).
-      const relations = ((issue as { relations?: unknown[] }).relations ?? []) as Array<{
-        _id?: string;
-        _class?: string;
-      }>;
+      // T-61 fix: 3 hướng rõ ràng, khớp Huly UI RelationsPopup:
+      //   - is-blocked-by: đọc issue.blockedBy (issues blocking this)
+      //   - relates-to:    đọc issue.relations (bidirectional related)
+      //   - blocks:        REVERSE QUERY — findAll issues có blockedBy._id === issue._id
+      //                    (issues mà issue này blocks — KHÔNG có field riêng)
       const blockedBy = ((issue as { blockedBy?: unknown[] }).blockedBy ?? []) as Array<{
         _id?: string;
         _class?: string;
       }>;
-      const relList = relations.map((r) => ({
+      const relations = ((issue as { relations?: unknown[] }).relations ?? []) as Array<{
+        _id?: string;
+        _class?: string;
+      }>;
+      // Reverse query cho "blocks": issues có blockedBy._id === issue._id.
+      const blockedResults = await tctx.client.findAll(ISSUE_CLASS, {
+        "blockedBy._id": issue._id,
+      });
+      const blocksList = (blockedResults as Array<{ _id?: string; _class?: string }>).map((r) => ({
         targetIssueId: r._id,
-        direction: "blocks-or-relates-to" as const,
-        note: "Huly KHÔNG phân biệt blocks vs relates-to (cùng mảng relations)",
+        direction: "blocks" as const,
       }));
       const blockedList = blockedBy.map((r) => ({
         targetIssueId: r._id,
         direction: "is-blocked-by" as const,
       }));
-      const all = [...relList, ...blockedList];
+      const relList = relations.map((r) => ({
+        targetIssueId: r._id,
+        direction: "relates-to" as const,
+      }));
+      const all = [...blocksList, ...blockedList, ...relList];
       return {
-        content: `Found ${all.length} relation(s) on ${params.identifier} (${relList.length} blocks/relates-to, ${blockedList.length} blocked-by).`,
+        content:
+          `Found ${all.length} relation(s) on ${params.identifier} ` +
+          `(${blocksList.length} blocks, ${blockedList.length} is-blocked-by, ${relList.length} relates-to).`,
         details: { count: all.length, relations: all },
       };
     },
