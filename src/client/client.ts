@@ -11,6 +11,7 @@
 import {
   connect,
   connectRest,
+  connectStorage,
   createRestTxOperations,
   getWorkspaceToken,
   type Account,
@@ -30,6 +31,7 @@ import {
   type Ref,
   type RestClient,
   type Space,
+  type StorageClient,
   type TxOperations,
   type TxResult,
   type WithLookup,
@@ -146,6 +148,15 @@ export interface HulyClient {
   // WS PlatformClient có thể KHÔNG expose — handler fallback $like nếu throw.
   searchFulltext?(query: unknown, options?: unknown): Promise<unknown>;
 
+  // T-75: Blob storage ops (Attachment file upload/download).
+  // uploadBlob → {blobId, size}. getBlob → Buffer. Lazy connectStorage.
+  uploadBlob?(
+    filename: string,
+    buffer: Buffer,
+    contentType: string,
+  ): Promise<{ blobId: string; size: number }>;
+  getBlob?(blobId: string): Promise<Buffer>;
+
   // Account
   getAccount(): Promise<Account>;
   getCurrentUser(): Promise<CurrentUser>;
@@ -212,21 +223,25 @@ export async function createHulyClient(
       // hàng loạt. Filter chỉ active trong scope connect (try/finally restore).
       const client =
         patterns !== null ? await runWithConsoleFilter(patterns, connectFn) : await connectFn();
-      return makeWsClient(client);
+      return makeWsClient(client, () => connectStorage(url, auth as AuthOptions));
     }
     // rest
     const rest = await connectRest(url, auth as AuthOptions);
     const { endpoint, workspaceId, token } = await getWorkspaceToken(url, auth as AuthOptions);
     const tx = await createRestTxOperations(endpoint, workspaceId, token);
-    return makeRestClient(rest, tx);
+    return makeRestClient(rest, tx, () => connectStorage(url, auth as AuthOptions));
   } catch (e) {
     throw mapError(e) as HulyError;
   }
 }
 
 /** Wrap PlatformClient (ws) thành HulyClient. */
-function makeWsClient(client: PlatformClient): HulyClient {
+function makeWsClient(
+  client: PlatformClient,
+  getStorage: () => Promise<StorageClient>,
+): HulyClient {
   let cachedUser: CurrentUser | undefined;
+  let cachedStorage: StorageClient | undefined;
   return {
     transport: "ws",
     findOne: (...args) => client.findOne(...args),
@@ -261,6 +276,22 @@ function makeWsClient(client: PlatformClient): HulyClient {
       }
       return fn(...args);
     },
+    // T-75: blob storage ops (lazy connectStorage).
+    uploadBlob: async (filename, buffer, contentType) => {
+      if (!cachedStorage) cachedStorage = await getStorage();
+      const objectName = `attachment/${Math.random().toString(36).slice(2, 14)}/${filename}`;
+      const blob = await cachedStorage.put(objectName, buffer, contentType, buffer.length);
+      return { blobId: blob._id, size: blob.size };
+    },
+    getBlob: async (blobId) => {
+      if (!cachedStorage) cachedStorage = await getStorage();
+      const stream = await cachedStorage.get(blobId);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
+      }
+      return Buffer.concat(chunks);
+    },
     getAccount: () => client.getAccount(),
     async getCurrentUser(): Promise<CurrentUser> {
       if (cachedUser) return cachedUser;
@@ -273,8 +304,13 @@ function makeWsClient(client: PlatformClient): HulyClient {
 }
 
 /** Wrap RestClient + TxOperations (rest) thành HulyClient. */
-function makeRestClient(rest: RestClient, tx: TxOperations): HulyClient {
+function makeRestClient(
+  rest: RestClient,
+  tx: TxOperations,
+  getStorage: () => Promise<StorageClient>,
+): HulyClient {
   let cachedUser: CurrentUser | undefined;
+  let cachedStorage: StorageClient | undefined;
   return {
     transport: "rest",
     // Read ops → RestClient
@@ -313,6 +349,22 @@ function makeRestClient(rest: RestClient, tx: TxOperations): HulyClient {
       (rest as unknown as { searchFulltext: (...a: unknown[]) => Promise<unknown> }).searchFulltext(
         ...args,
       ),
+    // T-75: blob storage ops (lazy connectStorage).
+    uploadBlob: async (filename, buffer, contentType) => {
+      if (!cachedStorage) cachedStorage = await getStorage();
+      const objectName = `attachment/${Math.random().toString(36).slice(2, 14)}/${filename}`;
+      const blob = await cachedStorage.put(objectName, buffer, contentType, buffer.length);
+      return { blobId: blob._id, size: blob.size };
+    },
+    getBlob: async (blobId) => {
+      if (!cachedStorage) cachedStorage = await getStorage();
+      const stream = await cachedStorage.get(blobId);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
+      }
+      return Buffer.concat(chunks);
+    },
     getAccount: () => rest.getAccount(),
     async getCurrentUser(): Promise<CurrentUser> {
       if (cachedUser) return cachedUser;

@@ -33,7 +33,7 @@ export const tools: HulyToolDefinition[] = [
       const list = atts.map((a) => ({
         _id: a._id,
         name: (a as { name?: string }).name ?? "",
-        contentType: (a as { contentType?: string }).contentType,
+        type: (a as { type?: string }).type, // T-75: field `type` (KHÔNG contentType)
         size: (a as { size?: number }).size,
       }));
       return {
@@ -66,37 +66,74 @@ export const tools: HulyToolDefinition[] = [
         details: {
           _id: a._id,
           name: (a as { name?: string }).name,
-          contentType: (a as { contentType?: string }).contentType,
+          type: (a as { type?: string }).type, // T-75: field `type`
           size: (a as { size?: number }).size,
         },
       };
     },
   }),
 
-  // 3. add_attachment (generic)
+  // 3. add_attachment (generic) — T-75: uploadFile → blobId → addCollection
   defineHulyTool({
     name: "add_attachment",
     label: "Add attachment",
-    description: "Add attachment to entity.",
+    description:
+      "Add attachment to entity. Uploads base64 data → blob, attaches via addCollection.",
     parameters: Type.Object({
       workspace: workspaceParam,
       attachedTo: Type.String(),
+      attachedToClass: Type.Optional(
+        Type.String({ description: "Target class (default tracker:class:Issue)." }),
+      ),
       filename: Type.String(),
       contentType: Type.String(),
-      data: Type.Optional(Type.String({ description: "Base64 data." })),
+      data: Type.Optional(Type.String({ description: "Base64 data (raw, no data: URL prefix)." })),
       description: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
-      const id = await tctx.client.createDoc(ATTACHMENT_CLASS, spaceRef(tctx.workspace), {
-        name: params.filename,
-        contentType: params.contentType,
-        attachedTo: params.attachedTo,
-        data: params.data,
-        description: params.description,
-      });
+      if (!params.data) {
+        return {
+          content: "add_attachment requires `data` (base64).",
+          isError: true,
+          details: { filename: params.filename },
+        };
+      }
+      if (typeof tctx.client.uploadBlob !== "function") {
+        return {
+          content: "uploadBlob not available on this transport (use WS).",
+          isError: true,
+          details: { reason: "storage_not_wired" },
+        };
+      }
+      // T-75: strip data: URL prefix nếu có.
+      const b64 = params.data.replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(b64, "base64");
+      const { blobId, size } = await tctx.client.uploadBlob(
+        params.filename,
+        buffer,
+        params.contentType,
+      );
+      // T-75: Attachment = AttachedDoc → addCollection (KHÔNG createDoc). Fields
+      // {name, file: Ref<Blob>, size, type, lastModified} (KHÔNG contentType/data).
+      const targetClass = params.attachedToClass ?? ISSUE_CLASS;
+      const id = await tctx.client.addCollection(
+        ATTACHMENT_CLASS,
+        spaceRef(tctx.workspace),
+        params.attachedTo as never,
+        targetClass as never,
+        "attachments",
+        {
+          name: params.filename,
+          file: blobId,
+          size,
+          type: params.contentType,
+          lastModified: Date.now(),
+          ...(params.description ? { description: params.description } : {}),
+        } as never,
+      );
       return {
         content: `Added attachment "${params.filename}".`,
-        details: { id, filename: params.filename },
+        details: { id, filename: params.filename, blobId, size },
       };
     },
   }),
@@ -117,6 +154,20 @@ export const tools: HulyToolDefinition[] = [
       description: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
+      if (!params.data) {
+        return {
+          content: "add_issue_attachment requires `data` (base64).",
+          isError: true,
+          details: { filename: params.filename },
+        };
+      }
+      if (typeof tctx.client.uploadBlob !== "function") {
+        return {
+          content: "uploadBlob not available on this transport (use WS).",
+          isError: true,
+          details: { reason: "storage_not_wired" },
+        };
+      }
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
         identifier: resolveIdentifier(tctx.project!, params.identifier),
       });
@@ -127,6 +178,13 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
+      const b64 = params.data.replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(b64, "base64");
+      const { blobId, size } = await tctx.client.uploadBlob(
+        params.filename,
+        buffer,
+        params.contentType,
+      );
       const id = await tctx.client.addCollection(
         ATTACHMENT_CLASS,
         issue.space as never,
@@ -135,23 +193,25 @@ export const tools: HulyToolDefinition[] = [
         "attachments",
         {
           name: params.filename,
-          contentType: params.contentType,
-          data: params.data,
-          description: params.description,
-        },
+          file: blobId,
+          size,
+          type: params.contentType,
+          lastModified: Date.now(),
+          ...(params.description ? { description: params.description } : {}),
+        } as never,
       );
       return {
         content: `Added attachment "${params.filename}" to ${params.identifier}.`,
-        details: { id, filename: params.filename, identifier: params.identifier },
+        details: { id, filename: params.filename, identifier: params.identifier, blobId, size },
       };
     },
   }),
 
-  // 5. download_attachment
+  // 5. download_attachment — T-75: getBlob → base64 (KHÔNG đọc field `data`)
   defineHulyTool({
     name: "download_attachment",
     label: "Download attachment",
-    description: "Get attachment content (base64).",
+    description: "Get attachment content (base64). Downloads blob via storageClient.",
     parameters: Type.Object({
       workspace: workspaceParam,
       attachment: Type.String(),
@@ -165,13 +225,30 @@ export const tools: HulyToolDefinition[] = [
           details: { attachment: params.attachment },
         };
       }
+      const fileId = (a as { file?: string }).file;
+      if (!fileId) {
+        return {
+          content: `Attachment "${params.attachment}" has no file blob ref.`,
+          isError: true,
+          details: { attachment: params.attachment },
+        };
+      }
+      if (typeof tctx.client.getBlob !== "function") {
+        return {
+          content: "getBlob not available on this transport (use WS).",
+          isError: true,
+          details: { reason: "storage_not_wired" },
+        };
+      }
+      const buffer = await tctx.client.getBlob(fileId);
       return {
-        content: `Attachment ${(a as { name?: string }).name ?? ""} ready.`,
+        content: `Attachment ${(a as { name?: string }).name ?? ""} downloaded.`,
         details: {
           _id: a._id,
           name: (a as { name?: string }).name,
-          contentType: (a as { contentType?: string }).contentType,
-          data: (a as { data?: string }).data,
+          type: (a as { type?: string }).type,
+          size: (a as { size?: number }).size,
+          data: buffer.toString("base64"),
         },
       };
     },
