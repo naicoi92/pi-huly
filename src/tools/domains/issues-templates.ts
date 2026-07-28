@@ -4,7 +4,7 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { ISSUE_TEMPLATE_CLASS, ISSUE_CLASS, PROJECT_CLASS } from "./_class-refs.js";
-import { workspaceParam, projectParam } from "./_common.js";
+import { workspaceParam, projectParam, safeUpdateDoc, safeRemoveDoc } from "./_common.js";
 import { mdToMarkup } from "../../markup/markup.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -171,7 +171,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(ISSUE_TEMPLATE_CLASS, t.space as never, t._id as never, ops);
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_TEMPLATE_CLASS, t, ops);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated template ${params.template}.`,
         details: { updated: true, fields: Object.keys(ops) },
@@ -204,7 +205,8 @@ export const tools: HulyToolDefinition[] = [
           details: { template: params.template },
         };
       }
-      await tctx.client.removeDoc(ISSUE_TEMPLATE_CLASS, t.space as never, t._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, ISSUE_TEMPLATE_CLASS, t);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted template ${params.template}.`,
         details: { deleted: true, template: params.template },
@@ -233,9 +235,10 @@ export const tools: HulyToolDefinition[] = [
           details: { template: params.template },
         };
       }
-      await tctx.client.updateDoc(ISSUE_TEMPLATE_CLASS, t.space as never, t._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_TEMPLATE_CLASS, t, {
         $push: { children: params.childTemplate },
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Added child ${params.childTemplate} to template ${params.template}.`,
         details: { template: params.template, child: params.childTemplate },
@@ -264,9 +267,10 @@ export const tools: HulyToolDefinition[] = [
           details: { template: params.template },
         };
       }
-      await tctx.client.updateDoc(ISSUE_TEMPLATE_CLASS, t.space as never, t._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_TEMPLATE_CLASS, t, {
         $pull: { children: params.childTemplate },
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Removed child ${params.childTemplate} from template ${params.template}.`,
         details: { template: params.template, child: params.childTemplate },

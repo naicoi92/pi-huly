@@ -12,7 +12,7 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { PROJECT_CLASS, ISSUE_STATUS_CLASS, spaceRef } from "./_class-refs.js";
-import { workspaceParam, projectParam } from "./_common.js";
+import { workspaceParam, projectParam, safeUpdateDoc, safeRemoveDoc } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_projects
@@ -130,12 +130,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(operations).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(
-        PROJECT_CLASS,
-        existing.space as never,
-        existing._id as never,
-        operations,
-      );
+      const updResult = await safeUpdateDoc(tctx.client, PROJECT_CLASS, existing, operations);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated project ${tctx.project}: ${Object.keys(operations).join(", ")}`,
         details: { updated: true, fields: Object.keys(operations) },
@@ -167,7 +163,8 @@ export const tools: HulyToolDefinition[] = [
           details: { project: tctx.project },
         };
       }
-      await tctx.client.removeDoc(PROJECT_CLASS, existing.space as never, existing._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, PROJECT_CLASS, existing);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted project ${tctx.project}.`,
         details: { deleted: true, identifier: tctx.project },

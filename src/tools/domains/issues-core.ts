@@ -19,6 +19,8 @@ import {
   statusCategorySchema,
   resolveIdentifier,
   escapeLikePattern,
+  safeUpdateDoc,
+  safeRemoveDoc,
 } from "./_common.js";
 import { mdToMarkup } from "../../markup/markup.js";
 
@@ -354,7 +356,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, ops);
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, ops);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated issue ${params.identifier}: ${Object.keys(ops).join(", ")}`,
         details: { updated: true, identifier: params.identifier, fields: Object.keys(ops) },
@@ -389,7 +392,8 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      await tctx.client.removeDoc(ISSUE_CLASS, issue.space as never, issue._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, ISSUE_CLASS, issue);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted issue ${params.identifier}.`,
         details: { deleted: true, identifier: params.identifier },
@@ -429,9 +433,10 @@ export const tools: HulyToolDefinition[] = [
       }
       // T-52 #42: KHÔNG truyền parentIssue → top-level (null). Có truyền → validate.
       if (params.parentIssue === undefined) {
-        await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+        const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
           parentIssue: null,
         });
+        if (!updResult.ok) return updResult.error;
         return {
           content: `Moved ${params.identifier} → top-level.`,
           details: { identifier: params.identifier, parentIssue: null },
@@ -447,9 +452,10 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier, parentIssue: params.parentIssue },
         };
       }
-      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
         parentIssue: parent._id as never,
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Moved ${params.identifier} → parent ${params.parentIssue}.`,
         details: { identifier: params.identifier, parentIssue: params.parentIssue },
@@ -512,7 +518,7 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // Push TagReference object shape (audit §4 — NOT raw string).
-      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
         $push: {
           labels: {
             tag: labelDoc._id,
@@ -521,6 +527,7 @@ export const tools: HulyToolDefinition[] = [
           },
         },
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Added label ${params.label} to ${params.identifier}.`,
         details: {
@@ -582,9 +589,10 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // $pull bằng tag ref object (match shape khi push).
-      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
         $pull: { labels: { tag: labelDoc._id } },
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Removed label ${params.label} from ${params.identifier}.`,
         details: {

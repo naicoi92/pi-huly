@@ -2,6 +2,9 @@
 // 06-api.md §2 Common Parameters Convention.
 
 import { Type, type TObject, type TOptional, type TString, type TInteger } from "typebox";
+import type { Class, Doc, DocumentUpdate, Ref, Space, TxResult } from "@hcengineering/api-client";
+import type { HulyClient } from "../../client/client.js";
+import type { HulyToolResult } from "../builder.js";
 
 /** Workspace override param (mọi tool). */
 export const workspaceParam: TOptional<TString> = Type.Optional(
@@ -108,4 +111,119 @@ export function parseMarkupSafe(content: unknown): unknown {
   } catch {
     return null;
   }
+}
+
+// === T-63 #68: safeUpdateDoc / safeRemoveDoc — schema drift guard ===
+//
+// Khi tool gọi `client.updateDoc(_class, space, objectId, ops)` / `removeDoc(...)`
+// với `space` HOẶC `objectId` là `undefined` (data corruption, partial import,
+// schema drift), Huly server KHÔNG throw mà **skip silently** transaction
+// (ModelDb tìm doc theo `_id + space` không match) → update KHÔNG persist
+// (silent data loss, giống bug #36/#40 đã fix T-47/T-50).
+//
+// Helper centralize pattern T-50 (workspace.ts:155-173 — schema drift guard):
+// nhận doc ĐÃ LOOKUP (KHÔNG nhận space/objectId riêng — ép caller lấy từ doc),
+// tự extract `.space` / `._id` + guard undefined → return isError rõ ràng
+// (KHÔNG gửi updateDoc). Migration 42 call site sang helper (audit hardening).
+//
+// Discriminated union return: caller pattern:
+//   const result = await safeUpdateDoc(client, CLASS, doc, ops);
+//   if (!result.ok) return result.error; // isError sẵn sàng return cho LLM
+//   // result.result = TxResult
+
+/** Result khi guard pass — gọi updateDoc/removeDoc thành công. */
+type SafeWriteOk = { ok: true; result: TxResult };
+/** Result khi guard fail — schema drift, KHÔNG gửi write. */
+type SafeWriteErr = { ok: false; error: HulyToolResult };
+
+/**
+ * Build error result cho schema drift guard. Message include _class + docId
+ * (nếu có) cho debug. Details structured cho render.
+ */
+function schemaDriftError(
+  _class: string,
+  doc: unknown,
+  missingField: "space" | "_id",
+): HulyToolResult {
+  const docId =
+    typeof doc === "object" && doc !== null ? (doc as { _id?: unknown })._id : undefined;
+  return {
+    content:
+      `Cannot update ${_class}: doc record missing "${missingField}" field (schema drift). ` +
+      `Update skipped to prevent silent no-op.`,
+    isError: true,
+    details: {
+      _class,
+      docId,
+      missingField,
+      ...(typeof doc === "object" && doc !== null ? { docRecord: doc } : {}),
+    },
+  };
+}
+
+/**
+ * Validate doc có `.space` + `._id` field (string/ref). Return extracted hoặc
+ * undefined nếu schema drift.
+ */
+function extractDocRefs(
+  doc: unknown,
+): { space: Ref<Space>; objectId: string } | { missing: "space" | "_id" } {
+  if (typeof doc !== "object" || doc === null || Array.isArray(doc)) {
+    return { missing: "space" }; // doc không hợp lệ → guard space first
+  }
+  const d = doc as { space?: unknown; _id?: unknown };
+  if (d.space === undefined || d.space === null) return { missing: "space" };
+  if (d._id === undefined || d._id === null) return { missing: "_id" };
+  return { space: d.space as Ref<Space>, objectId: d._id as string };
+}
+
+/**
+ * safeUpdateDoc — updateDoc với schema drift guard.
+ *
+ * @param client HulyClient đã kết nối
+ * @param _class Class ref (vd tracker:class:Issue)
+ * @param doc Doc ĐÃ LOOKUP (caller findOne trước). Helper extract .space/._id.
+ * @param operations DocumentUpdate ops
+ * @returns Discriminated union: ok → TxResult | !ok → isError result (return thẳng)
+ *
+ * Pattern T-50 (workspace.ts:155-173) centralized.
+ */
+export async function safeUpdateDoc<T extends Doc>(
+  client: HulyClient,
+  _class: Ref<Class<T>>,
+  doc: unknown,
+  operations: DocumentUpdate<T>,
+): Promise<SafeWriteOk | SafeWriteErr> {
+  const refs = extractDocRefs(doc);
+  if ("missing" in refs) {
+    return { ok: false, error: schemaDriftError(_class as string, doc, refs.missing) };
+  }
+  const result = await client.updateDoc(
+    _class,
+    refs.space,
+    refs.objectId as Ref<T>,
+    operations as never,
+  );
+  return { ok: true, result };
+}
+
+/**
+ * safeRemoveDoc — removeDoc với schema drift guard.
+ *
+ * @param client HulyClient đã kết nối
+ * @param _class Class ref
+ * @param doc Doc ĐÃ LOOKUP. Helper extract .space/._id.
+ * @returns Discriminated union: ok → TxResult | !ok → isError result
+ */
+export async function safeRemoveDoc<T extends Doc>(
+  client: HulyClient,
+  _class: Ref<Class<T>>,
+  doc: unknown,
+): Promise<SafeWriteOk | SafeWriteErr> {
+  const refs = extractDocRefs(doc);
+  if ("missing" in refs) {
+    return { ok: false, error: schemaDriftError(_class as string, doc, refs.missing) };
+  }
+  const result = await client.removeDoc(_class, refs.space, refs.objectId as Ref<T>);
+  return { ok: true, result };
 }

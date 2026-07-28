@@ -28,7 +28,13 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { ISSUE_CLASS } from "./_class-refs.js";
-import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
+import {
+  workspaceParam,
+  projectParam,
+  identifierParam,
+  resolveIdentifier,
+  safeUpdateDoc,
+} from "./_common.js";
 
 /** RelatedDocument shape = { _id: Ref<Doc>, _class: Ref<Class<Doc>> }. */
 function makeRelatedDoc(targetId: string): { _id: string; _class: string } {
@@ -103,9 +109,10 @@ export const tools: HulyToolDefinition[] = [
             details: { idempotent: true, relationType: params.relationType },
           };
         }
-        await tctx.client.updateDoc(ISSUE_CLASS, target.space as never, target._id as never, {
+        const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, target, {
           $push: { blockedBy: makeRelatedDoc(issue._id as string) },
         });
+        if (!updResult.ok) return updResult.error;
       } else if (params.relationType === "is-blocked-by") {
         // A is-blocked-by B → A.blockedBy.push(B). Push trên NGUỒN A.
         const issueBlockedBy = (issue as { blockedBy?: unknown[] }).blockedBy;
@@ -115,9 +122,10 @@ export const tools: HulyToolDefinition[] = [
             details: { idempotent: true, relationType: params.relationType },
           };
         }
-        await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+        const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
           $push: { blockedBy: makeRelatedDoc(target._id as string) },
         });
+        if (!updResult.ok) return updResult.error;
       } else {
         // relates-to → BIDIRECTIONAL: A.relations.push(B) + B.relations.push(A).
         // Khớp RelationsPopup.svelte dòng 34-39 (updateRelation type='relations'
@@ -140,15 +148,17 @@ export const tools: HulyToolDefinition[] = [
         }
         // Forward: A.relations.push(B)
         if (!forwardExists) {
-          await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+          const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
             $push: { relations: makeRelatedDoc(target._id as string) },
           });
+          if (!updResult.ok) return updResult.error;
         }
         // Reverse: B.relations.push(A)
         if (!reverseExists) {
-          await tctx.client.updateDoc(ISSUE_CLASS, target.space as never, target._id as never, {
+          const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, target, {
             $push: { relations: makeRelatedDoc(issue._id as string) },
           });
+          if (!updResult.ok) return updResult.error;
         }
       }
       return {
@@ -225,9 +235,10 @@ export const tools: HulyToolDefinition[] = [
             details: { idempotent: true, relationType: params.relationType },
           };
         }
-        await tctx.client.updateDoc(ISSUE_CLASS, target.space as never, target._id as never, {
+        const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, target, {
           $pull: { blockedBy: pullSourceRef },
         });
+        if (!updResult.ok) return updResult.error;
       } else if (params.relationType === "is-blocked-by") {
         // A is-blocked-by B → xóa B khỏi A.blockedBy[]. Pull trên NGUỒN A.
         if (!hasRelation((issue as { blockedBy?: unknown[] }).blockedBy, target._id as string)) {
@@ -236,9 +247,10 @@ export const tools: HulyToolDefinition[] = [
             details: { idempotent: true, relationType: params.relationType },
           };
         }
-        await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+        const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
           $pull: { blockedBy: pullRef },
         });
+        if (!updResult.ok) return updResult.error;
       } else {
         // relates-to → BIDIRECTIONAL: $pull cả 2 chiều.
         const forwardExists = hasRelation(
@@ -256,14 +268,16 @@ export const tools: HulyToolDefinition[] = [
           };
         }
         if (forwardExists) {
-          await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+          const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
             $pull: { relations: pullRef },
           });
+          if (!updResult.ok) return updResult.error;
         }
         if (reverseExists) {
-          await tctx.client.updateDoc(ISSUE_CLASS, target.space as never, target._id as never, {
+          const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, target, {
             $pull: { relations: pullSourceRef },
           });
+          if (!updResult.ok) return updResult.error;
         }
       }
       return {

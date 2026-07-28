@@ -4,7 +4,14 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { ISSUE_CLASS, TODO_CLASS } from "./_class-refs.js";
-import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
+import {
+  workspaceParam,
+  projectParam,
+  identifierParam,
+  resolveIdentifier,
+  safeUpdateDoc,
+  safeRemoveDoc,
+} from "./_common.js";
 import { mdToMarkup } from "../../markup/markup.js";
 
 /**
@@ -205,7 +212,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(TODO_CLASS, t.space as never, t._id as never, ops);
+      const updResult = await safeUpdateDoc(tctx.client, TODO_CLASS, t, ops);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated todo ${params.todo}.`,
         details: { updated: true, fields: Object.keys(ops) },
@@ -231,9 +239,10 @@ export const tools: HulyToolDefinition[] = [
           details: { todo: params.todo },
         };
       }
-      await tctx.client.updateDoc(TODO_CLASS, t.space as never, t._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, TODO_CLASS, t, {
         done: true,
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Completed todo ${params.todo}.`,
         details: { completed: true, todo: params.todo },
@@ -259,9 +268,10 @@ export const tools: HulyToolDefinition[] = [
           details: { todo: params.todo },
         };
       }
-      await tctx.client.updateDoc(TODO_CLASS, t.space as never, t._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, TODO_CLASS, t, {
         done: false,
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Reopened todo ${params.todo}.`,
         details: { reopened: true, todo: params.todo },
@@ -292,7 +302,8 @@ export const tools: HulyToolDefinition[] = [
           details: { todo: params.todo },
         };
       }
-      await tctx.client.removeDoc(TODO_CLASS, t.space as never, t._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, TODO_CLASS, t);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted todo ${params.todo}.`,
         details: { deleted: true, todo: params.todo },

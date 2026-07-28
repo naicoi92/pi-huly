@@ -198,3 +198,41 @@ describe("T-52 review fix: detach_tag symmetric shape ($pull object)", () => {
     expect(client.updateDoc).not.toHaveBeenCalled();
   });
 });
+
+// T-63 #68: schema drift guard — safeUpdateDoc/safeRemoveDoc migration regression.
+// Helper test (_common.test.ts) cover guard logic; test này verify migration thật
+// qua tool entry: findOne trả doc missing space/_id → isError + write KHÔNG gọi.
+describe("T-63 #68: schema drift guard via safeUpdateDoc/safeRemoveDoc", () => {
+  it("update_tag: tag doc missing space → isError, updateDoc KHÔNG gọi", async () => {
+    const client = makeClient();
+    // tag tồn tại NHƯNG space field missing (schema drift — data corruption).
+    client.findOne = vi.fn().mockResolvedValueOnce({ _id: "tag-1", title: "bug", color: "#f00" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_update_tag");
+    const result = await tool.execute(
+      "tc1",
+      { tag: "tag-1", title: "updated" } as never,
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/space/i);
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it("delete_tag: tag doc missing _id → isError, removeDoc KHÔNG gọi", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValueOnce({ space: "sp1", title: "bug" }); // _id missing
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_delete_tag");
+    const result = await tool.execute("tc1", { tag: "tag-1" } as never, undefined, undefined, ctx);
+
+    expect(result.isError).toBe(true);
+    expect(client.removeDoc).not.toHaveBeenCalled();
+  });
+});

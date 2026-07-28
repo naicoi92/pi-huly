@@ -12,7 +12,14 @@
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { MILESTONE_CLASS, ISSUE_CLASS, PROJECT_CLASS } from "./_class-refs.js";
-import { workspaceParam, projectParam, identifierParam, resolveIdentifier } from "./_common.js";
+import {
+  workspaceParam,
+  projectParam,
+  identifierParam,
+  resolveIdentifier,
+  safeUpdateDoc,
+  safeRemoveDoc,
+} from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_milestones
@@ -148,7 +155,8 @@ export const tools: HulyToolDefinition[] = [
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      await tctx.client.updateDoc(MILESTONE_CLASS, m.space as never, m._id as never, ops);
+      const updResult = await safeUpdateDoc(tctx.client, MILESTONE_CLASS, m, ops);
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Updated milestone ${params.milestone}: ${Object.keys(ops).join(", ")}`,
         details: { updated: true, fields: Object.keys(ops) },
@@ -188,9 +196,10 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier, milestone: params.milestone },
         };
       }
-      await tctx.client.updateDoc(ISSUE_CLASS, issue.space as never, issue._id as never, {
+      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
         milestone: milestone._id as never,
       });
+      if (!updResult.ok) return updResult.error;
       return {
         content: `Set ${params.identifier} → milestone ${params.milestone}.`,
         details: { identifier: params.identifier, milestone: params.milestone },
@@ -223,7 +232,8 @@ export const tools: HulyToolDefinition[] = [
           details: { milestone: params.milestone },
         };
       }
-      await tctx.client.removeDoc(MILESTONE_CLASS, m.space as never, m._id as never);
+      const delResult = await safeRemoveDoc(tctx.client, MILESTONE_CLASS, m);
+      if (!delResult.ok) return delResult.error;
       return {
         content: `Deleted milestone ${params.milestone}.`,
         details: { deleted: true, milestone: params.milestone },
