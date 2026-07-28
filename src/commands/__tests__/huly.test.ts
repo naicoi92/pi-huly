@@ -159,6 +159,38 @@ describe("/huly status", () => {
     await runHulyCommand("status", ctx);
     expect(health).toHaveBeenCalledWith("ws1");
   });
+
+  // T-62 #67: hiển thị dòng pool noise khi có upstream log đã filter.
+  it("T-62: shows pool noise line when upstreamNoiseFiltered > 0", async () => {
+    const { health } = await import("../../client/pool.js");
+    vi.mocked(health).mockResolvedValueOnce([
+      {
+        workspace: "ws1",
+        connected: true,
+        transport: "ws",
+        user: { id: "u1", name: "User", email: "u@x.com" },
+        upstreamNoiseFiltered: { total: 42, byPattern: { "/^no document found/i": 42 } },
+      },
+    ]);
+    const ctx = makeCtx();
+    const result = await runHulyCommand("status", ctx);
+    expect(result.message).toContain("pool noise: 42 upstream log filtered");
+  });
+
+  it("T-62: KHÔNG show pool noise line khi total = 0", async () => {
+    const { health } = await import("../../client/pool.js");
+    vi.mocked(health).mockResolvedValueOnce([
+      {
+        workspace: "ws1",
+        connected: true,
+        transport: "ws",
+        user: { id: "u1", name: "User", email: "u@x.com" },
+      },
+    ]);
+    const ctx = makeCtx();
+    const result = await runHulyCommand("status", ctx);
+    expect(result.message).not.toContain("pool noise");
+  });
 });
 
 // === /huly workspace list|add|remove ===

@@ -3,6 +3,36 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.5] - 2026-07-28 (Unreleased)
+
+Hotfix canary #4. **beta.4 follow-up hotfixes** — 3 task hardening noise + data
+loss class. Verified upstream `@hcengineering/api-client@0.7.423` `connect()`
+KHÔNG expose seam logger (`api-client/lib/client.js:42-79` chỉ nhận socketFactory
++ connectionTimeout) → filter ở ranh giới pi-huly.
+
+### Added (T-62 #67 — noise filter framework)
+
+- `src/client/console-filter.ts` — `UpstreamConsoleFilter` class install/restore
+  `console.warn/error/log` override + `runWithConsoleFilter(patterns, fn)` wrap
+  async block (try/finally LUÔN restore) + `DEFAULT_UPSTREAM_NOISE_PATTERNS`
+  registry. Match first-arg string HOẶC structured log có field `message` qua
+  `RegExp[]` (case-insensitive). Đếm per-pattern + total (module-level).
+- Wrap `connect()` trong `createHulyClient` qua `runWithConsoleFilter()` — scope
+  hẹp (try/finally restore), KHÔNG global-silent vĩnh viễn.
+- Config escape hatch: `quietUpstreamNoise?: boolean` (default `true`) + 
+  `upstreamNoisePatterns?: string[]` (override registry).
+- Pool `health()` expose `upstreamNoiseFiltered?: { total; byPattern }` →
+  `/huly status` hiển thị `pool noise: N upstream log filtered`.
+
+### Known limitations
+
+- **#67 upstream noise** — `no document found, failed to apply model transaction`
+  cache-miss warn (core/memdb + core/client buildModel) vô hại khi replay tx cũ
+  cho doc đã expire/removed. Filter gate (default ON). Set `quietUpstreamNoise: false`
+  để debug thật.
+- **T-64 pending** (blocked-by T-62) — WS error spam + token leak (URL
+  `_transactor/<token>`) sẽ đăng ký thêm pattern vào framework này ở task kế.
+
 ## [1.0.0-beta.4] - 2026-07-28
 
 Hotfix canary #3. **Root cause fix** beta.3 follow-up hotfixes — DEEP-AUDIT 12

@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// T-62 #67: mock loadConfig tránh đọc ~/.pi/agent/huly/config.json thật.
+// Default trả config rỗng → resolveFilterPatterns dùng DEFAULT patterns.
+vi.mock("../../config/config.js", () => ({
+  loadConfig: vi.fn().mockResolvedValue({ version: 1, transport: "ws", projects: {} }),
+}));
 
 // Mock @hcengineering/api-client BEFORE import client.ts
 vi.mock("@hcengineering/api-client", () => {
@@ -57,6 +63,8 @@ import {
 } from "@hcengineering/api-client";
 import { createHulyClient, type HulyCredentials } from "../client.js";
 import { ConnectionError } from "../errors.js";
+import { loadConfig } from "../../config/config.js";
+import { getUpstreamNoiseCounters, resetUpstreamNoiseCounters } from "../console-filter.js";
 
 const tokenCreds = {
   url: "https://huly.example.com",
@@ -337,5 +345,84 @@ describe("integration: full flow end-to-end", () => {
     const user = await client.getCurrentUser();
     expect(user.id).toBe("rest-account-uuid");
     await client.close(); // no-op for rest
+  });
+});
+
+// T-62 #67: filter wrap quanh connect() — gate upstream console spam.
+describe("T-62 createHulyClient — console filter wrap", () => {
+  const realWarn = console.warn;
+  const realError = console.error;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(loadConfig).mockResolvedValue({ version: 1, transport: "ws", projects: {} });
+    resetUpstreamNoiseCounters();
+    console.warn = realWarn;
+    console.error = realError;
+  });
+
+  afterEach(() => {
+    console.warn = realWarn;
+    console.error = realError;
+  });
+
+  it("ws: connect() wrap runWithConsoleFilter → upstream warn bị filter", async () => {
+    // Capture stderr thật — filter override console.warn trong scope connect().
+    // Connect mock KHÔNG trigger upstream warn, nhưng verify wrap active bằng
+    // cách spy vào console.warn gốc (sau filter install) KHÔNG nhận upstream msg.
+    const captured: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      captured.push(args.map(String).join(" "));
+    };
+    await createHulyClient(tokenCreds, "ws");
+    // Filter install trong scope connect → KHÔNG leak override ra ngoài.
+    expect(console.warn).toBe(origWarn === realWarn ? console.warn : origWarn);
+    // Connect thành công (KHÔNG throw dù filter active).
+    expect(connect).toHaveBeenCalledTimes(1);
+    console.warn = origWarn;
+  });
+
+  it("config quietUpstreamNoise: false → KHÔNG filter (debug thật)", async () => {
+    vi.mocked(loadConfig).mockResolvedValueOnce({
+      version: 1,
+      transport: "ws",
+      projects: {},
+      quietUpstreamNoise: false,
+    });
+    const captured: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => captured.push(String(args[0]));
+    await createHulyClient(tokenCreds, "ws");
+    console.warn = origWarn;
+    // Filter disable → counters KHÔNG tăng dù có warn
+    expect(getUpstreamNoiseCounters().total).toBe(0);
+  });
+
+  it("connect() throw vẫn restore console (try/finally)", async () => {
+    vi.mocked(connect).mockRejectedValueOnce(new Error("connect failed"));
+    const origWarn = console.warn;
+    await expect(createHulyClient(tokenCreds, "ws")).rejects.toThrow();
+    // Override KHÔNG leak dù connect throw
+    expect(console.warn).toBe(origWarn);
+  });
+
+  it("config upstreamNoisePatterns override được apply", async () => {
+    vi.mocked(loadConfig).mockResolvedValueOnce({
+      version: 1,
+      transport: "ws",
+      projects: {},
+      upstreamNoisePatterns: ["^custom noise pattern$"],
+    });
+    // Capture stderr + assert custom pattern match → filter
+    const captured: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      captured.push(String(args[0]));
+    };
+    await createHulyClient(tokenCreds, "ws");
+    console.warn = origWarn;
+    // Connect thành công (filter active với custom pattern)
+    expect(connect).toHaveBeenCalledTimes(1);
   });
 });

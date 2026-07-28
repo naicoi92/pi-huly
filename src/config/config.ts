@@ -31,6 +31,18 @@ export type Config = {
   projects: Record<string, ProjectBinding>;
   /** Connection pool config (ws only). */
   pool?: { maxSize?: number };
+  /**
+   * T-62 #67: Filter upstream console spam (no document found + WS error spam).
+   * Default `true` — gate `console.warn/error/log` của @hcengineering trong scope
+   * connect/warmPool. Set `false` để debug thật (xem upstream output nguyên bản).
+   */
+  quietUpstreamNoise?: boolean;
+  /**
+   * T-62 #67: Override default pattern registry. Mỗi entry là RegExp source
+   * string (case-insensitive). Match first-arg string HOẶC structured log có
+   * field `message`. Mặc định: [`/^no document found, failed to apply model transaction/i`].
+   */
+  upstreamNoisePatterns?: string[];
 };
 
 /** Path tới config.json (global-only, ~/.pi/agent/huly/). */
@@ -136,11 +148,46 @@ function validateConfig(parsed: unknown): Config {
       pool = { maxSize: p.maxSize };
     }
   }
+  // T-62 #67: quietUpstreamNoise (boolean, default true) + upstreamNoisePatterns
+  // (string[] — RegExp source, case-insensitive).
+  let quietUpstreamNoise: boolean | undefined;
+  if (root.quietUpstreamNoise !== undefined) {
+    if (typeof root.quietUpstreamNoise !== "boolean") {
+      throw new Error(
+        "config.json schema invalid: quietUpstreamNoise must be boolean (got " +
+          `${typeof root.quietUpstreamNoise})`,
+      );
+    }
+    quietUpstreamNoise = root.quietUpstreamNoise;
+  }
+  let upstreamNoisePatterns: string[] | undefined;
+  if (root.upstreamNoisePatterns !== undefined) {
+    if (!Array.isArray(root.upstreamNoisePatterns)) {
+      throw new Error("config.json schema invalid: upstreamNoisePatterns must be array");
+    }
+    for (const [i, p] of root.upstreamNoisePatterns.entries()) {
+      if (typeof p !== "string") {
+        throw new Error(`config.json schema invalid: upstreamNoisePatterns[${i}] must be string`);
+      }
+      // Validate RegExp compilable — KHÔNG crash sau load.
+      try {
+        new RegExp(p, "i");
+      } catch (e) {
+        throw new Error(
+          `config.json schema invalid: upstreamNoisePatterns[${i}] not valid RegExp: ` +
+            `${(e as Error).message}`,
+        );
+      }
+    }
+    upstreamNoisePatterns = root.upstreamNoisePatterns;
+  }
   return {
     version: 1,
     transport: transport ?? "ws",
     projects: normalizedProjects,
     ...(pool !== undefined ? { pool } : {}),
+    ...(quietUpstreamNoise !== undefined ? { quietUpstreamNoise } : {}),
+    ...(upstreamNoisePatterns !== undefined ? { upstreamNoisePatterns } : {}),
   };
 }
 

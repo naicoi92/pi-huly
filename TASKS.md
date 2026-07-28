@@ -1,10 +1,10 @@
 # pi-huly — TASKS
 
-> TaskStore = `local-tasks`. 42 issues (T-XX design ID). Size prefix [S/M/L]
-> (gate: S không chia, M agent đề xuất, L bắt buộc chia — issues 21 đã split
-> T-19a/b/c). DAG `blocked-by`/`blocks` text. Priority high/medium/low quyết
-> định thứ tự implement (`milestone-implement` sort: priority > order > size).
-> Roadmap đầy đủ: [docs/design/09-roadmap.md](./docs/design/09-roadmap.md).
+> TaskStore = `local-tasks`. 64 task (T-XX design ID, T-01..T-64). Size prefix
+> [S/M/L] (gate: S không chia, M agent đề xuất, L bắt buộc chia — issues 21 đã
+> split T-19a/b/c). DAG `blocked-by`/`blocks` text. Priority high/medium/low
+> quyết định thứ tự implement (`milestone-implement` sort: priority > order >
+> size). Roadmap đầy đủ: [docs/design/09-roadmap.md](./docs/design/09-roadmap.md).
 
 ## M0 Foundation
 
@@ -209,16 +209,63 @@ giữ current — cần runtime server verify khi có self-host)_
 
 ---
 
+## beta.4 follow-up hotfixes (post-beta.4 — không thuộc milestone)
+
+> **Context**: Sau khi beta.4 shipped (root cause fix 5 class ref qua T-54..T-60 +
+> T-61 issue_relations direction), smoke test tiếp tục phát hiện **3 vấn đề mới**:
+>
+> - **2 upstream noise spam** (#67, #69): upstream `@hcengineering` in ra stderr
+>   hàng loạt `console.warn`/`console.error`/`console.log` không seam, break UI
+>   pi. Cùng root cause class → cần **filter framework tập trung** (T-62 nền
+>   tảng, T-64 đăng ký thêm pattern).
+>   - **#67** (`@hcengineering/core` memdb/client): `no document found, failed
+>     to apply model transaction` cache-miss warn khi warm pool T-55.
+>   - **#69** (`@hcengineering/client-resources` connection.js): `client
+>     websocket error: <id> wss://.../_transactor/<token>` + 7 dòng spam khác
+>     (SessionId, ping, version, ...) + **token leak security** (URL chứa
+>     api-token ra stderr/UI — NFR-04 violation).
+> - **1 silent data loss audit** (#68): cùng warning class có root cause thứ 2
+>   nằm trong pi-huly — tool gọi `updateDoc`/`removeDoc` với `space`/`objectId`
+>   sai → server skip silent → update KHÔNG persist (giống bug #36/#40 đã fix).
+>   Static audit hiện: **42 call site, 42/42 NHÓM A** (lấy từ lookup doc, OK),
+>   NHƯNG 41/42 thiếu schema drift guard → silent no-op nếu doc.space/_id
+>   undefined.
+>
+> **Nhóm theo bản chất**:
+> - **Filter framework** (#67 / T-62) — xây `console-filter.ts` tập trung,
+>   `runWithConsoleFilter` + pattern registry. Nền tảng cho T-64. Start ngay.
+> - **WS spam + token leak** (#69 / T-64) — đăng ký pattern WS error + 7 dòng
+>   spam + fix token leak vào framework T-62. **Blocked-by T-62**.
+> - **Audit hardening** (#68 / T-63) — silent data loss prevention, centralize
+>   schema drift guard qua `safeUpdateDoc` helper. Độc lập, start ngay, làm
+>   song song với T-62.
+>
+> Chi tiết mỗi task ở [`docs/tasks/T-XX.md`](./docs/tasks/).
+> Theo dõi: [GitHub issues #67, #68, #69](https://github.com/naicoi92/pi-huly/issues).
+
+- [x] [T-62] [M] enhancement(pool): filter framework gate upstream console spam (no document found + các pattern khác) — high | blocked-by: (none) | blocks: T-64 | issue: #67 — [detail](./docs/tasks/T-62.md) — ✅ done (framework `console-filter.ts`: UpstreamConsoleFilter class + runWithConsoleFilter try/finally + DEFAULT_UPSTREAM_NOISE_PATTERNS; wrap connect() scope hẹp; counter module-level expose pool health → `/huly status`; config escape hatch quietUpstreamNoise + upstreamNoisePatterns; verified upstream api-client/lib/client.js:42-79 KHÔNG seam logger; +30 tests = 549 total, CI green)
+- [ ] [T-63] [M] bug(core): audit 42 call site updateDoc/removeDoc — validate space + objectId resolved + schema drift guard (silent TxUpdateDoc skip) — high | blocked-by: (none) | blocks: (none) | issue: #68 — [detail](./docs/tasks/T-63.md) — ⏳ pending (42/42 NHÓM A confirmed, 0 NHÓM B; 41/42 thiếu guard; helper `safeUpdateDoc`/`safeRemoveDoc` trong `_common.ts`; migration + regression test)
+- [ ] [T-64] [M] bug(client): gate "client websocket error" spam + token leak (URL `_transactor/<token>` ra stderr/UI) — high | blocked-by: T-62 | blocks: (none) | issue: #69 — [detail](./docs/tasks/T-64.md) — ⏳ pending (đăng ký pattern WS error + 7 dòng spam connection.js vào framework T-62; KHÔNG spam màn hình; security verify stderr KHÔNG chứa `_transactor/` + token substring; WS onerror vẫn trigger reconnect backoff)
+
+
+---
+
 ## Size / priority distribution
 
-- Size: S ~29 · M ~30 · **L 3** (T-43, T-52 done; T-58 mới — runtime audit critical).
-- Priority: 🔴 critical 3 (T-47, T-52 done; T-58 mới) · 🔴 high 35 · 🟡 medium 21 · 🟢 low 1 (T-22).
+- Size: S ~30 · M ~30 · **L 3** (T-43, T-52 done; T-58 done — runtime audit critical).
+- Priority: 🔴 critical 0 open (3 done: T-47, T-52, T-58) · 🔴 high 3 open (T-62, T-63, T-64) · 🟡 medium 21 · 🟢 low 1 (T-22).
 - Critical path: T-01→02/03→04→05→06→09→domains→30→31→33→34→36→38→39.
 - **beta.1 hotfix chain (M6 — all done)**: T-40..T-46 fix #22-#28, PR #29-#35.
 - **beta.2 follow-up chain (T-47..T-53 — all done)**: fix #36-#43, PR #44-#53.
-- **beta.3 follow-up chain (T-54..T-60)** — **ALL DONE (7/7)**:
+- **beta.3 follow-up chain (T-54..T-61 — ALL DONE 8/8)**:
   - **Enhancement** (3): T-55 (pool warm), T-56 (debug log), T-57 (error mapping Unavailable).
   - **Root cause DEEP-AUDIT** (4): T-58 (audit resolved 5 class refs via plugin() block scan — KHÔNG cần runtime server), T-59 (issue_relations inline $push/$pull), T-60 (Document interface orphan — 7 tool honest-unavailable + search domain remove), T-54 (create_teamspace honest-unavailable — drive:class:Drive nhưng SpaceType ref inaccessible).
+  - **Relations direction** (1): T-61 (add/remove/list relation direction khớp Huly UI — root cause T-59 #63 đảo chiều + thiếu relates-to).
   - 509 tests (+55 baseline 454), CI green, 2 review pass + re-audit CONFIRMED 0 dead class runtime call.
+- **beta.4 follow-up chain (T-62..T-64 — 3 PENDING)**:
+  - **Filter framework** (1): T-62 (gate upstream console spam `console-filter.ts` framework, issue #67).
+  - **Audit hardening** (1): T-63 (42 call site updateDoc/removeDoc schema drift guard, issue #68).
+  - **WS spam + token leak** (1): T-64 (gate `client websocket error` + 7 dòng spam + fix token leak, issue #69 — blocked-by T-62).
+  - T-62 + T-63 độc lập start ngay; T-64 blocked-by T-62 (dùng framework).
 - Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
 - Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).

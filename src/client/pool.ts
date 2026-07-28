@@ -23,12 +23,19 @@ interface PoolEntry {
   lastAccess: number;
 }
 
+import { getUpstreamNoiseCounters } from "./console-filter.js";
+
 /** Health status cho /huly diagnostics. */
 export interface HealthStatus {
   workspace: string;
   connected: boolean;
   transport: Transport;
   user?: { id: string; name: string; email: string };
+  /**
+   * T-62 #67: count dòng upstream console spam đã filter (cumulative session).
+   * Total + per-pattern breakdown. Populated nếu `quietUpstreamNoise !== false`.
+   */
+  upstreamNoiseFiltered?: { total: number; byPattern: Record<string, number> };
 }
 
 /** Max WS connections in pool (NFR-11 default 8). */
@@ -122,11 +129,16 @@ async function entryHealth(entry: PoolEntry): Promise<HealthStatus> {
   } catch {
     connected = false;
   }
+  // T-62 #67: module-level counter cross entry. Populated khi total > 0.
+  const counters = getUpstreamNoiseCounters();
+  const upstreamNoiseFiltered =
+    counters.total > 0 ? { total: counters.total, byPattern: counters.byPattern } : undefined;
   return {
     workspace: entry.workspaceId,
     connected,
     transport: entry.transport,
     user,
+    ...(upstreamNoiseFiltered !== undefined ? { upstreamNoiseFiltered } : {}),
   };
 }
 

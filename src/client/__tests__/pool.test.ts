@@ -202,6 +202,34 @@ describe("health", () => {
     expect(result[0].connected).toBe(false);
     expect(result[0].user).toBeUndefined();
   });
+
+  // T-62 #67: expose upstream noise counters qua health().
+  it("T-62: include upstreamNoiseFiltered khi total > 0", async () => {
+    const { resetUpstreamNoiseCounters } = await import("../console-filter.js");
+    const { runWithConsoleFilter } = await import("../console-filter.js");
+    resetUpstreamNoiseCounters();
+    vi.mocked(createHulyClient).mockResolvedValueOnce(makeMockClient("ws"));
+    await getClient("ws-1");
+    // Giả lập upstream warn đã filter (counter module-level tăng).
+    await runWithConsoleFilter([/^no document found/i], async () => {
+      console.warn("no document found, skipping");
+    });
+    const result = await health("ws-1");
+    expect(result[0].upstreamNoiseFiltered).toEqual({
+      total: 1,
+      byPattern: { "/^no document found/i": 1 },
+    });
+    resetUpstreamNoiseCounters();
+  });
+
+  it("T-62: KHÔNG include upstreamNoiseFiltered khi total = 0", async () => {
+    const { resetUpstreamNoiseCounters } = await import("../console-filter.js");
+    resetUpstreamNoiseCounters();
+    vi.mocked(createHulyClient).mockResolvedValueOnce(makeMockClient("ws"));
+    await getClient("ws-1");
+    const result = await health("ws-1");
+    expect(result[0].upstreamNoiseFiltered).toBeUndefined();
+  });
 });
 
 describe("integration: getClient + closeAll round-trip", () => {

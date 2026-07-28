@@ -36,6 +36,8 @@ import {
   type WithMarkup,
 } from "@hcengineering/api-client";
 import { mapError, type HulyError } from "./errors.js";
+import { DEFAULT_UPSTREAM_NOISE_PATTERNS, runWithConsoleFilter } from "./console-filter.js";
+import { loadConfig } from "../config/config.js";
 
 /** Transport global toggle (D3). Default 'ws'. */
 export type Transport = "ws" | "rest";
@@ -132,9 +134,47 @@ export interface HulyClient {
 }
 
 /**
+ * T-62 #67: Resolve console filter pattern từ config.
+ *
+ * - `quietUpstreamNoise === false` → return null (KHÔNG filter — debug thật)
+ * - `upstreamNoisePatterns` override → compile user pattern (case-insensitive)
+ * - Default → `DEFAULT_UPSTREAM_NOISE_PATTERNS` (T-62: #67 + T-64: WS spam)
+ *
+ * Filter scope hẹp (chỉ quanh connect()) → KHÔNG global-silent vĩnh viễn.
+ * KHÔNG throw nếu config invalid (default patterns) — connect vẫn chạy.
+ */
+async function resolveFilterPatterns(): Promise<RegExp[] | null> {
+  let config;
+  try {
+    config = await loadConfig();
+  } catch {
+    // Config error KHÔNG block connect — filter dùng default patterns.
+    return DEFAULT_UPSTREAM_NOISE_PATTERNS;
+  }
+  if (config.quietUpstreamNoise === false) return null;
+  if (config.upstreamNoisePatterns !== undefined && config.upstreamNoisePatterns.length > 0) {
+    // Compile user pattern — skip invalid (KHÔNG crash connect)
+    const compiled: RegExp[] = [];
+    for (const src of config.upstreamNoisePatterns) {
+      try {
+        compiled.push(new RegExp(src, "i"));
+      } catch {
+        // Skip — validateConfig đã catch khi load, runtime skip cho safety.
+      }
+    }
+    return compiled.length > 0 ? compiled : DEFAULT_UPSTREAM_NOISE_PATTERNS;
+  }
+  return DEFAULT_UPSTREAM_NOISE_PATTERNS;
+}
+
+/**
  * Create HulyClient theo transport (D3):
  *   ws   → connect() + delegate PlatformClient
  *   rest → connectRest() + createRestTxOperations() + delegate RestClient (read) + TxOperations (write)
+ *
+ * T-62 #67: wrap `connect()` qua `runWithConsoleFilter()` — gate upstream
+ * `console.warn/error/log` spam (cache-miss replay + WS error). Filter scope
+ * hẹp (try/finally restore). Escape hatch: config `quietUpstreamNoise: false`.
  *
  * Throws HulyError nếu connect/connectRest/createRestTxOperations fail (mapError từ T-04).
  */
@@ -142,10 +182,15 @@ export async function createHulyClient(
   creds: HulyCredentials,
   transport: Transport = "ws",
 ): Promise<HulyClient> {
+  const patterns = await resolveFilterPatterns();
   try {
     const { url, ...auth } = creds;
     if (transport === "ws") {
-      const client = await connect(url, auth as ConnectOptions);
+      const connectFn = () => connect(url, auth as ConnectOptions);
+      // T-62: wrap connect() — upstream replay tải model diff + warn cache-miss
+      // hàng loạt. Filter chỉ active trong scope connect (try/finally restore).
+      const client =
+        patterns !== null ? await runWithConsoleFilter(patterns, connectFn) : await connectFn();
       return makeWsClient(client);
     }
     // rest

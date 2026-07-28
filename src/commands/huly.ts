@@ -380,11 +380,19 @@ async function runStatus(ctx: CommandContext): Promise<CommandResult> {
     if (statuses.length === 0) {
       lines.push("pool: (no active connections)");
     } else {
+      // T-62 #67: total noise cross entry (module-level counter) — show 1 lần.
+      let noiseTotal = 0;
       for (const s of statuses) {
         const userStr = s.user ? `${s.user.name} <${s.user.email}>` : "(user unknown)";
         lines.push(
           `pool[${s.workspace}]: ${s.connected ? "connected" : "disconnected"} (${s.transport}) · ${userStr}`,
         );
+        if (s.upstreamNoiseFiltered !== undefined) {
+          noiseTotal = Math.max(noiseTotal, s.upstreamNoiseFiltered.total);
+        }
+      }
+      if (noiseTotal > 0) {
+        lines.push(`pool noise: ${noiseTotal} upstream log filtered (config quietUpstreamNoise)`);
       }
     }
   } catch (e) {
