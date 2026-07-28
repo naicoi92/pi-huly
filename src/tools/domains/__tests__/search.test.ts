@@ -1,6 +1,7 @@
-// Test T-42 fulltext_search — expand query + honest capability.
-// Cover: search issues (title), documents (title/content), messages; $like
-// behavior; fallback khi server không support; tool description honest.
+// Test T-42 + T-60 fulltext_search — expand query + honest capability.
+// T-60 (2026-07-28): Document domain REMOVED (tracker:class:Document not
+// registered runtime — interface orphan). Chỉ 2 domain: Issue (title) +
+// ChatMessage (content). Tool description honest Document unavailable.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -57,20 +58,21 @@ beforeEach(() => {
 });
 
 describe("T-42 fulltext_search — expand query across domains", () => {
-  it("findAll gọi 3 lần: Issue (title), Document (title), ChatMessage (content)", async () => {
+  it("findAll gọi 2 lần: Issue (title) + ChatMessage (content) — Document REMOVED (T-60)", async () => {
     const client = makeClient();
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool();
     await tool.execute("tc1", { query: "critical bug" }, undefined, undefined, ctx);
 
-    // 3 query across domains
-    expect(client.findAll).toHaveBeenCalledTimes(3);
+    // T-60: chỉ 2 domain (Issue + ChatMessage), Document removed
+    expect(client.findAll).toHaveBeenCalledTimes(2);
     const calls = client.findAll.mock.calls;
-    // Verify class refs
     expect(calls[0]?.[0]).toBe("tracker:class:Issue");
-    expect(calls[1]?.[0]).toBe("tracker:class:Document");
-    expect(calls[2]?.[0]).toBe("chunter:class:ChatMessage");
+    expect(calls[1]?.[0]).toBe("chunter:class:ChatMessage");
+    // KHÔNG query Document (T-60 remove — class not registered runtime)
+    const queriedClasses = calls.map((c) => c[0]);
+    expect(queriedClasses).not.toContain("tracker:class:Document");
     // Verify $like pattern with escaped wildcards
     expect(calls[0]?.[1]).toMatchObject({
       title: { $like: "%critical bug%" },
@@ -90,23 +92,23 @@ describe("T-42 fulltext_search — expand query across domains", () => {
     });
   });
 
-  it("merge results + tag domain type (issue/document/message)", async () => {
+  it("merge results + tag domain type (issue/message) — Document removed", async () => {
     const client = makeClient();
     client.findAll = vi
       .fn()
       .mockResolvedValueOnce([{ _id: "i1", identifier: "PD-1", title: "Critical bug in auth" }])
-      .mockResolvedValueOnce([{ _id: "d1", title: "Auth doc", content: "..." }])
       .mockResolvedValueOnce([{ _id: "m1", content: "msg about bug" }]);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool();
     const result = await tool.execute("tc1", { query: "bug" }, undefined, undefined, ctx);
 
-    expect(result.details).toMatchObject({ count: 3 });
+    // T-60: chỉ 2 result (issue + message), không document
+    expect(result.details).toMatchObject({ count: 2 });
     const items = (result.details as { results: Array<{ _id: string; type: string }> }).results;
     expect(items.some((i) => i._id === "i1" && i.type === "issue")).toBe(true);
-    expect(items.some((i) => i._id === "d1" && i.type === "document")).toBe(true);
     expect(items.some((i) => i._id === "m1" && i.type === "message")).toBe(true);
+    expect(items.some((i) => i.type === "document")).toBe(false);
   });
 
   it("limit cap applied across all domains", async () => {
@@ -117,13 +119,12 @@ describe("T-42 fulltext_search — expand query across domains", () => {
     const tool = findTool();
     await tool.execute("tc1", { query: "x", limit: 10 }, undefined, undefined, ctx);
 
-    // limit passed per-domain query
     for (const call of client.findAll.mock.calls) {
       expect(call?.[2]).toMatchObject({ limit: 10 });
     }
   });
 
-  it("server reject $like (Connection/Internal error) → catch + honest message", async () => {
+  it("server reject $like → catch + honest message", async () => {
     const client = makeClient();
     client.findAll = vi.fn().mockRejectedValue(new Error("platform:status:BadRequest"));
     vi.mocked(getClient).mockResolvedValue(client as never);
@@ -132,55 +133,44 @@ describe("T-42 fulltext_search — expand query across domains", () => {
     const result = await tool.execute("tc1", { query: "x" }, undefined, undefined, ctx);
 
     expect(result.isError).toBe(true);
-    // Honest message — KHÔNG fake "Found 0 results" mà return error rõ ràng.
-    // T-49: message đổi sang "All search domains failed: <reasons>" khi tất cả
-    // reject (Promise.allSettled → all rejected branch).
     const text = result.content[0]?.text ?? "";
     expect(text).toMatch(/all search domains failed|search failed|error/i);
   });
 
-  it("tool description honest về capability (KHÔNG overclaim fulltext)", () => {
+  it("T-60 tool description honest Document unavailable", () => {
     const tool = findTool();
-    // Description phải mention substring search (KHÔNG claim "fulltext index")
-    expect(tool.description.toLowerCase()).toMatch(/substring|title|content/);
+    expect(tool.description).toMatch(/substring/i);
+    expect(tool.description).toMatch(/document/i);
+    expect(tool.description.toLowerCase()).toMatch(/not available|unavailable/i);
   });
 });
 
 // T-49 #38: defensive per-domain catch — 1 domain fail không kéo cả search fail.
-// Bug gốc: Promise.all reject nếu 1 domain throw (Document class sai runtime
-// → domain not found). Fix: Promise.allSettled → partial result + warning.
 describe("T-49 #38: defensive per-domain catch (Promise.allSettled)", () => {
-  it("1 domain reject (Document) → Issue + ChatMessage vẫn return + warning", async () => {
+  it("1 domain reject (ChatMessage) → Issue vẫn return + warning", async () => {
     const client = makeClient();
-    // findAll mock theo thứ tự gọi: Issue, Document, ChatMessage
+    // T-60: chỉ 2 domain — Issue OK, ChatMessage fail
     client.findAll = vi
       .fn()
       .mockResolvedValueOnce([{ _id: "i1", identifier: "PD-1", title: "Critical bug" }])
-      .mockRejectedValueOnce(new Error("domain not found: tracker:class:Document"))
-      .mockResolvedValueOnce([{ _id: "m1", content: "msg about bug" }]);
+      .mockRejectedValueOnce(new Error("domain not found: chunter:class:ChatMessage"));
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool();
     const result = await tool.execute("tc1", { query: "bug" }, undefined, undefined, ctx);
 
-    // KHÔNG isError (partial result vẫn success)
     expect(result.isError).toBeUndefined();
-    // results = 2 (issue + message), KHÔNG phải 3 (document bị skip)
     const details = result.details as {
       results: Array<{ _id: string; type: string }>;
       failedDomains?: Array<{ name: string; reason: string }>;
     };
-    expect(details.results).toHaveLength(2);
-    expect(details.results.some((r) => r._id === "i1" && r.type === "issue")).toBe(true);
-    expect(details.results.some((r) => r._id === "m1" && r.type === "message")).toBe(true);
-    expect(details.results.some((r) => r.type === "document")).toBe(false);
-    // structured failedDomains shape (lock regression: {name, reason})
+    expect(details.results).toHaveLength(1);
+    expect(details.results[0]?._id).toBe("i1");
     expect(details.failedDomains).toEqual([
-      { name: "documents", reason: expect.stringContaining("domain not found") },
+      { name: "messages", reason: expect.stringContaining("domain not found") },
     ]);
-    // Content warning mention Document failed
     const text = result.content[0]?.text ?? "";
-    expect(text).toMatch(/document.*fail/i);
+    expect(text).toMatch(/messages search failed/i);
   });
 
   it("TẤT CẢ domain reject → isError + honest message (KHÔNG fake 0 results)", async () => {
@@ -191,42 +181,9 @@ describe("T-49 #38: defensive per-domain catch (Promise.allSettled)", () => {
     const tool = findTool();
     const result = await tool.execute("tc1", { query: "x" }, undefined, undefined, ctx);
 
-    // isError (tất cả fail → không có result nào)
     expect(result.isError).toBe(true);
     const text = result.content[0]?.text ?? "";
-    // Honest message — KHÔNG fake "Found 0 results"
     expect(text).toMatch(/all.*domain.*fail|search failed/i);
     expect(text).not.toMatch(/found 0 result/i);
-  });
-
-  it("2 domain fail (Document + ChatMessage) + 1 OK (Issue) → partial + multi-warning join ' | '", async () => {
-    const client = makeClient();
-    // Issue OK, Document + ChatMessage fail
-    client.findAll = vi
-      .fn()
-      .mockResolvedValueOnce([{ _id: "i1", identifier: "PD-1", title: "auth bug" }])
-      .mockRejectedValueOnce(new Error("domain not found: tracker:class:Document"))
-      .mockRejectedValueOnce(new Error("timeout"));
-    vi.mocked(getClient).mockResolvedValue(client as never);
-
-    const tool = findTool();
-    const result = await tool.execute("tc1", { query: "bug" }, undefined, undefined, ctx);
-
-    // Partial success (1 result)
-    expect(result.isError).toBeUndefined();
-    const details = result.details as {
-      results: Array<{ _id: string; type: string }>;
-      failedDomains?: Array<{ name: string; reason: string }>;
-    };
-    expect(details.results).toHaveLength(1);
-    expect(details.results[0]?._id).toBe("i1");
-    // failedDomains có cả 2 domain fail
-    expect(details.failedDomains).toHaveLength(2);
-    expect(details.failedDomains?.map((d) => d.name)).toEqual(
-      expect.arrayContaining(["documents", "messages"]),
-    );
-    // Content warning join cả 2 domain với separator ' | '
-    const text = result.content[0]?.text ?? "";
-    expect(text).toMatch(/documents search failed.*\|.*messages search failed/i);
   });
 });

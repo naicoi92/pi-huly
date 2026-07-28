@@ -3,6 +3,65 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.4] - 2026-07-28
+
+Hotfix canary #3. **Root cause fix** beta.3 follow-up hotfixes — DEEP-AUDIT 12
+@hcengineering packages @0.7.423 (scan plugin() class block registration, KHÔNG
+chỉ interface existence). Resolve 5 class ref root cause (#39, #43, #55, #58,
+#62). User nhấn mạnh "up level cao hơn — verify runtime thật + fix class ref
+đúng, KHÔNG defensive che lỗi nữa".
+
+### Fixed (root cause — KHÔNG defensive)
+
+- **#39** — `add_issue_relation` fail `domain not found: core:class:TsRelation`:
+  **TsRelation KHÔNG tồn tại** (0 match toàn packages). Issue relations stored
+  **INLINE** (`Issue.relations?: RelatedDocument[]` + `Issue.blockedBy?:
+  RelatedDocument[]`, `RelatedDocument = Pick<Doc, '_id'|'_class'>`). Refactor
+  `add/remove/list_issue_relation` dùng `$push/$pull` trực tiếp trên Issue (T-59).
+  Xóa `TS_RELATION_CLASS` dead code.
+- **#43** — `view:class:Label` + `document:class:DocumentSnapshot` **KHÔNG tồn
+  tại** (0 match toàn packages → deprecated). Huly dùng `tags:class:TagElement`.
+  6 tool honest-unavailable: 4 label CRUD (`labels.ts`) + 2 snapshot
+  (`document-snapshots.ts`) → redirect tag tools / Huly UI. `add/remove_issue_label`
+  (`issues-core.ts`) switch `LABEL_CLASS` → `TAG_CLASS`.
+- **#55/#64** — `fulltext_search` Document domain fail: `tracker:class:Document`
+  interface exists NHƯNG **KHÔNG register** trong plugin() class block (interface
+  orphan) → runtime fail (#55 report 2 lần, T-49 Promise.allSettled chỉ che warning).
+  REMOVE Document domain khỏi search (T-60). Cùng verdict áp dụng 7 tool
+  honest-unavailable: 5 document CRUD (`documents.ts`) + `link/unlink_document_to_issue`.
+- **#58** — `create_teamspace` fail `platform:status:UnknownError`: `core:class:Space`
+  base abstract (KHÔNG có SpaceTypeDescriptor). Documents Teamspace thật =
+  `drive:class:Drive` NHƯNG createDoc cần `type: Ref<SpaceType>` = drive.DefaultDrive
+  ref (branded, runtime-generate, KHÔNG accessible từ pi-huly). Honest-unavailable
+  (T-54). Read path (list/get_teamspaces) vẫn OK qua SPACE_CLASS inheritance.
+
+### Changed
+
+- **#63** — `remove_issue_relation` API breaking change: param `relation: <_id>`
+  → `targetIssue + relationType` (relation giờ là array element, KHÔNG doc riêng).
+  `$pull` theo `{_id, _class}` match.
+- **#64** — `fulltext_search` chỉ 2 domain (Issue title + ChatMessage content).
+  Tool description honest "Document search NOT available".
+
+### Added (enhancement — T-55/T-56/T-57)
+
+- **#59** — `pool warm` at `session_start` (fire-and-forget, reason ∈ {startup,
+  resume}): fix first-call failure (lazy connect cold start).
+- **#60** — `debug log` tool calls: subscribe `tool_execution_start` → log
+  `[huly_<tool>] args: <json>` ra stderr. Filter huly_ prefix, sanitize
+  (LEAK_PATTERNS), truncate>500 (sanitize SAU truncate).
+- **#61** — `error mapping` domain not found → `UnavailableError` honest (list
+  possible causes + recovery hint). `ErrorClass` union thêm "Unavailable".
+
+### Audit evidence
+
+- Method: DEEP-AUDIT 12 packages @hcengineering/*@0.7.423 source map extraction
+  (core/tracker/task/contact/chunter/tags/attachment/drive/view/platform/calendar/
+  templates). Scan **plugin() class block** (registration truth, KHÔNG chỉ
+  interface existence). Source of truth: `docs/design/11-runtime-audit.md` §7.
+- 509 tests pass (+55 từ baseline 454). CI green (fmt+lint+typecheck+build).
+- 2 review pass (code-review-mentor APPROVED + reality-checker CONFIRMED).
+
 ## [1.0.0-beta.3] - 2026-07-27
 
 Hotfix canary #2. Fix 8 runtime bug phát hiện qua smoke test tiếp theo sau

@@ -207,13 +207,8 @@ describe("error path coverage", () => {
     expect(client.createDoc).toHaveBeenCalledTimes(1);
   });
 
-  it("edit_document multi-match → suggests replace_all (KHÔNG edit)", async () => {
+  it("edit_document honest-unavailable (T-60 Document orphan) → isError", async () => {
     const client = makeClient();
-    client.findOne = vi.fn().mockResolvedValue({
-      _id: "d1",
-      space: "sp1",
-      content: "hello world hello",
-    });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = allTools.find((t) => t.name === "huly_edit_document")!;
@@ -224,12 +219,11 @@ describe("error path coverage", () => {
       undefined,
       ctx,
     );
+    // T-60: edit_document honest-unavailable — Document interface orphan
     expect(result.isError).toBe(true);
-    expect(result.details).toMatchObject({
-      reason: "multi_match",
-      suggest: "replace_all=true",
-    });
+    expect(result.details).toMatchObject({ reason: "interface_orphan" });
     expect(client.updateDoc).not.toHaveBeenCalled();
+    expect(client.findOne).not.toHaveBeenCalled();
   });
 
   it("get_issue cross-project identifier → isError", async () => {

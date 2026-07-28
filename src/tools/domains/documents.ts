@@ -7,9 +7,19 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { SPACE_CLASS, DOCUMENT_CLASS, spaceRef } from "./_class-refs.js";
-import { workspaceParam, limitParam, escapeLikePattern, parseMarkupSafe } from "./_common.js";
-import { mdToMarkup, markupToMd } from "../../markup/markup.js";
+import { SPACE_CLASS } from "./_class-refs.js";
+import { workspaceParam, limitParam } from "./_common.js";
+
+/** T-60: Honest-unavailable message cho document CRUD tools (interface orphan). */
+function documentUnavailableMessage(operation: string): string {
+  return (
+    `huly_${operation} KHÔNG khả dụng: Huly runtime class ` +
+    `"tracker:class:Document" interface tồn tại trong source NHƯNG KHÔNG ` +
+    `register trong plugin() class block (interface orphan — T-58 DEEP-AUDIT ` +
+    `12 packages @0.7.423). Runtime fail "domain not found" (#55). Browse ` +
+    `documents qua Huly UI trực tiếp. Document search cũng đã remove (T-60).`
+  );
+}
 
 export const tools: HulyToolDefinition[] = [
   // === Teamspaces (5) ===
@@ -67,24 +77,26 @@ export const tools: HulyToolDefinition[] = [
   }),
 
   // 3. create_teamspace
-  // T-54 #58 reality-checker STRONG confirm (2026-07-28): `core:class:Space` là
-  // base abstract KHÔNG có SpaceTypeDescriptor → createDoc fail hoặc tạo space
-  // vô hình (UI không hiển thị, không permission). KHÔNG có class "Teamspace"
-  // runtime (UI label only). User spaces phải đi qua TypedSpace subclass:
-  //   - tracker:class:Project (Issues space)
-  //   - drive:class:Drive (Documents/Files space)
-  //   - chunter:class:ChunterSpace (Chat space)
+  // T-54 #58 + T-58 DEEP-AUDIT (2026-07-28, 12 packages @0.7.423):
+  //   - `core:class:Space` là base abstract KHÔNG có SpaceTypeDescriptor →
+  //     createDoc tạo space vô hình (UI không hiển thị).
+  //   - KHÔNG có class "Teamspace" runtime (UI label only).
+  //   - Documents Teamspace thật = `drive:class:Drive` (extends TypedSpace,
+  //     register trong drive plugin line 31, có SpaceTypeDescriptor DriveType).
+  //   - NHƯNG createDoc Drive cần `type: Ref<SpaceType>` field (TypedSpace
+  //     required) = `drive.DefaultDrive` ref (branded, runtime-generate, KHÔNG
+  //     access từ pi-huly vì drive plugin KHÔNG bundled).
   //
-  // Pi-huly KHÔNG đoán class (sai loại space = hậu quả tệ hơn fail rõ ràng).
-  // Honest-unavailable cho đến khi T-58 verify class Teamspace thật runtime.
-  // Recovery: user tạo space qua Huly UI trực tiếp (UI chọn đúng subclass theo
-  // SpaceType), sau đó list_teamspaces thấy được.
+  // Honest-unavailable: pi-huly KHÔNG có drive.DefaultDrive ref → KHÔNG tạo
+  // Drive đúng cách (thiếu type field → server reject). Recovery: user tạo
+  // space qua Huly UI (UI resolve SpaceType descriptor), sau đó list_teamspaces.
   defineHulyTool({
     name: "create_teamspace",
     label: "Create teamspace",
     description:
-      "Create teamspace. UNAVAILABLE — Huly runtime class unverified (T-58 pending). " +
-      "Use Huly UI to create space, then list_teamspaces to see it.",
+      "Create teamspace. UNAVAILABLE — needs drive:class:Drive + SpaceType ref not " +
+      "accessible from pi-huly (drive plugin not bundled). Use Huly UI to create space, " +
+      "then list_teamspaces to see it.",
     parameters: Type.Object({
       workspace: workspaceParam,
       name: Type.String(),
@@ -94,16 +106,19 @@ export const tools: HulyToolDefinition[] = [
     async handler(params, tctx) {
       return {
         content:
-          `create_teamspace KHÔNG khả dụng: Huly runtime class "Teamspace" chưa ` +
-          `verify (pi-huly T-58 pending — cần self-host probe output). ` +
-          `core:class:Space là base abstract, createDoc sẽ tạo space vô hình ` +
-          `(KHÔNG có SpaceTypeDescriptor). Recovery: tạo space "${params.name}" ` +
-          `qua Huly UI trực tiếp (UI chọn đúng TypedSpace subclass theo SpaceType), ` +
-          `sau đó gọi huly_list_teamspaces để lấy id.`,
+          `create_teamspace KHÔNG khả dụng: Documents Teamspace thật là ` +
+          `drive:class:Drive (T-58 audit confirm), NHƯNG createDoc cần ` +
+          `\`type: Ref<SpaceType>\` field = drive.DefaultDrive ref (branded, ` +
+          `runtime-generate, KHÔNG access từ pi-huly vì drive plugin KHÔNG ` +
+          `bundled). Pi-huly KHÔNG đoán SpaceType ref (sai type → space lỗi). ` +
+          `Recovery: tạo space "${params.name}" qua Huly UI trực tiếp (UI ` +
+          `resolve SpaceType descriptor đúng), sau đó gọi huly_list_teamspaces ` +
+          `để lấy id.`,
         isError: true,
         details: {
-          reason: "class_unverified",
-          blockedBy: "T-58",
+          reason: "spacetype_ref_inaccessible",
+          candidateClass: "drive:class:Drive",
+          missingField: "type (Ref<SpaceType>)",
           workspace: tctx.workspace,
           name: params.name,
         },
@@ -178,110 +193,80 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // === Documents (5) ===
+  // === Documents (5) — T-60 #55 #64: ALL honest-unavailable ===
+  // tracker:class:Document interface exists trong tracker source (src/index.ts:338)
+  // NHƯNG KHÔNG register trong plugin() class block (interface orphan) → runtime
+  // fail "domain not found" (#55 report 2 lần). Huly KHÔNG register Document
+  // class trong 12 packages audited @0.7.423. Document CRUD marked honest-
+  // unavailable — browse documents qua Huly UI trực tiếp.
 
-  // 6. list_documents
+  // 6. list_documents — honest-unavailable
   defineHulyTool({
     name: "list_documents",
     label: "List documents",
-    description: "List documents trong teamspace.",
+    description:
+      "UNAVAILABLE — tracker:class:Document not registered runtime. Browse documents via Huly UI.",
     parameters: Type.Object({
       workspace: workspaceParam,
       teamspace: Type.String(),
       limit: limitParam,
       titleSearch: Type.Optional(Type.String()),
     }),
-    async handler(params, tctx) {
-      const limit = typeof params.limit === "number" ? params.limit : 50;
-      const query: Record<string, unknown> = { space: params.teamspace };
-      if (params.titleSearch !== undefined) {
-        query.title = { $like: `%${escapeLikePattern(params.titleSearch)}%` };
-      }
-      const docs = await tctx.client.findAll(DOCUMENT_CLASS, query, { limit });
-      const list = docs.map((d) => ({
-        id: d._id,
-        title: (d as { title?: string }).title ?? "",
-        modifiedOn: (d as { modifiedOn?: number }).modifiedOn,
-      }));
+    async handler(_params, _tctx) {
       return {
-        content: `Found ${list.length} document(s).`,
-        details: { count: list.length, documents: list },
+        content: documentUnavailableMessage("list_documents"),
+        isError: true,
+        details: { reason: "interface_orphan", useClass: "tracker:class:Document" },
       };
     },
   }),
 
-  // 7. get_document
+  // 7. get_document — honest-unavailable
   defineHulyTool({
     name: "get_document",
     label: "Get document",
-    description: "Get document content (markup → markdown convert).",
+    description:
+      "UNAVAILABLE — tracker:class:Document not registered runtime. View document via Huly UI.",
     parameters: Type.Object({
       workspace: workspaceParam,
       document: Type.String(),
     }),
-    async handler(params, tctx) {
-      const d = await tctx.client.findOne(DOCUMENT_CLASS, { _id: params.document });
-      if (!d) {
-        return {
-          content: `Document "${params.document}" not found.`,
-          isError: true,
-          details: { document: params.document },
-        };
-      }
-      const fields = d as {
-        title?: string;
-        content?: string;
-        modifiedOn?: number;
-        createdOn?: number;
-      };
-      // Convert Huly markup → markdown cho LLM (FR-13 R8). Guard JSON.parse
-      // (content cũ có thể là plain text HOẶC rỗng — KHÔNG crash).
-      const markupNode = parseMarkupSafe(fields.content);
-      const contentMd =
-        markupNode !== null ? markupToMd(markupNode as never) : (fields.content ?? "");
+    async handler(_params, _tctx) {
       return {
-        content: `# ${fields.title ?? ""}\n\n${contentMd}`,
-        details: {
-          id: d._id,
-          title: fields.title,
-          content: contentMd,
-          modifiedOn: fields.modifiedOn,
-        },
+        content: documentUnavailableMessage("get_document"),
+        isError: true,
+        details: { reason: "interface_orphan", useClass: "tracker:class:Document" },
       };
     },
   }),
 
-  // 8. create_document
+  // 8. create_document — honest-unavailable
   defineHulyTool({
     name: "create_document",
     label: "Create document",
-    description: "Create document trong teamspace. Content = markdown (auto convert).",
+    description:
+      "UNAVAILABLE — tracker:class:Document not registered runtime. Create document via Huly UI.",
     parameters: Type.Object({
       workspace: workspaceParam,
       teamspace: Type.String(),
       title: Type.String(),
       content: Type.Optional(Type.String({ description: "Markdown content." })),
     }),
-    async handler(params, tctx) {
-      // Convert markdown → Huly markup trước khi lưu (FR-13 R8)
-      const markup = params.content !== undefined ? JSON.stringify(mdToMarkup(params.content)) : "";
-      const id = await tctx.client.createDoc(DOCUMENT_CLASS, spaceRef(params.teamspace), {
-        title: params.title,
-        content: markup,
-      });
+    async handler(_params, _tctx) {
       return {
-        content: `Created document "${params.title}" (id: ${id}).`,
-        details: { id, title: params.title, teamspace: params.teamspace },
+        content: documentUnavailableMessage("create_document"),
+        isError: true,
+        details: { reason: "interface_orphan", useClass: "tracker:class:Document" },
       };
     },
   }),
 
-  // 9. edit_document — old_text/new_text HOẶC content
+  // 9. edit_document — honest-unavailable
   defineHulyTool({
     name: "edit_document",
     label: "Edit document",
     description:
-      "Edit document: old_text→new_text (KHÔNG match nhiều → ConflictError, dùng replace_all) HOẶC replace content full.",
+      "UNAVAILABLE — tracker:class:Document not registered runtime. Edit document via Huly UI.",
     parameters: Type.Object({
       workspace: workspaceParam,
       document: Type.String(),
@@ -292,72 +277,21 @@ export const tools: HulyToolDefinition[] = [
         Type.Boolean({ description: "true nếu old_text match nhiều (default false)." }),
       ),
     }),
-    async handler(params, tctx) {
-      const d = await tctx.client.findOne(DOCUMENT_CLASS, { _id: params.document });
-      if (!d) {
-        return {
-          content: `Document "${params.document}" not found.`,
-          isError: true,
-          details: { document: params.document },
-        };
-      }
-      const fields = d as { title?: string; content?: string };
-
-      if (params.content !== undefined) {
-        // Full replace
-        const markup = JSON.stringify(mdToMarkup(params.content));
-        await tctx.client.updateDoc(DOCUMENT_CLASS, d.space as never, d._id as never, {
-          content: markup,
-        });
-        return {
-          content: `Replaced content of document ${params.document}.`,
-          details: { updated: true, mode: "full" },
-        };
-      }
-
-      // old_text/new_text mode
-      if (params.old_text === undefined || params.new_text === undefined) {
-        return {
-          content: "Need either `content` OR (`old_text` + `new_text`).",
-          isError: true,
-          details: { reason: "missing_params" },
-        };
-      }
-      const currentMarkup = parseMarkupSafe(fields.content);
-      const currentMd =
-        currentMarkup !== null ? markupToMd(currentMarkup as never) : (fields.content ?? "");
-      const matches = currentMd.split(params.old_text).length - 1;
-      if (matches === 0) {
-        return {
-          content: `old_text not found in document.`,
-          isError: true,
-          details: { reason: "no_match", oldText: params.old_text },
-        };
-      }
-      if (matches > 1 && params.replace_all !== true) {
-        return {
-          content: `old_text matches ${matches} times. Use replace_all=true.`,
-          isError: true,
-          details: { reason: "multi_match", matches, suggest: "replace_all=true" },
-        };
-      }
-      const newMd = currentMd.replaceAll(params.old_text, params.new_text);
-      const markup = JSON.stringify(mdToMarkup(newMd));
-      await tctx.client.updateDoc(DOCUMENT_CLASS, d.space as never, d._id as never, {
-        content: markup,
-      });
+    async handler(_params, _tctx) {
       return {
-        content: `Edited document ${params.document} (${matches} replacement(s)).`,
-        details: { updated: true, mode: "edit", replacements: matches },
+        content: documentUnavailableMessage("edit_document"),
+        isError: true,
+        details: { reason: "interface_orphan", useClass: "tracker:class:Document" },
       };
     },
   }),
 
-  // 10. delete_document — destructive
+  // 10. delete_document — honest-unavailable (destructive flag giữ cho UI consistency)
   defineHulyTool({
     name: "delete_document",
     label: "Delete document",
-    description: "Delete document (destructive).",
+    description:
+      "UNAVAILABLE — tracker:class:Document not registered runtime. Delete document via Huly UI.",
     destructive: true,
     destructiveContext: (p) => ({
       type: "document",
@@ -367,19 +301,11 @@ export const tools: HulyToolDefinition[] = [
       workspace: workspaceParam,
       document: Type.String(),
     }),
-    async handler(params, tctx) {
-      const d = await tctx.client.findOne(DOCUMENT_CLASS, { _id: params.document });
-      if (!d) {
-        return {
-          content: `Document "${params.document}" not found.`,
-          isError: true,
-          details: { document: params.document },
-        };
-      }
-      await tctx.client.removeDoc(DOCUMENT_CLASS, d.space as never, d._id as never);
+    async handler(_params, _tctx) {
       return {
-        content: `Deleted document ${params.document}.`,
-        details: { deleted: true, document: params.document },
+        content: documentUnavailableMessage("delete_document"),
+        isError: true,
+        details: { reason: "interface_orphan", useClass: "tracker:class:Document" },
       };
     },
   }),

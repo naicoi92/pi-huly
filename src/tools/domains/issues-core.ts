@@ -10,13 +10,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import {
-  ISSUE_CLASS,
-  PROJECT_CLASS,
-  LABEL_CLASS,
-  ISSUE_STATUS_CLASS,
-  idRef,
-} from "./_class-refs.js";
+import { ISSUE_CLASS, PROJECT_CLASS, TAG_CLASS, ISSUE_STATUS_CLASS, idRef } from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -465,14 +459,14 @@ export const tools: HulyToolDefinition[] = [
 
   // 7. add_issue_label — GLOBAL labels (05-data-model §3)
   // T-45 #27: validate label tồn tại + push TagReference object shape (audit §4).
-  // Trước đây push raw string → sai shape (TagReference extends AttachedDoc, có
-  // tag/title/color fields). Label không tồn tại vẫn "Added" → issue mang ref rác.
+  // T-58 #43: dùng TAG_CLASS (TagElement) thay LABEL_CLASS (deprecated —
+  // view:class:Label 0 match runtime). Label workflow giờ dùng tag entity.
   defineHulyTool({
     name: "add_issue_label",
     label: "Add issue label",
     description:
-      "Add global label to issue. Accepts label title (human) or _id (raw ref). " +
-      "Validates label exists before push.",
+      "Add label/tag to issue. Accepts tag title or _id (resolved via tags:class:TagElement). " +
+      "Validates tag exists before push. Use huly_create_tag to create new.",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
@@ -491,14 +485,16 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // T-45: validate label tồn tại — try by title first, fallback by _id.
+      // T-45 + T-58: validate tag tồn tại — try by title first, fallback by _id.
+      // T-58: dùng TAG_CLASS (TagElement) thay LABEL_CLASS (deprecated — view:class:Label
+      // 0 match runtime). Label workflow giờ dùng tag entity (redirect từ labels.ts).
       const label =
-        (await tctx.client.findOne(LABEL_CLASS, {
+        (await tctx.client.findOne(TAG_CLASS, {
           title: params.label,
-        })) ?? (await tctx.client.findOne(LABEL_CLASS, { _id: idRef(params.label) }));
+        })) ?? (await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.label) }));
       if (!label) {
         return {
-          content: `Label "${params.label}" not found. Create via create_label first.`,
+          content: `Label/tag "${params.label}" not found. Create via huly_create_tag first.`,
           isError: true,
           details: { label: params.label, identifier: params.identifier },
         };
@@ -562,11 +558,11 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // Validate label exists (consistent with add — đừng remove label không tồn tại).
+      // Validate tag exists (T-58: TAG_CLASS thay LABEL_CLASS deprecated).
       const label =
-        (await tctx.client.findOne(LABEL_CLASS, {
+        (await tctx.client.findOne(TAG_CLASS, {
           title: params.label,
-        })) ?? (await tctx.client.findOne(LABEL_CLASS, { _id: idRef(params.label) }));
+        })) ?? (await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.label) }));
       if (!label) {
         return {
           content: `Label "${params.label}" not found. Cannot remove.`,

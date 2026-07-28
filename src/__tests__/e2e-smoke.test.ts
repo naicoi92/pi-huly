@@ -314,8 +314,8 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
     expect(result.details).toMatchObject({ identifier: "PD-42", title: "Detail issue" });
   });
 
-  // 4. huly_create_document
-  it("create_document: creates doc + returns id", async () => {
+  // 4. huly_create_document — T-60: honest-unavailable (Document interface orphan)
+  it("create_document: honest-unavailable (Document not registered runtime)", async () => {
     const tool = findTool(documentTools, "huly_create_document");
     const result = await tool.execute(
       "call-4",
@@ -324,32 +324,24 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
       undefined,
       makeCtx(),
     );
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toMatch(/Created document/);
-    expect(result.details).toMatchObject({ title: "Smoke doc", teamspace: "ts-1" });
-    expect(store.peek(result.details.id as string | undefined)).toBeDefined();
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/KHÔNG khả dụng|interface orphan/i);
+    expect(result.details).toMatchObject({ reason: "interface_orphan" });
   });
 
-  // 5. huly_edit_document (full content replace mode)
-  it("edit_document: full content replace", async () => {
-    const docId = store.seed("tracker:class:Document", {
-      title: "Edit me",
-      content: "{}",
-    });
+  // 5. huly_edit_document — T-60: honest-unavailable
+  it("edit_document: honest-unavailable (Document not registered runtime)", async () => {
     const tool = findTool(documentTools, "huly_edit_document");
     const result = await tool.execute(
       "call-5",
-      { document: docId, content: "Updated markdown" },
+      { document: "doc-1", content: "Updated markdown" },
       undefined,
       undefined,
       makeCtx(),
     );
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toMatch(/Replaced content/);
-    expect(result.details).toMatchObject({ updated: true, mode: "full" });
-    // Side-effect: content thật đã mutate
-    const doc = store.peek(docId);
-    expect(doc?.content).toContain("Updated markdown");
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/KHÔNG khả dụng|interface orphan/i);
+    expect(result.details).toMatchObject({ reason: "interface_orphan" });
   });
 
   // 6. huly_create_milestone

@@ -1,66 +1,78 @@
 // tools/domains/labels.ts — Labels domain (4 tools, GLOBAL namespace).
 // Design: 06-api.md §4 Labels. CRUD GLOBAL (KHÔNG project-scoped).
 //
-// Labels khác tags: GLOBAL namespace, mọi project thấy được. (05-data-model §3)
+// T-58 #43 fix (2026-07-28): DEEP-AUDIT 12 packages @0.7.423 — `view:class:Label`
+// KHÔNG tồn tại (0 match interface + class toàn packages). Deprecated — Huly
+// runtime dùng `tags:class:TagElement` cho tag/label entity (đã verify T-43,
+// dùng ở tags.ts). User yêu cầu "KHÔNG defensive che lỗi" → honest-unavailable
+// tất cả 4 label tools, hướng dẫn user dùng tag tools (huly_list_tags /
+// huly_create_tag / huly_attach_tag) thay thế.
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { LABEL_CLASS, spaceRef } from "./_class-refs.js";
 import { workspaceParam } from "./_common.js";
 
+/** Honest-unavailable message cho label tools (deprecated — dùng tag tools). */
+function labelUnavailableMessage(operation: string): string {
+  return (
+    `huly_${operation} KHÔNG khả dụng: Huly runtime class "view:class:Label" ` +
+    `KHÔNG tồn tại (0 match trong 12 packages @0.7.423 — deprecated). Huly dùng ` +
+    `tags:class:TagElement cho tag/label entity. Dùng tag tools thay thế: ` +
+    `huly_list_tags, huly_create_tag, huly_update_tag, huly_attach_tag, ` +
+    `huly_detach_tag (xem tags domain).`
+  );
+}
+
 export const tools: HulyToolDefinition[] = [
-  // 1. list_labels
+  // 1. list_labels — honest-unavailable (deprecated)
   defineHulyTool({
     name: "list_labels",
     label: "List labels",
-    description: "List global labels (cross-project namespace).",
+    description: "UNAVAILABLE — Label deprecated in Huly runtime. Use huly_list_tags instead.",
     parameters: Type.Object({ workspace: workspaceParam }),
-    async handler(_params, tctx) {
-      const labels = await tctx.client.findAll(LABEL_CLASS, {}, {});
-      const list = labels.map((l) => ({
-        _id: l._id,
-        title: (l as { title?: string }).title ?? "",
-        color: (l as { color?: string }).color,
-        description: (l as { description?: string }).description,
-      }));
+    async handler(_params, _tctx) {
       return {
-        content: `Found ${list.length} label(s).`,
-        details: { count: list.length, labels: list },
+        content: labelUnavailableMessage("list_labels"),
+        isError: true,
+        details: {
+          reason: "deprecated",
+          useClass: "tags:class:TagElement",
+          useTool: "huly_list_tags",
+        },
       };
     },
   }),
 
-  // 2. create_label
+  // 2. create_label — honest-unavailable (deprecated)
   defineHulyTool({
     name: "create_label",
     label: "Create label",
-    description: "Create global label (cross-project).",
+    description: "UNAVAILABLE — Label deprecated in Huly runtime. Use huly_create_tag instead.",
     parameters: Type.Object({
       workspace: workspaceParam,
       title: Type.String(),
-      color: Type.Optional(Type.String({ description: "Color hex hoặc palette index." })),
+      color: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
       category: Type.Optional(Type.String()),
     }),
-    async handler(params, tctx) {
-      const id = await tctx.client.createDoc(LABEL_CLASS, spaceRef(tctx.workspace), {
-        title: params.title,
-        color: params.color,
-        description: params.description,
-        category: params.category,
-      });
+    async handler(_params, _tctx) {
       return {
-        content: `Created label "${params.title}".`,
-        details: { id, title: params.title },
+        content: labelUnavailableMessage("create_label"),
+        isError: true,
+        details: {
+          reason: "deprecated",
+          useClass: "tags:class:TagElement",
+          useTool: "huly_create_tag",
+        },
       };
     },
   }),
 
-  // 3. update_label
+  // 3. update_label — honest-unavailable (deprecated)
   defineHulyTool({
     name: "update_label",
     label: "Update label",
-    description: "Update label (title, color, description, category).",
+    description: "UNAVAILABLE — Label deprecated in Huly runtime. Use huly_update_tag instead.",
     parameters: Type.Object({
       workspace: workspaceParam,
       label: Type.String(),
@@ -69,58 +81,37 @@ export const tools: HulyToolDefinition[] = [
       description: Type.Optional(Type.String()),
       category: Type.Optional(Type.String()),
     }),
-    async handler(params, tctx) {
-      const l = await tctx.client.findOne(LABEL_CLASS, { _id: params.label });
-      if (!l) {
-        return {
-          content: `Label "${params.label}" not found.`,
-          isError: true,
-          details: { label: params.label },
-        };
-      }
-      const ops: Record<string, unknown> = {};
-      if (params.title !== undefined) ops.title = params.title;
-      if (params.color !== undefined) ops.color = params.color;
-      if (params.description !== undefined) ops.description = params.description;
-      if (params.category !== undefined) ops.category = params.category;
-      if (Object.keys(ops).length === 0) {
-        return { content: "No fields to update.", details: { updated: false } };
-      }
-      await tctx.client.updateDoc(LABEL_CLASS, l.space as never, l._id as never, ops);
+    async handler(_params, _tctx) {
       return {
-        content: `Updated label ${params.label}.`,
-        details: { updated: true, fields: Object.keys(ops) },
+        content: labelUnavailableMessage("update_label"),
+        isError: true,
+        details: {
+          reason: "deprecated",
+          useClass: "tags:class:TagElement",
+          useTool: "huly_update_tag",
+        },
       };
     },
   }),
 
-  // 4. delete_label — destructive
+  // 4. delete_label — honest-unavailable (deprecated)
   defineHulyTool({
     name: "delete_label",
     label: "Delete label",
-    description: "Delete global label (destructive).",
-    destructive: true,
-    destructiveContext: (p) => ({
-      type: "label",
-      id: (p as { label?: string }).label ?? "<unknown>",
-    }),
+    description: "UNAVAILABLE — Label deprecated in Huly runtime. Use huly_delete_tag instead.",
     parameters: Type.Object({
       workspace: workspaceParam,
       label: Type.String(),
     }),
-    async handler(params, tctx) {
-      const l = await tctx.client.findOne(LABEL_CLASS, { _id: params.label });
-      if (!l) {
-        return {
-          content: `Label "${params.label}" not found.`,
-          isError: true,
-          details: { label: params.label },
-        };
-      }
-      await tctx.client.removeDoc(LABEL_CLASS, l.space as never, l._id as never);
+    async handler(_params, _tctx) {
       return {
-        content: `Deleted label ${params.label}.`,
-        details: { deleted: true, label: params.label },
+        content: labelUnavailableMessage("delete_label"),
+        isError: true,
+        details: {
+          reason: "deprecated",
+          useClass: "tags:class:TagElement",
+          useTool: "huly_delete_tag",
+        },
       };
     },
   }),

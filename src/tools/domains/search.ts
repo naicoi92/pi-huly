@@ -6,19 +6,23 @@
 // predicate (audit §3 — % → .*, case-insensitive, anchored). Server có thể
 // KHÔNG support $like → catch + honest error (KHÔNG fake "Found 0").
 //
-// Honest capability: substring search trên title/content fields (KHÔNG fulltext
-// index server-side). Huly KHÔNG expose dedicated fulltext search endpoint
-// trong api-client (audit §3 verified).
+// T-60 #55 #64 fix (2026-07-28): REMOVE Document domain khỏi search —
+// `tracker:class:Document` interface tồn tại trong source NHƯNG KHÔNG register
+// trong plugin() class block (interface orphan) → runtime fail "domain not
+// found" (#55 report 2 lần, T-49 Promise.allSettled chỉ che warning, root cause
+// chưa fix). User yêu cầu "KHÔNG defensive che lỗi" → honest remove domain,
+// update tool description rõ Document search KHÔNG available (dùng
+// huly_list_documents trong teamspace cụ thể để browse document).
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { workspaceParam, limitParam, escapeLikePattern } from "./_common.js";
-import { ISSUE_CLASS, DOCUMENT_CLASS, CHAT_MESSAGE_CLASS } from "./_class-refs.js";
+import { ISSUE_CLASS, CHAT_MESSAGE_CLASS } from "./_class-refs.js";
 
 /** Kết quả search từ 1 domain, tag type cho LLM phân biệt. */
 interface SearchResult {
   _id: string;
-  type: "issue" | "document" | "message";
+  type: "issue" | "message";
   identifier?: string;
   title?: string;
   preview?: string;
@@ -63,11 +67,12 @@ export const tools: HulyToolDefinition[] = [
     name: "fulltext_search",
     label: "Fulltext search",
     description:
-      "Substring search across Huly workspace: issue titles, document titles (if available), " +
-      "message content. Uses $like pattern (case-insensitive substring). NOT a fulltext index — " +
-      "complex queries may miss partial matches. Some domains may be unavailable — results " +
-      "show which succeeded. Global across workspace.",
-    promptSnippet: "Search Huly issues, documents, messages by substring.",
+      "Substring search across Huly workspace: issue titles + message content. " +
+      "Uses $like pattern (case-insensitive substring). NOT a fulltext index — " +
+      "complex queries may miss partial matches. Document search NOT available " +
+      "(Huly tracker:class:Document not registered runtime) — use huly_list_documents " +
+      "in a specific teamspace to browse documents. Global across workspace.",
+    promptSnippet: "Search Huly issues + messages by substring.",
     parameters: Type.Object({
       workspace: workspaceParam,
       query: Type.String({ description: "Search query (substring, case-insensitive)." }),
@@ -78,12 +83,8 @@ export const tools: HulyToolDefinition[] = [
       // Escape wildcards (% _ \) tránh injection / unintended pattern.
       const query = escapeLikePattern(params.query);
 
-      // T-49 #38: Promise.allSettled thay Promise.all — 1 domain fail (vd
-      // Document class sai runtime "domain not found") không kéo cả search fail.
-      // Filter fulfilled → partial result; collect rejected → warning log.
-      // Promise.allSettled KHÔNG throw (per-domain reject thành status value),
-      // nên outer catch chỉ còn safety net cho unexpected programming errors
-      // (vd .map throw trên doc shape bất thường, sync bug) — KHÔNG domain error.
+      // T-60: chỉ 2 domain — Issue (title) + ChatMessage (content). Document
+      // domain REMOVE (class not registered runtime — #55 honest unavailable).
       const domainConfigs: Array<{
         name: string;
         type: SearchResult["type"];
@@ -91,7 +92,6 @@ export const tools: HulyToolDefinition[] = [
         field: string;
       }> = [
         { name: "issues", type: "issue", _class: ISSUE_CLASS, field: "title" },
-        { name: "documents", type: "document", _class: DOCUMENT_CLASS, field: "title" },
         { name: "messages", type: "message", _class: CHAT_MESSAGE_CLASS, field: "content" },
       ];
 
@@ -130,14 +130,11 @@ export const tools: HulyToolDefinition[] = [
         }
 
         // Build content: partial result + warning nếu có domain fail.
-        // counts[cfg.name] luôn được set trong forEach trên cả 2 nhánh
-        // (fulfilled=length, rejected=0) nên KHÔNG cần ?? 0 fallback.
         const countSummary = domainConfigs
           .map((cfg) => `${counts[cfg.name]} ${cfg.name}`)
           .join(", ");
         let content = `Found ${results.length} result(s) for "${params.query}" (${countSummary}).`;
         if (failedDomains.length > 0) {
-          // 1 dòng per failed domain, truncate reason tránh phình content.
           const warnings = failedDomains
             .map((d) => `${d.name} search failed: ${d.reason.slice(0, 100)}`)
             .join(" | ");
@@ -154,10 +151,7 @@ export const tools: HulyToolDefinition[] = [
           },
         };
       } catch (e) {
-        // Safety net cho unexpected programming errors — KHÔNG catch domain
-        // error (đã settle thành rejected status qua Promise.allSettled).
-        // Trigger thực tế duy nhất: .map throw trên doc shape bất thường
-        // (vd d._id là object không coercible → String() throw).
+        // Safety net cho unexpected programming errors.
         const msg = e instanceof Error ? e.message : String(e);
         return {
           content: `Search failed unexpectedly: ${msg}.`,
