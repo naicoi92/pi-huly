@@ -11,6 +11,7 @@ import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import { DOCUMENT_SNAPSHOT_CLASS } from "./_class-refs.js";
 import { workspaceParam } from "./_common.js";
+import type { DocumentSnapshotDoc } from "./_entity-types.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_document_snapshots — T-66: RE-ENABLED (DOCUMENT_SNAPSHOT_CLASS)
@@ -24,35 +25,25 @@ export const tools: HulyToolDefinition[] = [
       limit: Type.Optional(Type.Number({ description: "Max snapshots to return." })),
     }),
     async handler(params, tctx) {
-      // T-85 #120: sort newest-first (trusted createdOn: Descending). Snapshots
-      // are AttachedDoc scoped to document via attachedTo.
-      const snaps = await tctx.client.findAll(
+      // T-85 #120: sort newest-first (trusted createdOn: Descending). T-90: native DocumentSnapshotDoc.
+      const snaps = await tctx.client.findAll<DocumentSnapshotDoc>(
         DOCUMENT_SNAPSHOT_CLASS,
-        { attachedTo: params.document } as never,
+        { attachedTo: params.document },
         {
           sort: { createdOn: -1 },
           ...(params.limit !== undefined ? { limit: params.limit } : {}),
-        } as never,
+        },
       );
       // T-85 #120: output {snapshotId, documentId, title, parentDocumentId,
       // createdOn, modifiedOn} — drop fake modifiedBy (không có trong trusted).
-      const list = snaps.map((s) => {
-        const snap = s as {
-          _id: string;
-          title?: string;
-          parent?: string;
-          createdOn?: number;
-          modifiedOn?: number;
-        };
-        return {
-          snapshotId: snap._id,
-          documentId: params.document,
-          title: snap.title,
-          parentDocumentId: snap.parent,
-          createdOn: snap.createdOn,
-          modifiedOn: snap.modifiedOn,
-        };
-      });
+      const list = snaps.map((snap) => ({
+        snapshotId: snap._id,
+        documentId: params.document,
+        title: snap.title,
+        parentDocumentId: snap.parent,
+        createdOn: snap.createdOn,
+        modifiedOn: snap.modifiedOn,
+      }));
       return {
         content: `Found ${list.length} snapshot(s) for document "${params.document}".`,
         details: { count: list.length, snapshots: list },
@@ -70,7 +61,7 @@ export const tools: HulyToolDefinition[] = [
       snapshot: Type.String({ description: "Snapshot id." }),
     }),
     async handler(params, tctx) {
-      const s = await tctx.client.findOne(DOCUMENT_SNAPSHOT_CLASS, {
+      const s = await tctx.client.findOne<DocumentSnapshotDoc>(DOCUMENT_SNAPSHOT_CLASS, {
         _id: params.snapshot,
       });
       if (!s) {
@@ -81,7 +72,7 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // Snapshot content = MarkupBlobRef → fetchMarkup resolve to markdown.
-      const contentRef = (s as { content?: unknown }).content;
+      const contentRef = s.content;
       let content: string | undefined;
       if (contentRef) {
         try {
@@ -96,23 +87,15 @@ export const tools: HulyToolDefinition[] = [
           // Markup fetch fail — return metadata without content.
         }
       }
-      const snap = s as {
-        _id: string;
-        attachedTo?: string;
-        title?: string;
-        parent?: string;
-        createdOn?: number;
-        modifiedOn?: number;
-      };
       return {
         content: `Snapshot ${params.snapshot}`,
         details: {
-          snapshotId: snap._id,
-          documentId: snap.attachedTo,
-          title: snap.title,
-          parentDocumentId: snap.parent,
-          createdOn: snap.createdOn,
-          modifiedOn: snap.modifiedOn,
+          snapshotId: s._id,
+          documentId: s.attachedTo,
+          title: s.title,
+          parentDocumentId: s.parent,
+          createdOn: s.createdOn,
+          modifiedOn: s.modifiedOn,
           content,
         },
       };

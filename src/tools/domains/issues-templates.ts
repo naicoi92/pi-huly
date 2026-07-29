@@ -10,6 +10,7 @@ import {
   PERSON_CLASS,
   COMPONENT_CLASS,
 } from "./_class-refs.js";
+import type { IssueTemplateDoc, PersonDoc, ComponentDoc } from "./_entity-types.js";
 import {
   workspaceParam,
   projectParam,
@@ -53,30 +54,21 @@ export const tools: HulyToolDefinition[] = [
           details: { project: tctx.project },
         };
       }
-      // T-89 #124: sort modifiedOn Descending + output priority/modifiedOn/childrenCount.
-      const tpls = await tctx.client.findAll(
+      // T-89 #124: sort modifiedOn Descending + output priority/modifiedOn/childrenCount. T-90: native IssueTemplateDoc.
+      const tpls = await tctx.client.findAll<IssueTemplateDoc>(
         ISSUE_TEMPLATE_CLASS,
-        { space } as never,
+        { space },
         {
           sort: { modifiedOn: -1 },
-        } as never,
+        },
       );
-      const list = tpls.map((t) => {
-        const tpl = t as {
-          _id: string;
-          title?: string;
-          priority?: string;
-          modifiedOn?: number;
-          children?: unknown[];
-        };
-        return {
-          _id: tpl._id,
-          title: tpl.title ?? "",
-          priority: tpl.priority,
-          modifiedOn: tpl.modifiedOn,
-          childrenCount: tpl.children?.length ?? 0,
-        };
-      });
+      const list = tpls.map((tpl) => ({
+        _id: tpl._id,
+        title: tpl.title ?? "",
+        priority: tpl.priority,
+        modifiedOn: tpl.modifiedOn,
+        childrenCount: tpl.children?.length ?? 0,
+      }));
       return {
         content: `Found ${list.length} template(s).`,
         details: { count: list.length, templates: list },
@@ -96,26 +88,16 @@ export const tools: HulyToolDefinition[] = [
       template: Type.String(),
     }),
     async handler(params, tctx) {
-      const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, { _id: params.template });
-      if (!t) {
+      const tpl = await tctx.client.findOne<IssueTemplateDoc>(ISSUE_TEMPLATE_CLASS, {
+        _id: params.template,
+      });
+      if (!tpl) {
         return {
           content: `Template "${params.template}" not found.`,
           isError: true,
           details: { template: params.template },
         };
       }
-      const tpl = t as {
-        _id: string;
-        title?: string;
-        description?: unknown;
-        priority?: string;
-        assignee?: string | null;
-        component?: string | null;
-        estimation?: number;
-        modifiedOn?: number;
-        createdOn?: number;
-        children?: unknown[];
-      };
       // T-89 #124: resolve description MarkupBlobRef → markdown.
       let description: string | undefined;
       if (tpl.description) {
@@ -131,16 +113,18 @@ export const tools: HulyToolDefinition[] = [
           // Markup fetch fail — omit description.
         }
       }
-      // T-89 #124: resolve assignee (Person name) + component (label).
+      // T-89 #124: resolve assignee (Person name) + component (label). T-90: native PersonDoc/ComponentDoc.
       let assigneeName: string | undefined;
       if (tpl.assignee) {
-        const person = await tctx.client.findOne(PERSON_CLASS, { _id: tpl.assignee } as never);
-        assigneeName = (person as { name?: string } | null)?.name;
+        const person = await tctx.client.findOne<PersonDoc>(PERSON_CLASS, { _id: tpl.assignee });
+        assigneeName = person?.name;
       }
       let componentLabel: string | undefined;
       if (tpl.component) {
-        const comp = await tctx.client.findOne(COMPONENT_CLASS, { _id: tpl.component } as never);
-        componentLabel = (comp as { label?: string } | null)?.label;
+        const comp = await tctx.client.findOne<ComponentDoc>(COMPONENT_CLASS, {
+          _id: tpl.component,
+        });
+        componentLabel = comp?.label;
       }
       return {
         content: `Template ${tpl.title ?? ""}`,

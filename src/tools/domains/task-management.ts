@@ -23,7 +23,9 @@ import {
   TASK_TYPE_MIXIN,
   CLASSIFIER_KIND_MIXIN,
   MODEL_LABEL_PREFIX,
+  idRef,
 } from "./_class-refs.js";
+import type { ProjectTypeDoc, TaskTypeDoc, MixinDoc, StatusDoc } from "./_entity-types.js";
 import { workspaceParam } from "./_common.js";
 
 /** Generate id helper (Huly convention <class-prefix>.<rand>). */
@@ -122,7 +124,7 @@ export const tools: HulyToolDefinition[] = [
       projectType: Type.String(),
     }),
     async handler(params, tctx) {
-      const projectType = await tctx.client.findOne(PROJECT_TYPE_CLASS, {
+      const projectType = await tctx.client.findOne<ProjectTypeDoc>(PROJECT_TYPE_CLASS, {
         _id: params.projectType,
       });
       if (!projectType) {
@@ -133,10 +135,10 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // T-73 review L1: idempotent — findOne existing TaskType by name+parent.
-      const existing = await tctx.client.findOne(TASK_TYPE_CLASS, {
+      const existing = await tctx.client.findOne<TaskTypeDoc>(TASK_TYPE_CLASS, {
         name: params.name,
         parent: params.projectType,
-      } as never);
+      });
       if (existing) {
         return {
           content: `Task type "${params.name}" already exists (idempotent — no-op).`,
@@ -144,14 +146,14 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // T-73 review M1: copy required fields từ sibling template TaskType.
-      // TaskType schema requires descriptor/kind/ofClass/targetClass/statusClass/
-      // statusCategories — derive from an existing sibling trong cùng projectType.
-      const existingTaskIds = ((projectType as { tasks?: string[] }).tasks ?? []) as string[];
-      let template: Record<string, unknown> | undefined;
+      // T-90: native TaskTypeDoc (no inline cast). TaskType schema requires
+      // descriptor/kind/ofClass/targetClass/statusClass/statusCategories.
+      const existingTaskIds = projectType.tasks ?? [];
+      let template: TaskTypeDoc | undefined;
       if (existingTaskIds.length > 0) {
-        template = (await tctx.client.findOne(TASK_TYPE_CLASS, {
+        template = await tctx.client.findOne<TaskTypeDoc>(TASK_TYPE_CLASS, {
           _id: existingTaskIds[0],
-        } as never)) as Record<string, unknown> | undefined;
+        });
       }
       if (!template) {
         return {
@@ -173,32 +175,26 @@ export const tools: HulyToolDefinition[] = [
       // skip cả 2 → task type tồn tại nhưng KHÔNG apply TaskTypeClass mixin.
       // UNVERIFIED: core:class:Mixin + task:mixin:TaskTypeClass theo naming
       // convention (task pkg not installed locally — flag như T-43).
+      // T-90: native types + satisfies (no inline cast / as never trên payload).
       const targetClassId = `${taskTypeId}:type:mixin`;
-      const ofClass = template.ofClass as string | undefined;
-      const mixinData: Record<string, unknown> = {
-        extends: ofClass,
+      const mixinData = {
+        extends: template.ofClass,
         kind: CLASSIFIER_KIND_MIXIN,
         label: MODEL_LABEL_PREFIX + params.name,
-      };
-      const templateIcon = template.icon as string | undefined;
-      if (templateIcon !== undefined) mixinData.icon = templateIcon;
-      await tctx.client.createDoc(
-        MIXIN_CLASS,
-        MODEL_SPACE,
-        mixinData as never,
-        targetClassId as never,
-      );
+        ...(template.icon !== undefined ? { icon: template.icon } : {}),
+      } satisfies Partial<MixinDoc>;
+      await tctx.client.createDoc(MIXIN_CLASS, MODEL_SPACE, mixinData, idRef(targetClassId));
       await tctx.client.createMixin(
-        targetClassId as never,
+        idRef(targetClassId),
         MIXIN_CLASS,
         MODEL_SPACE,
         TASK_TYPE_MIXIN,
-        { taskType: taskTypeId, projectType: projectType._id } as never,
+        { taskType: taskTypeId, projectType: projectType._id },
       );
       // T-86 #121: statuses copy từ template (KHÔNG start []) + targetClass =
       // new mixin ref (KHÔNG copy template.targetClass).
-      const templateStatusIds = (template.statuses as string[] | undefined) ?? [];
-      const taskData: Record<string, unknown> = {
+      const templateStatusIds = template.statuses ?? [];
+      const taskData = {
         name: params.name,
         parent: projectType._id,
         descriptor: template.descriptor,
@@ -208,38 +204,32 @@ export const tools: HulyToolDefinition[] = [
         statusClass: template.statusClass,
         statusCategories: template.statusCategories,
         statuses: templateStatusIds, // T-86: copy template (KHÔNG [])
-      };
-      if (templateIcon !== undefined) taskData.icon = templateIcon;
-      const templateColor = template.color as unknown;
-      if (templateColor !== undefined) taskData.color = templateColor;
-      const allowedAsChildOf = template.allowedAsChildOf as unknown;
-      if (allowedAsChildOf !== undefined) taskData.allowedAsChildOf = allowedAsChildOf;
+        ...(template.icon !== undefined ? { icon: template.icon } : {}),
+        ...(template.color !== undefined ? { color: template.color } : {}),
+        ...(template.allowedAsChildOf !== undefined
+          ? { allowedAsChildOf: template.allowedAsChildOf }
+          : {}),
+      } satisfies Partial<TaskTypeDoc>;
       const id = await tctx.client.createDoc(
         TASK_TYPE_CLASS,
         MODEL_SPACE,
-        taskData as never,
-        taskTypeId as never,
+        taskData,
+        idRef(taskTypeId),
       );
       // T-86 #121: register projectType.tasks + statuses append {id,taskType}.
-      const ptStatuses =
-        (projectType as { statuses?: Array<{ _id?: string; taskType?: string }> }).statuses ?? [];
+      const ptStatuses = projectType.statuses ?? [];
       const appendedStatuses = [
         ...ptStatuses,
         ...templateStatusIds
           .filter((sid) => !ptStatuses.some((s) => s._id === sid))
           .map((sid) => ({ _id: sid, taskType: taskTypeId })),
       ];
-      await tctx.client.updateDoc(
-        PROJECT_TYPE_CLASS,
-        MODEL_SPACE,
-        projectType._id as never,
-        {
-          tasks: existingTaskIds.includes(taskTypeId)
-            ? existingTaskIds
-            : [...existingTaskIds, taskTypeId],
-          statuses: appendedStatuses,
-        } as never,
-      );
+      await tctx.client.updateDoc(PROJECT_TYPE_CLASS, MODEL_SPACE, idRef(projectType._id), {
+        tasks: existingTaskIds.includes(taskTypeId)
+          ? existingTaskIds
+          : [...existingTaskIds, taskTypeId],
+        statuses: appendedStatuses,
+      });
       return {
         content: `Created task type "${params.name}" + Mixin classifier + registered to projectType workflow.`,
         details: {
@@ -278,8 +268,8 @@ export const tools: HulyToolDefinition[] = [
       ]),
     }),
     async handler(params, tctx) {
-      // T-73: resolve taskType → statusClass + parent projectType.
-      const taskType = await tctx.client.findOne(TASK_TYPE_CLASS, {
+      // T-73: resolve taskType → statusClass + parent projectType. T-90: native TaskTypeDoc.
+      const taskType = await tctx.client.findOne<TaskTypeDoc>(TASK_TYPE_CLASS, {
         _id: params.taskType,
       });
       if (!taskType) {
@@ -289,7 +279,7 @@ export const tools: HulyToolDefinition[] = [
           details: { taskType: params.taskType },
         };
       }
-      const statusClass = (taskType as { statusClass?: string }).statusClass;
+      const statusClass = taskType.statusClass;
       if (!statusClass) {
         return {
           content: `Task type "${params.taskType}" has no statusClass (cannot determine target class).`,
@@ -297,7 +287,7 @@ export const tools: HulyToolDefinition[] = [
           details: { taskType: params.taskType },
         };
       }
-      const projectTypeId = (taskType as { parent?: string }).parent;
+      const projectTypeId = taskType.parent;
       if (!projectTypeId) {
         return {
           content: `Task type "${params.taskType}" has no parent projectType.`,
@@ -317,16 +307,14 @@ export const tools: HulyToolDefinition[] = [
       }
       // T-73 review H2: idempotent findOne by {name} trên statusClass ONLY (KHÔNG
       // ofTaskType — that field KHÔNG thuộc Status schema, server strip → query miss).
-      const existing = await tctx.client.findOne(
-        statusClass as never,
-        {
-          name: params.name,
-        } as never,
-      );
+      // T-90: native StatusDoc (statusClass dynamic → as never structural, 1 boundary).
+      const existing = await tctx.client.findOne<StatusDoc>(statusClass as never, {
+        name: params.name,
+      });
       if (existing) {
         // T-87 #122: validate category match (trusted requireStatusCategoryMatch).
         // Same name different category = silent workflow corruption. Error rõ.
-        const existingCategory = (existing as { category?: string }).category;
+        const existingCategory = existing.category;
         if (existingCategory !== undefined && existingCategory !== categoryRef) {
           return {
             content:
@@ -352,7 +340,7 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // T-73 review H1: ofAttribute required (Status.ofAttribute: Ref<Attribute<Status>>).
-      // Trusted hardcodes tracker.attribute.IssueStatus cho issue statuses.
+      // Trusted hardcodes tracker.attribute.IssueStatus cho issue statuses. T-90: satisfies.
       const statusId = genId("tracker:status");
       await tctx.client.createDoc(
         statusClass as never,
@@ -361,35 +349,26 @@ export const tools: HulyToolDefinition[] = [
           name: params.name,
           ofAttribute: ISSUE_STATUS_ATTRIBUTE,
           category: categoryRef,
-        } as never,
-        statusId as never,
+        } satisfies Partial<StatusDoc>,
+        idRef(statusId),
       );
       // T-73: register vào TaskType.statuses (read-modify-write idempotent).
-      const ttStatuses = ((taskType as { statuses?: string[] }).statuses ?? []) as string[];
+      const ttStatuses = taskType.statuses ?? [];
       if (!ttStatuses.includes(statusId)) {
-        await tctx.client.updateDoc(
-          TASK_TYPE_CLASS,
-          MODEL_SPACE,
-          taskType._id as never,
-          { statuses: [...ttStatuses, statusId] } as never,
-        );
+        await tctx.client.updateDoc(TASK_TYPE_CLASS, MODEL_SPACE, idRef(taskType._id), {
+          statuses: [...ttStatuses, statusId],
+        });
       }
       // T-73: register vào ProjectType.statuses (ProjectStatus[] objects {_id, taskType}).
-      const projectType = await tctx.client.findOne(PROJECT_TYPE_CLASS, {
+      const projectType = await tctx.client.findOne<ProjectTypeDoc>(PROJECT_TYPE_CLASS, {
         _id: projectTypeId,
       });
       if (projectType) {
-        const ptStatuses =
-          (projectType as { statuses?: Array<{ _id?: string; taskType?: string }> }).statuses ?? [];
+        const ptStatuses = projectType.statuses ?? [];
         if (!ptStatuses.some((s) => s._id === statusId)) {
-          await tctx.client.updateDoc(
-            PROJECT_TYPE_CLASS,
-            MODEL_SPACE,
-            projectType._id as never,
-            {
-              statuses: [...ptStatuses, { _id: statusId, taskType: params.taskType }],
-            } as never,
-          );
+          await tctx.client.updateDoc(PROJECT_TYPE_CLASS, MODEL_SPACE, idRef(projectType._id), {
+            statuses: [...ptStatuses, { _id: statusId, taskType: params.taskType }],
+          });
         }
       }
       return {
