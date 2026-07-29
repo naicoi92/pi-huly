@@ -698,28 +698,40 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const labelDoc = label as { _id: string; title?: string; color?: number };
-      // Idempotent: nếu label đã có trên issue (match tag ref) → no-op.
-      const labels = ((issue as { labels?: unknown[] }).labels ?? []) as Array<{
-        tag?: string;
-        title?: string;
-      }>;
-      if (labels.some((l) => l?.tag === labelDoc._id)) {
+      // T-83 #118: labels = TagReference AttachedDoc (collection "labels"), KHÔNG
+      // inline Issue.labels field. $push labels (T-45) = silent data loss (field
+      // không tồn tại runtime). Migrate sang addCollection matching attach_tag (T-69).
+      // Idempotent: findAll TagReference check existing.
+      const existing = await tctx.client.findAll(
+        TAG_REFERENCE_CLASS,
+        {
+          attachedTo: issue._id,
+          attachedToClass: ISSUE_CLASS,
+          collection: "labels",
+          tag: labelDoc._id,
+        } as never,
+        {},
+      );
+      if (existing.length > 0) {
         return {
           content: `Label ${params.label} already on ${params.identifier} (no-op).`,
           details: { added: false, idempotent: true, label: params.label },
         };
       }
-      // Push TagReference object shape (audit §4 — NOT raw string).
-      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
-        $push: {
-          labels: {
-            tag: labelDoc._id,
-            title: labelDoc.title ?? params.label,
-            color: labelDoc.color ?? 0,
-          },
-        },
-      });
-      if (!updResult.ok) return updResult.error;
+      // addCollection TagReference AttachedDoc (collection "labels").
+      const attrs: Record<string, unknown> = {
+        tag: labelDoc._id,
+        title: labelDoc.title ?? params.label,
+        color: Number(labelDoc.color ?? 0),
+      };
+      const tagRefId = await tctx.client.addCollection(
+        TAG_REFERENCE_CLASS,
+        issue.space as never,
+        issue._id as never,
+        ISSUE_CLASS,
+        "labels",
+        attrs as never,
+      );
       return {
         content: `Added label ${params.label} to ${params.identifier}.`,
         details: {
@@ -727,6 +739,7 @@ export const tools: HulyToolDefinition[] = [
           identifier: params.identifier,
           label: params.label,
           labelId: labelDoc._id,
+          tagRefId,
         },
       };
     },
@@ -770,21 +783,33 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const labelDoc = label as { _id: string };
-      // Idempotent: nếu label không có trên issue → no-op (KHÔNG crash).
-      const labels = ((issue as { labels?: unknown[] }).labels ?? []) as Array<{
-        tag?: string;
-      }>;
-      if (!labels.some((l) => l?.tag === labelDoc._id)) {
+      // T-83 #118: findAll TagReference matching tag trên issue (matching detach_tag).
+      // $pull labels (T-45) = silent no-op (field không tồn tại runtime).
+      const refs = await tctx.client.findAll(
+        TAG_REFERENCE_CLASS,
+        {
+          attachedTo: issue._id,
+          attachedToClass: ISSUE_CLASS,
+          collection: "labels",
+          tag: labelDoc._id,
+        } as never,
+        {},
+      );
+      if (refs.length === 0) {
         return {
           content: `Label ${params.label} not on ${params.identifier} (no-op).`,
           details: { removed: false, idempotent: true, label: params.label },
         };
       }
-      // $pull bằng tag ref object (match shape khi push).
-      const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
-        $pull: { labels: { tag: labelDoc._id } },
-      });
-      if (!updResult.ok) return updResult.error;
+      // removeDoc each matching TagReference.
+      for (const r of refs) {
+        const ref = r as { _id: string; space?: string };
+        await tctx.client.removeDoc(
+          TAG_REFERENCE_CLASS,
+          (ref.space ?? issue.space) as never,
+          ref._id as never,
+        );
+      }
       return {
         content: `Removed label ${params.label} from ${params.identifier}.`,
         details: {
@@ -792,6 +817,7 @@ export const tools: HulyToolDefinition[] = [
           identifier: params.identifier,
           label: params.label,
           labelId: labelDoc._id,
+          removedCount: refs.length,
         },
       };
     },
