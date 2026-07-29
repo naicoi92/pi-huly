@@ -2,25 +2,21 @@
   "name": "pi-huly",
   "version": "1.0.0-beta.8",
   "description": "Native Huly support cho pi-coding-agent — tools + skills + subagent (KHÔNG MCP, gọi thẳng WebSocket API)",
-  "type": "module",
-  "license": "MIT",
-  "author": "naicoi92",
+  "keywords": [
+    "huly",
+    "pi-coding-agent",
+    "pi-package",
+    "project-management"
+  ],
   "homepage": "https://github.com/naicoi92/pi-huly",
-  "repository": {
-    "type": "git",
-    "url": "git+ssh://git@github.com/naicoi92/pi-huly.git"
-  },
   "bugs": {
     "url": "https://github.com/naicoi92/pi-huly/issues"
   },
-  "keywords": [
-    "pi-package",
-    "huly",
-    "pi-coding-agent",
-    "project-management"
-  ],
-  "engines": {
-    "node": ">=22.19.0"
+  "license": "MIT",
+  "author": "naicoi92",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/naicoi92/pi-huly.git"
   },
   "files": [
     "dist",
@@ -30,6 +26,7 @@
     "NOTICE.md",
     "CHANGELOG.md"
   ],
+  "type": "module",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "exports": {
@@ -37,14 +34,6 @@
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     }
-  },
-  "pi": {
-    "extensions": [
-      "./dist/index.mjs"
-    ],
-    "skills": [
-      "./skills"
-    ]
   },
   "scripts": {
     "fmt": "oxfmt --write 'src/**/*.ts' '*.ts'",
@@ -82,5 +71,16 @@
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
     "typebox": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/index.mjs"
+    ],
+    "skills": [
+      "./skills"
+    ]
   }
 }

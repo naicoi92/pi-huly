@@ -22,8 +22,8 @@ ubuntu+macos. Tất cả fix verified vs trusted source.
 - **issues read-path** (T-80 #103): `get_issue` raw status/assignee ref → name +
   add labels/parentIssue/subIssues/modifiedOn; `list_issue_relations` **broken
   blocks query** (`blockedBy._id` dotted → object form `{blockedBy:{_id,_class}}`)
-  + resolve raw `_id`→identifier; `update_issue` assignee raw push → resolve
-  Person + null clear.
+  - resolve raw `_id`→identifier; `update_issue` assignee raw push → resolve
+    Person + null clear.
 - **projects/spaces/components** (T-81 #104): component `lead` raw string →
   `Ref<Employee>`; create `comments:0`; `getProjectStatuses` N+1 `IssueStatus` →
   `core.class.Status` batch `$in` (trusted né "can fail on some workspaces");
@@ -95,7 +95,7 @@ thiếu account-client). 651 tests (baseline 583 → +68), CI green cả ubuntu+
   lại (list/get/update/delete teamspace + list/get/create/edit/delete document
   - list/get snapshot) dùng class refs mới. `uploadMarkup`/`updateMarkup` wired
     vào HulyClient (ws delegate + rest throw).
-- _*create_* AttachedDoc + sequence_* (T-67 #75): create_issue dùng `$inc
+- _\*create_* AttachedDoc + sequence_* (T-67 #75): create_issue dùng `$inc
 sequence` (atomic, no race dup identifier) + addCollection + number/kind/
   identifier/rank/parents. create_project self-ref space + type + members/owners
   - sequence:0 + idempotent. create_milestone status enum (KHÔNG string).
@@ -109,7 +109,7 @@ sequence` (atomic, no race dup identifier) + addCollection + number/kind/
 - **comments field** (T-70 #78): field `message` (inline Markup) thay `body`
   (KHÔNG tồn tại). ChatMessage.message = `JSON.stringify(mdToMarkup(md))`,
   KHÔNG MarkupBlobRef. list_comments thêm filter `attachedToClass` + sort.
-- _*list_* space scoping_* (T-71 #79): list_issues/milestones/components/
+- _\*list_* space scoping_* (T-71 #79): list_issues/milestones/components/
   templates thêm `space: project._id`. list_issues assignee resolve Person +
   titleSearch no-leak. list_statuses ProjectType.statuses traversal + category
   ref→enum + isDefault.
