@@ -312,6 +312,38 @@ websocket error: <id> wss://.../_transactor/<token>` + 7 dòng spam khác
 - [x] [T-76] [M] bug(templates): `add`/`remove_template_child` dùng raw string thay vì `IssueTemplateChild` object — `create_issue_from_template` mất `priority`/`assignee`/`component`/`children` — high | blocked-by: T-68 (cần `attachIssueChild` cho sub-issue creation) | blocks: (none) | issue: #84 — `add_template_child` phải build object `{id, title, priority, assignee, component, estimation, description}` + replace toàn bộ `children` array (không `$push` string); `remove_template_child` find by `id` field trong children; `create_template` thiếu default field (`priority`/`assignee`/`component`/`estimation`/`children:[]`/`comments:0`); `create_issue_from_template` chỉ copy title+description → phải copy priority/assignee/component + tạo child issues đệ quy. — ✅ done (PR #96 merged)
 - [x] [T-77] [M] bug(search + misc): `fulltext_search` dùng `$like findAll` thay vì `searchFulltext` API; `preview_deletion` bỏ sót cascade (sub-issues/relations/blockedBy); `create`/`update_tag_category` sai field `title` vs `label` — medium | blocked-by: (none) | blocks: (none) | issue: #85 — `fulltext_search` đổi sang `client.searchFulltext({query}, {limit})` (API engine thật + relevance score) + honest error nếu server không support (theo T-57 pattern); `preview_deletion` dùng aggregate counters (`subIssues`/`comments`/`attachments`/`blockedBy`/`relations`) + generate warnings cascade; tag category field `title` → `label`. — ✅ done (PR #97 merged)
 
+## beta.7 follow-up hotfixes (post-beta.7 — không thuộc milestone)
+
+> **Context**: Fresh audit vs trusted `@firfi/huly-mcp` v0.45 (clone
+> `/tmp/huly-mcp-trusted`, unchanged since beta.5) — rà soát các tool KHÔNG
+> cover bởi T-65..T-77 (todos, issues read-path, projects/spaces/components
+> get/delete/update, milestones/workspace/contacts). 4 reality-checker song
+> song theo domain group, verify từng tool vs trusted source + tests.
+>
+> **Kết quả**: ~20 bug mới trong 4 cluster, + ~20 completeness gaps. Blocker
+> thực tế user-reported (create_teamspace unavailable) fix ngay trong beta.7.
+> Còn lại 4 bug issues + 3 gap issues filed (#102-#108) dưới META #86.
+>
+> **Root cause mới** (không trùng 5 root-cause beta.5):
+> 1. **`done` boolean giả định** (todos) — Huly ToDo dùng `doneOn: Timestamp|null`.
+> 2. **Read path không resolve** (issues/milestones) — raw ref/number leak thay
+>    vì human name/string enum.
+> 3. **Wrong target** (update_user_profile) — ghi `Person.name` thay vì account
+>    profile, phá format `"Last,First"`.
+> 4. **Dead field read** (list_persons `p.email`) — email lives trong Channel.
+>
+> **Umbrella tracking**: issue #86 `[META]` (comment liệt kê #102-#108).
+> Chi tiết mỗi task ở [`docs/tasks/T-XX.md`](./docs/tasks/).
+
+- [x] [T-78] [M] fix(teamspace): implement `create_teamspace` (string-literal icon/spaceType refs) + `list_teamspaces` surface IDs — high | blocked-by: (none) | blocks: (none) | issue: (inline, PR #101) — T-66 conclusion sai (claimed icon/spaceType refs cần bundle document plugin). Reality: plugin refs = plain string literals (`document:icon:Teamspace` / `document:spaceType:DefaultTeamspaceType`), verified runtime qua `node -e`. Same T-65 pattern. Bonus latent fix: `SPACE_PARENT` dot→colon form (`core:space:Space`, cũ `core.space.Space` sai — affect update/delete teamspace). Idempotent create (findOne name → existing) + createDoc {name,description,private,members:[uuid],owners:[uuid],icon,type}. — ✅ done (PR #101 merged; beta.7 released; 650 tests, lint/typecheck/fmt/md green)
+- [ ] [T-79] [M] bug(todos): 7/7 tool sai data model — `doneOn` field + `ProjectToDo` class + `CollectionSize` counter — high | blocked-by: (none) | blocks: (none) | issue: #102 — [detail](./docs/tasks/T-79.md) — Huly ToDo dùng `doneOn: Timestamp|null` (KHÔNG `done` boolean); issue-attached todo là class riêng `ProjectToDo` (KHÔNG base `ToDo`); space chung `time.space.ToDos` (KHÔNG `issue.space`); `Todoable.todos` = `CollectionSize` counter (KHÔNG array). complete/reopen hiện no-op (`{done:true/false}` — silent data loss). Cần: add `PROJECT_TODO_CLASS` + `TODOS_SPACE` refs; complete=`{doneOn:Date.now()}`; reopen=`{doneOn:null}`; delete=`$inc{todos:-1}`.
+- [ ] [T-80] [M] bug(issues read-path): `get_issue` raw refs + `list_issue_relations` broken blocks query + `update_issue` assignee raw push — high | blocked-by: (none) | blocks: (none) | issue: #103 — [detail](./docs/tasks/T-80.md) — relations (T-61) + move_issue (T-68) PASS — KHÔNG đụng. get_issue thiếu labels/parentIssue/subIssues/modifiedOn + raw status/assignee ref (không resolve name); list_issue_relations trả raw `_id` (KHÔNG identifier) + **blocks query broken** (`blockedBy._id` dotted-path returns NO rows — trusted comment PR #48, phải `{blockedBy:{_id,_class}}`); update_issue assignee raw push (không resolve Person._id, đồng bộ create_issue) + không null-clear.
+- [ ] [T-81] [L] bug(projects/spaces/components): component `lead` raw ref + create `comments:0` + `IssueStatus` class query + component no space-scope — medium | blocked-by: (none) | blocks: (none) | issue: #104 — [detail](./docs/tasks/T-81.md) — delete_project/component + set_issue_component storage PASS. create/update_component `lead` raw string (KHÔNG resolve `Ref<Employee>`); create_component thiếu `comments:0` (risk reject); `getProjectStatuses` query `tracker:class:IssueStatus` (trusted né — "can fail on some workspaces"), dùng `core:class:Status` + batch `$in`; component lookups (get/update/delete/set) không `space:project._id` filter.
+- [ ] [T-82] [M] bug(milestones/workspace/contacts): milestone status number leak + `list_persons` dead email + `update_user_profile` wrong target — medium | blocked-by: (none) | blocks: (none) | issue: #105 — [detail](./docs/tasks/T-82.md) — T-71 scoping + T-72 enum (write) + T-74 employees PASS. milestone status READ trả raw number (T-72 chỉ fix write — thiếu reverse map `milestoneStatusToString`); list_persons đọc `p.email` (dead — T-74 đã fix y hệt cho list_employees); update_user_profile sai target (`Person.name` vs account profile) + phá format `"Last,First"`.
+- [ ] [T-79G] [M] enhancement(todos): `update_todo` fields (owner/priority/visibility) + `schedule`/`unschedule_todo` tools — low | blocked-by: T-79 (same domain) | blocks: (none) | issue: #106 — tool chạy đúng nhưng thiếu capability: update_todo thiếu owner/priority/visibility + description raw (thật markup) + no $unset dueDate; thiếu 2 tool schedule_todo/unschedule_todo (work slot/calendar).
+- [ ] [T-81G] [L] enhancement(projects/spaces/components): output fields + archived-filter + `update_space` fields + name/label resolution — low | blocked-by: T-81 (same domain) | blocks: (none) | issue: #107 — 8 gaps: get_project thiếu defaultStatus/statuses; list_projects/spaces thiếu archived-filter + sort + rich fields; update_project/space thiếu null-clear + 3 fields (private/archived/autoJoin); get_space name-fallback; get_component lead→name + markdown + label resolve; set_issue_component label-resolve + null.
+- [ ] [T-82G] [M] enhancement(milestones/workspace/contacts): `get_milestone` fields + `findPersonByEmailOrName` email path + sort/clear — low | blocked-by: T-82 (same domain) | blocks: T-80 (assignee resolve) | issue: #108 — get_milestone thiếu description/project/modifiedOn; findPersonByEmailOrName chỉ name-match (email path deferred — trusted 5-step: SocialIdentity→Channel→name); list_milestones thiếu sort; set_issue_milestone thiếu null-clear. Cross-ref: unblocks T-80 assignee email resolve.
+
 ---
 
 ## Size / priority distribution
@@ -337,5 +369,12 @@ websocket error: <id> wss://.../_transactor/<token>` + 7 dòng spam khác
   - **Medium**: T-77 (fulltext_search API + preview_deletion cascade + tag category field).
   - DAG phụ thuộc: T-65→T-66 · T-68→T-76 · T-74→T-75.
   - Task detail files: TODO (cần tạo `docs/tasks/T-65.md`..`T-77.md` khi grab).
+- **beta.7 follow-up chain (T-78 done · T-79..T-82 + 3 gaps open)**: fresh audit tools KHÔNG cover bởi T-65..T-77 (todos, issues read-path, projects/spaces/components get/delete/update, milestones/workspace/contacts). 4 reality-checker song song. Blocker T-78 (create_teamspace) fix ngay beta.7 (#101). 4 bug + 3 gap issues filed #102-#108. 650 tests (baseline 651 −1: 3 unavailable → 2 create).
+  - **Done**: T-78 (create_teamspace string-literal refs + SPACE_PARENT colon fix).
+  - **Bug high**: T-79 (todos doneOn+ProjectToDo, silent no-op), T-80 (issues read-path raw refs + broken blocks query).
+  - **Bug medium**: T-81 (projects/spaces/components lead+comments+IssueStatus+scope), T-82 (milestones status leak + list_persons email + update_user_profile target).
+  - **Enhancement low**: T-79G (todos update fields+schedule), T-81G (output fields+filters), T-82G (milestone fields + email resolve — unblocks T-80).
+  - DAG phụ thuộc: T-79→T-79G · T-81→T-81G · T-82→T-82G→T-80 (email resolve).
+  - Task detail files: TODO (cần tạo `docs/tasks/T-79.md`..`T-82G.md` khi grab).
 - Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
 - Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).
