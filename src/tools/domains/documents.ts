@@ -46,12 +46,17 @@ export const tools: HulyToolDefinition[] = [
     parameters: Type.Object({ workspace: workspaceParam, limit: limitParam }),
     async handler(params, tctx) {
       const limit = typeof params.limit === "number" ? params.limit : 50;
-      const spaces = await tctx.client.findAll(TEAMSPACE_CLASS, { archived: false }, { limit });
+      // T-88 #123: sort name Ascending (trusted).
+      const spaces = await tctx.client.findAll(TEAMSPACE_CLASS, { archived: false }, {
+        limit,
+        sort: { name: 1 },
+      } as never);
       const list = spaces.map((s) => ({
         id: s._id,
         name: (s as { name?: string }).name ?? "",
         description: (s as { description?: string }).description,
         private: (s as { private?: boolean }).private ?? false,
+        archived: (s as { archived?: boolean }).archived ?? false,
       }));
       // T-78: surface ids+names trong content (agent đọc content để resolve).
       const lines = list.map((t) => `- ${t.name} (${t.id})`).join("\n");
@@ -83,6 +88,10 @@ export const tools: HulyToolDefinition[] = [
           details: { teamspace: params.teamspace },
         };
       }
+      // T-88 #123: document count trong teamspace (capped 1000).
+      const docs = await tctx.client.findAll(DOCUMENT_CLASS, { space: s._id } as never, {
+        limit: 1000,
+      });
       return {
         content: `Teamspace ${(s as { name?: string }).name ?? ""}`,
         details: {
@@ -91,6 +100,7 @@ export const tools: HulyToolDefinition[] = [
           description: (s as { description?: string }).description,
           private: (s as { private?: boolean }).private,
           archived: (s as { archived?: boolean }).archived ?? false,
+          documentCount: docs.length,
         },
       };
     },
@@ -242,10 +252,21 @@ export const tools: HulyToolDefinition[] = [
       if (params.titleSearch) {
         query.title = { $like: `%${params.titleSearch}%` };
       }
-      const docs = await tctx.client.findAll(DOCUMENT_CLASS, query as never, { limit });
+      // T-88 #123: sort modifiedOn Descending + output teamspace/modifiedOn.
+      const docs = await tctx.client.findAll(
+        DOCUMENT_CLASS,
+        query as never,
+        {
+          limit,
+          sort: { modifiedOn: -1 },
+        } as never,
+      );
+      const tsName = (ts as { name?: string }).name ?? params.teamspace;
       const list = docs.map((d) => ({
         id: d._id,
         title: (d as { title?: string }).title ?? "",
+        teamspace: tsName,
+        modifiedOn: (d as { modifiedOn?: number }).modifiedOn,
       }));
       return {
         content: `Found ${list.length} document(s) in teamspace "${(ts as { name?: string }).name ?? params.teamspace}".`,
@@ -288,11 +309,20 @@ export const tools: HulyToolDefinition[] = [
           // Markup fetch fail (blob missing/corrupted) — return metadata without content.
         }
       }
+      // T-88 #123: resolve teamspace name + createdOn.
+      const tsId = (d as { space?: string }).space;
+      let teamspaceName: string | undefined;
+      if (tsId) {
+        const ts = await tctx.client.findOne(TEAMSPACE_CLASS, { _id: tsId });
+        teamspaceName = (ts as { name?: string } | null)?.name;
+      }
       return {
         content: `Document ${(d as { title?: string }).title ?? ""}`,
         details: {
           id: d._id,
           title: (d as { title?: string }).title,
+          teamspace: teamspaceName ?? tsId,
+          createdOn: (d as { createdOn?: number }).createdOn,
           content,
         },
       };

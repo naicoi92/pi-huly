@@ -429,3 +429,99 @@ describe("T-66: document CRUD ENABLED (DOCUMENT_CLASS + space scoping)", () => {
     expect(client.removeDoc).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("T-88: documents/teamspaces sort + output fields (#123)", () => {
+  it("list_teamspaces → sort name Asc + archived field", async () => {
+    const client = makeClient();
+    client.findAll = vi.fn().mockResolvedValue([
+      { _id: "ts-2", name: "Beta", archived: false },
+      { _id: "ts-1", name: "Alpha", archived: true },
+    ]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+    const result = await findTool("huly_list_teamspaces").execute(
+      "tc1",
+      {},
+      undefined,
+      undefined,
+      ctx,
+    );
+    const findOpts = client.findAll.mock.calls[0]?.[2];
+    expect(findOpts).toMatchObject({ sort: { name: 1 } });
+    const list =
+      (result as { details?: { teamspaces?: Array<{ archived?: boolean }> } }).details
+        ?.teamspaces ?? [];
+    expect(list[0]).toMatchObject({ archived: false });
+    expect(list[1]).toMatchObject({ archived: true });
+  });
+
+  it("get_teamspace → documentCount từ findAll DOCUMENT_CLASS", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValue({ _id: "ts-1", name: "Docs", space: "core:space:Space" });
+    client.findAll = vi.fn().mockResolvedValue([{ _id: "d1" }, { _id: "d2" }, { _id: "d3" }]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+    const result = await findTool("huly_get_teamspace").execute(
+      "tc1",
+      { teamspace: "ts-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const details = (result as { details?: { documentCount?: number } }).details ?? {};
+    expect(details.documentCount).toBe(3);
+    expect(client.findAll).toHaveBeenCalledWith(
+      DOCUMENT_CLASS,
+      { space: "ts-1" },
+      expect.any(Object),
+    );
+  });
+
+  it("list_documents → sort modifiedOn Desc + output teamspace/modifiedOn", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({ _id: "ts-1", name: "Docs" });
+    client.findAll = vi.fn().mockResolvedValue([
+      { _id: "d-2", title: "B", modifiedOn: 2000 },
+      { _id: "d-1", title: "A", modifiedOn: 1000 },
+    ]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+    const result = await findTool("huly_list_documents").execute(
+      "tc1",
+      { teamspace: "ts-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const findOpts = client.findAll.mock.calls[0]?.[2];
+    expect(findOpts).toMatchObject({ sort: { modifiedOn: -1 } });
+    const docs =
+      (result as { details?: { documents?: Array<{ teamspace?: string; modifiedOn?: number }> } })
+        .details?.documents ?? [];
+    expect(docs[0]).toMatchObject({ teamspace: "Docs", modifiedOn: 2000 });
+  });
+
+  it("get_document → teamspace name + createdOn", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "d-1",
+        title: "Doc",
+        space: "ts-1",
+        createdOn: 900,
+        content: undefined,
+      })
+      .mockResolvedValueOnce({ _id: "ts-1", name: "Docs" }); // teamspace resolve
+    vi.mocked(getClient).mockResolvedValue(client as never);
+    const result = await findTool("huly_get_document").execute(
+      "tc1",
+      { document: "d-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const details =
+      (result as { details?: { teamspace?: string; createdOn?: number } }).details ?? {};
+    expect(details).toMatchObject({ teamspace: "Docs", createdOn: 900 });
+  });
+});
