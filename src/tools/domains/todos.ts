@@ -12,6 +12,7 @@ import {
   safeUpdateDoc,
   safeRemoveDoc,
 } from "./_common.js";
+import { findPersonByEmailOrName } from "./contacts.js";
 
 /**
  * ToDoPriority enum (audit §5 — @hcengineering/time).
@@ -211,13 +212,21 @@ export const tools: HulyToolDefinition[] = [
   defineHulyTool({
     name: "update_todo",
     label: "Update todo",
-    description: "Update todo (title, description, dueDate).",
+    description:
+      "Update todo (title, description, owner, priority, visibility, dueDate). " +
+      "dueDate=null clears ($unset).",
     parameters: Type.Object({
       workspace: workspaceParam,
       todo: Type.String(),
       title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
-      dueDate: Type.Optional(Type.Integer()),
+      owner: Type.Optional(Type.String({ description: "Owner email/name." })),
+      priority: todoPrioritySchema,
+      visibility: Type.Optional(
+        Type.Union([Type.Literal("public"), Type.Literal("freeBusy"), Type.Literal("private")]),
+      ),
+      // T-79G #106: dueDate=null → \$unset clear.
+      dueDate: Type.Optional(Type.Union([Type.Integer(), Type.Null()])),
     }),
     async handler(params, tctx) {
       const t = await tctx.client.findOne(TODO_CLASS, { _id: params.todo });
@@ -230,16 +239,72 @@ export const tools: HulyToolDefinition[] = [
       }
       const ops: Record<string, unknown> = {};
       if (params.title !== undefined) ops.title = params.title;
-      if (params.description !== undefined) ops.description = params.description;
-      if (params.dueDate !== undefined) ops.dueDate = params.dueDate;
-      if (Object.keys(ops).length === 0) {
+      // T-79G #106: description = MarkupBlobRef (uploadMarkup/create or
+      // updateMarkup/overwrite). Trước đây gán raw string.
+      let descriptionUpdatedInPlace = false;
+      if (params.description !== undefined) {
+        const existing = (t as { description?: unknown }).description;
+        if (existing) {
+          await tctx.client.updateMarkup(
+            TODO_CLASS,
+            t._id,
+            "description",
+            params.description,
+            "markdown",
+          );
+          descriptionUpdatedInPlace = true;
+        } else {
+          ops.description = await tctx.client.uploadMarkup(
+            TODO_CLASS,
+            t._id,
+            "description",
+            params.description,
+            "markdown",
+          );
+        }
+      }
+      // T-79G #106: owner → user: Ref<Employee> (resolve Person).
+      if (params.owner !== undefined) {
+        const ownerId = await findPersonByEmailOrName(tctx.client, params.owner);
+        if (!ownerId) {
+          return {
+            content: `Owner "${params.owner}" not found (no Person matching email/name).`,
+            isError: true,
+            details: { owner: params.owner, todo: params.todo },
+          };
+        }
+        ops.user = ownerId;
+      }
+      if (params.priority !== undefined) ops.priority = TODO_PRIORITY_MAP[params.priority];
+      if (params.visibility !== undefined) {
+        // visibility string → Huly Visibility (public/freeBusy/private match 1:1).
+        ops.visibility = params.visibility.charAt(0).toUpperCase() + params.visibility.slice(1);
+      }
+      // T-79G #106: dueDate null → \$unset (clear); number → set.
+      if (params.dueDate !== undefined) {
+        if (params.dueDate === null) {
+          ops.$unset = { dueDate: "" };
+        } else {
+          ops.dueDate = params.dueDate;
+        }
+      }
+      if (Object.keys(ops).length === 0 && !descriptionUpdatedInPlace) {
         return { content: "No fields to update.", details: { updated: false } };
+      }
+      if (Object.keys(ops).length === 0 && descriptionUpdatedInPlace) {
+        return {
+          content: `Updated todo ${params.todo}: description`,
+          details: { updated: true, fields: ["description"] },
+        };
       }
       const updResult = await safeUpdateDoc(tctx.client, TODO_CLASS, t, ops);
       if (!updResult.ok) return updResult.error;
+      const fields = Object.keys(ops).filter((f) => f !== "$unset");
+      if (ops.$unset !== undefined) fields.push("dueDate(clear)");
+      if (descriptionUpdatedInPlace) fields.push("description");
       return {
-        content: `Updated todo ${params.todo}.`,
-        details: { updated: true, fields: Object.keys(ops) },
+        content: `Updated todo ${params.todo}: ${fields.join(", ")}`,
+        details: { updated: true, fields },
       };
     },
   }),
