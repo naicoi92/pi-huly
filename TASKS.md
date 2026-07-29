@@ -325,6 +325,7 @@ websocket error: <id> wss://.../_transactor/<token>` + 7 dòng spam khác
 > Còn lại 4 bug issues + 3 gap issues filed (#102-#108) dưới META #86.
 >
 > **Root cause mới** (không trùng 5 root-cause beta.5):
+>
 > 1. **`done` boolean giả định** (todos) — Huly ToDo dùng `doneOn: Timestamp|null`.
 > 2. **Read path không resolve** (issues/milestones) — raw ref/number leak thay
 >    vì human name/string enum.
@@ -375,6 +376,6 @@ websocket error: <id> wss://.../_transactor/<token>` + 7 dòng spam khác
   - **Bug medium**: T-81 (projects/spaces/components lead+comments+IssueStatus+scope), T-82 (milestones status leak + list_persons email + update_user_profile target).
   - **Enhancement low**: T-79G (todos update fields+schedule), T-81G (output fields+filters), T-82G (milestone fields + email resolve — unblocks T-80).
   - DAG phụ thuộc: T-79→T-79G · T-81→T-81G · T-82→T-82G→T-80 (email resolve).
-  - Task detail files: TODO (cần tạo `docs/tasks/T-79.md`..`T-82G.md` khi grab).
+  - Task detail files: [`docs/tasks/T-79.md`..`T-82G.md`](./docs/tasks/) (created).
 - Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
 - Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).
