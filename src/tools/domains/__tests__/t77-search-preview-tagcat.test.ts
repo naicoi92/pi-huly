@@ -118,20 +118,20 @@ describe("T-77: fulltext_search prefers searchFulltext, falls back $like", () =>
   });
 });
 
-describe("T-77: preview_deletion cascade counters", () => {
-  it("counts comments + attachments + subIssues + reverseBlocks + inline blockedBy/relations", async () => {
+describe("T-84: preview_deletion reads CollectionSize counters (no N+1 findAll) #119", () => {
+  it("reads subIssues/comments/attachments counters + inline blockedBy/relations, correct total", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValue({
       _id: "i1",
       identifier: "PD-1",
       space: "sp1",
+      subIssues: 3, // CollectionSize counter
+      comments: 5,
+      attachments: 2,
       blockedBy: [{ _id: "b1" }],
       relations: [{ _id: "r1" }, { _id: "r2" }],
     });
-    client.findAll = vi.fn().mockImplementation((_cls) => {
-      // 4 findAll calls: comments, attachments, subIssues, reverseBlocks
-      return Promise.resolve([{ _id: "x" }, { _id: "y" }]);
-    });
+    client.findAll = vi.fn(); // T-84: KHÔNG gọi findAll (counters trực tiếp)
     vi.mocked(getClient).mockResolvedValue(client as never);
     const r = await findTool(deletionTools, "huly_preview_deletion").execute(
       "tc1",
@@ -141,12 +141,17 @@ describe("T-77: preview_deletion cascade counters", () => {
       ctx,
     );
     const cascade = r.details.cascade as Record<string, number>;
-    expect(cascade.comments).toBe(2);
+    expect(cascade.comments).toBe(5);
     expect(cascade.attachments).toBe(2);
-    expect(cascade.subIssues).toBe(2);
-    expect(cascade.reverseBlocks).toBe(2);
+    expect(cascade.subIssues).toBe(3);
     expect(cascade.blockedBy).toBe(1);
     expect(cascade.relations).toBe(2);
+    // T-84: total = subIssues+comments+attachments+blockedBy+relations (no +1 entity,
+    // no reverseBlocks — match trusted previewIssueDeletion).
+    expect(cascade.total).toBe(3 + 5 + 2 + 1 + 2);
+    expect(cascade.reverseBlocks).toBeUndefined(); // T-84: drop broken counter
+    // T-84: findAll KHÔNG gọi (đọc counters trực tiếp, không N+1).
+    expect(client.findAll).not.toHaveBeenCalled();
     expect(r.details.warnings).toBeDefined();
   });
 });
