@@ -64,7 +64,12 @@ export const tools: HulyToolDefinition[] = [
           details: { project: tctx.project },
         };
       }
-      const milestones = await tctx.client.findAll(MILESTONE_CLASS, { space } as never, {});
+      const milestones = await tctx.client.findAll(
+        MILESTONE_CLASS,
+        { space } as never,
+        // T-82G #108: sort modifiedOn desc.
+        { sort: { modifiedOn: -1 } } as never,
+      );
       const list = milestones.map((m) => ({
         id: m._id,
         label: (m as { label?: string }).label ?? "",
@@ -100,14 +105,44 @@ export const tools: HulyToolDefinition[] = [
           details: { milestone: params.milestone },
         };
       }
+      const ms = m as {
+        label?: string;
+        status?: number;
+        targetDate?: number;
+        description?: string | null;
+        space?: string;
+        modifiedOn?: number;
+        createdOn?: number;
+      };
+      // T-82G #108: description → markdown (fetchMarkup).
+      let description: string | undefined;
+      if (ms.description) {
+        try {
+          const markup = await tctx.client.fetchMarkup(
+            MILESTONE_CLASS,
+            m._id,
+            "description",
+            ms.description,
+            "markdown",
+          );
+          description = typeof markup === "string" ? markup : undefined;
+        } catch {
+          description = undefined;
+        }
+      }
       return {
-        content: `Milestone ${(m as { label?: string }).label ?? ""}`,
+        content: `Milestone ${ms.label ?? ""}`,
         details: {
           id: m._id,
-          label: (m as { label?: string }).label,
+          label: ms.label,
           // T-82 #105: status READ trả string (KHÔNG raw number).
-          status: milestoneStatusToString((m as { status?: number }).status),
-          targetDate: (m as { targetDate?: number }).targetDate,
+          status: milestoneStatusToString(ms.status),
+          targetDate: ms.targetDate,
+          // T-82G #108: add description (markdown), project (=space), modifiedOn, createdOn.
+          description,
+          project: ms.space,
+          modifiedOn: ms.modifiedOn,
+          createdOn: ms.createdOn,
         },
       };
     },
@@ -222,7 +257,8 @@ export const tools: HulyToolDefinition[] = [
       workspace: workspaceParam,
       project: projectParam,
       identifier: identifierParam,
-      milestone: Type.String({ description: "Milestone id." }),
+      // T-82G #108: milestone=null → clear (unassign).
+      milestone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     }),
     async handler(params, tctx) {
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
@@ -233,6 +269,15 @@ export const tools: HulyToolDefinition[] = [
           content: `Issue "${params.identifier}" not found.`,
           isError: true,
           details: { identifier: params.identifier },
+        };
+      }
+      // T-82G #108: milestone=null → clear.
+      if (params.milestone === null) {
+        const clr = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, { milestone: null });
+        if (!clr.ok) return clr.error;
+        return {
+          content: `Cleared milestone on ${params.identifier}.`,
+          details: { identifier: params.identifier, milestone: null },
         };
       }
       // T-52 #42: validate milestone tồn tại trước khi set ref.
