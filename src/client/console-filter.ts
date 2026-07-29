@@ -19,6 +19,10 @@
 /** Console method names được filter. */
 type ConsoleMethod = "warn" | "error" | "log";
 
+/** Console method override target — uniform fn signature (warn/error/log interchangeable). */
+type ConsoleFn = (...args: unknown[]) => void;
+const CONSOLE_METHODS: readonly ConsoleMethod[] = ["warn", "error", "log"];
+
 /**
  * Đếm số dòng đã filter: total + per-pattern (key = pattern.source).
  * Module-level để pool `health()` aggregate cross filter instance.
@@ -66,9 +70,10 @@ function extractMessage(firstArg: unknown): string | undefined {
     firstArg !== null &&
     !Array.isArray(firstArg) &&
     !(firstArg instanceof Error) &&
-    typeof (firstArg as { message?: unknown }).message === "string"
+    "message" in firstArg &&
+    typeof firstArg.message === "string"
   ) {
-    return (firstArg as { message: string }).message;
+    return firstArg.message;
   }
   return undefined;
 }
@@ -83,7 +88,7 @@ function extractMessage(firstArg: unknown): string | undefined {
 export class UpstreamConsoleFilter {
   private readonly patterns: RegExp[];
   private installed = false;
-  private readonly originals: Partial<Record<ConsoleMethod, typeof console.warn>> = {};
+  private readonly originals: Partial<Record<ConsoleMethod, ConsoleFn>> = {};
 
   constructor(patterns: RegExp[]) {
     this.patterns = patterns;
@@ -93,13 +98,13 @@ export class UpstreamConsoleFilter {
   install(): void {
     if (this.installed) return;
     this.installed = true;
-    for (const method of ["warn", "error", "log"] as ConsoleMethod[]) {
-      this.originals[method] = console[method] as typeof console.warn;
+    for (const method of CONSOLE_METHODS) {
+      this.originals[method] = console[method];
       // Arrow function giữ `this` + closure pattern. Bind original qua closure
       // (KHÔNG dùng .bind — giữ call site debug stack chính xác).
       const original = this.originals[method]!;
       const patterns = this.patterns;
-      console[method] = ((...args: unknown[]) => {
+      console[method] = (...args: unknown[]) => {
         const msg = extractMessage(args[0]);
         if (msg !== undefined) {
           // First-match-wins: chỉ pattern đầu (theo order trong mảng) match được
@@ -115,7 +120,7 @@ export class UpstreamConsoleFilter {
         }
         // KHÔNG match → delegate original (log ra như cũ)
         original.apply(console, args);
-      }) as typeof console.warn;
+      };
     }
   }
 
@@ -123,10 +128,10 @@ export class UpstreamConsoleFilter {
   restore(): void {
     if (!this.installed) return;
     this.installed = false;
-    for (const method of ["warn", "error", "log"] as ConsoleMethod[]) {
+    for (const method of CONSOLE_METHODS) {
       const original = this.originals[method];
       if (original !== undefined) {
-        console[method] = original as typeof console.warn;
+        console[method] = original;
         delete this.originals[method];
       }
     }

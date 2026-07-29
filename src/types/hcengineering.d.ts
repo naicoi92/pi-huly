@@ -106,6 +106,30 @@ declare module "@hcengineering/api-client" {
       mixin: Ref<Mixin<M>>,
       attributes: WithMarkup<MixinData<D, M>>,
     ): Promise<TxResult>;
+    // T-41/T-66: MarkupOperations (fetch/upload/update markup blob).
+    fetchMarkup(
+      objectClass: string,
+      objectId: string,
+      objectAttr: string,
+      markup: unknown,
+      format: "markdown" | "html" | "markup",
+    ): Promise<string>;
+    uploadMarkup(
+      objectClass: string,
+      objectId: string,
+      objectAttr: string,
+      markup: string,
+      format: "markdown" | "html" | "markup",
+    ): Promise<unknown>;
+    updateMarkup(
+      objectClass: string,
+      objectId: string,
+      objectAttr: string,
+      markup: string,
+      format: "markdown" | "html" | "markup",
+    ): Promise<void>;
+    // T-77: fulltext search (WS PlatformClient có thể KHÔNG expose — optional).
+    searchFulltext?(query: unknown, options?: unknown): Promise<unknown>;
     getAccount(): Promise<Account>;
     close(): Promise<void>;
   }
@@ -121,6 +145,8 @@ declare module "@hcengineering/api-client" {
       query: DocumentQuery<T>,
       options?: FindOptions<T>,
     ): Promise<FindResult<T>>;
+    // T-77: REST transport có searchFulltext.
+    searchFulltext(query: unknown, options?: unknown): Promise<unknown>;
     getAccount(): Promise<Account>;
   }
 

@@ -90,10 +90,10 @@ export async function getClient(workspaceId: string): Promise<HulyClient> {
   return client;
 }
 
-/** Map WorkspaceCreds → HulyCredentials (url tách + auth union). */
+/** Map WorkspaceCreds → HulyCredentials (url + ConnectOptions auth union). */
 function toCredentials(creds: WorkspaceCreds): HulyCredentials {
-  // creds đã có {url, workspace, ...auth} → cast thẳng (HulyCredentials shape match)
-  return creds as unknown as HulyCredentials;
+  // WorkspaceCreds = {url,workspace} & AuthMethod = {url} & ConnectOptions = HulyCredentials.
+  return creds;
 }
 
 /**
