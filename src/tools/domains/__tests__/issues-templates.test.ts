@@ -45,6 +45,7 @@ function makeClient() {
     createDoc: vi.fn().mockResolvedValue("tpl-id-1"),
     updateDoc: vi.fn().mockResolvedValue(undefined),
     removeDoc: vi.fn().mockResolvedValue(undefined),
+    fetchMarkup: vi.fn().mockResolvedValue("# template desc"),
   };
 }
 
@@ -276,5 +277,78 @@ describe("T-76: create_issue_from_template copies priority/assignee/component", 
     expect(attrs.priority).toBe("high"); // copied from template
     expect(attrs.assignee).toBe("person-1");
     expect(attrs.component).toBe("comp-1");
+  });
+});
+
+describe("T-89: list/get_templates sort + output fields (#124)", () => {
+  it("list_templates → sort modifiedOn Desc + priority/modifiedOn/childrenCount", async () => {
+    const client = makeClient();
+    // getProjectSpace → findOne PROJECT_CLASS (space resolve).
+    client.findOne = vi.fn().mockResolvedValueOnce({ _id: "p1", space: "sp1" });
+    client.findAll = vi.fn().mockResolvedValue([
+      { _id: "t2", title: "B", priority: "high", modifiedOn: 2000, children: [{ id: "c1" }] },
+      { _id: "t1", title: "A", priority: "low", modifiedOn: 1000, children: [] },
+    ]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+    const result = await findTool("huly_list_templates").execute(
+      "tc1",
+      { project: "PD" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const findOpts = client.findAll.mock.calls[0]?.[2];
+    expect(findOpts).toMatchObject({ sort: { modifiedOn: -1 } });
+    const list =
+      (result as { details?: { templates?: Array<Record<string, unknown>> } }).details?.templates ??
+      [];
+    expect(list[0]).toMatchObject({
+      _id: "t2",
+      priority: "high",
+      modifiedOn: 2000,
+      childrenCount: 1,
+    });
+    expect(list[1]).toMatchObject({ _id: "t1", childrenCount: 0 });
+  });
+
+  it("get_template → resolve description markdown + assignee name + component label + fields", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({
+        // template
+        _id: "t1",
+        title: "Bug template",
+        description: { blob: "ref" },
+        priority: "high",
+        assignee: "person-1",
+        component: "comp-1",
+        estimation: 120,
+        modifiedOn: 5000,
+        createdOn: 1000,
+        children: [{ id: "c1", title: "Sub" }],
+      })
+      .mockResolvedValueOnce({ _id: "person-1", name: "Alice" }) // Person resolve
+      .mockResolvedValueOnce({ _id: "comp-1", label: "Backend" }); // Component resolve
+    vi.mocked(getClient).mockResolvedValue(client as never);
+    const result = await findTool("huly_get_template").execute(
+      "tc1",
+      { project: "PD", template: "t1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const details = (result as { details?: Record<string, unknown> }).details ?? {};
+    expect(details).toMatchObject({
+      title: "Bug template",
+      description: "# template desc", // resolved markdown
+      priority: "high",
+      assignee: "Alice", // resolved name
+      component: "Backend", // resolved label
+      estimation: 120,
+      modifiedOn: 5000,
+      createdOn: 1000,
+    });
+    expect(Array.isArray(details.children)).toBe(true);
   });
 });
