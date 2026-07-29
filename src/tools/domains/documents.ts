@@ -31,6 +31,7 @@ import {
   DOCUMENT_CLASS,
 } from "./_class-refs.js";
 import { workspaceParam, limitParam, safeRemoveDoc } from "./_common.js";
+import type { TeamspaceDoc, DocumentDoc } from "./_entity-types.js";
 
 /** Teamspace CRUD space = core.space.Space (root, top-level space parent). */
 const TEAMSPACE_PARENT_SPACE = SPACE_PARENT;
@@ -46,17 +47,21 @@ export const tools: HulyToolDefinition[] = [
     parameters: Type.Object({ workspace: workspaceParam, limit: limitParam }),
     async handler(params, tctx) {
       const limit = typeof params.limit === "number" ? params.limit : 50;
-      // T-88 #123: sort name Ascending (trusted).
-      const spaces = await tctx.client.findAll(TEAMSPACE_CLASS, { archived: false }, {
-        limit,
-        sort: { name: 1 },
-      } as never);
+      // T-88 #123: sort name Ascending (trusted). T-90: native TeamspaceDoc.
+      const spaces = await tctx.client.findAll<TeamspaceDoc>(
+        TEAMSPACE_CLASS,
+        { archived: false },
+        {
+          limit,
+          sort: { name: 1 },
+        },
+      );
       const list = spaces.map((s) => ({
         id: s._id,
-        name: (s as { name?: string }).name ?? "",
-        description: (s as { description?: string }).description,
-        private: (s as { private?: boolean }).private ?? false,
-        archived: (s as { archived?: boolean }).archived ?? false,
+        name: s.name ?? "",
+        description: s.description,
+        private: s.private ?? false,
+        archived: s.archived ?? false,
       }));
       // T-78: surface ids+names trong content (agent đọc content để resolve).
       const lines = list.map((t) => `- ${t.name} (${t.id})`).join("\n");
@@ -80,7 +85,7 @@ export const tools: HulyToolDefinition[] = [
       teamspace: Type.String(),
     }),
     async handler(params, tctx) {
-      const s = await tctx.client.findOne(TEAMSPACE_CLASS, { _id: params.teamspace });
+      const s = await tctx.client.findOne<TeamspaceDoc>(TEAMSPACE_CLASS, { _id: params.teamspace });
       if (!s) {
         return {
           content: `Teamspace "${params.teamspace}" not found.`,
@@ -88,18 +93,22 @@ export const tools: HulyToolDefinition[] = [
           details: { teamspace: params.teamspace },
         };
       }
-      // T-88 #123: document count trong teamspace (capped 1000).
-      const docs = await tctx.client.findAll(DOCUMENT_CLASS, { space: s._id } as never, {
-        limit: 1000,
-      });
+      // T-88 #123: document count trong teamspace (capped 1000). T-90: native DocumentDoc.
+      const docs = await tctx.client.findAll<DocumentDoc>(
+        DOCUMENT_CLASS,
+        { space: s._id },
+        {
+          limit: 1000,
+        },
+      );
       return {
-        content: `Teamspace ${(s as { name?: string }).name ?? ""}`,
+        content: `Teamspace ${s.name ?? ""}`,
         details: {
           id: s._id,
-          name: (s as { name?: string }).name,
-          description: (s as { description?: string }).description,
-          private: (s as { private?: boolean }).private,
-          archived: (s as { archived?: boolean }).archived ?? false,
+          name: s.name,
+          description: s.description,
+          private: s.private,
+          archived: s.archived ?? false,
           documentCount: docs.length,
         },
       };
@@ -239,7 +248,9 @@ export const tools: HulyToolDefinition[] = [
       titleSearch: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
-      const ts = await tctx.client.findOne(TEAMSPACE_CLASS, { _id: params.teamspace });
+      const ts = await tctx.client.findOne<TeamspaceDoc>(TEAMSPACE_CLASS, {
+        _id: params.teamspace,
+      });
       if (!ts) {
         return {
           content: `Teamspace "${params.teamspace}" not found.`,
@@ -252,24 +263,20 @@ export const tools: HulyToolDefinition[] = [
       if (params.titleSearch) {
         query.title = { $like: `%${params.titleSearch}%` };
       }
-      // T-88 #123: sort modifiedOn Descending + output teamspace/modifiedOn.
-      const docs = await tctx.client.findAll(
-        DOCUMENT_CLASS,
-        query as never,
-        {
-          limit,
-          sort: { modifiedOn: -1 },
-        } as never,
-      );
-      const tsName = (ts as { name?: string }).name ?? params.teamspace;
+      // T-88 #123: sort modifiedOn Descending + output teamspace/modifiedOn. T-90: native DocumentDoc.
+      const docs = await tctx.client.findAll<DocumentDoc>(DOCUMENT_CLASS, query, {
+        limit,
+        sort: { modifiedOn: -1 },
+      });
+      const tsName = ts.name ?? params.teamspace;
       const list = docs.map((d) => ({
         id: d._id,
-        title: (d as { title?: string }).title ?? "",
+        title: d.title ?? "",
         teamspace: tsName,
-        modifiedOn: (d as { modifiedOn?: number }).modifiedOn,
+        modifiedOn: d.modifiedOn,
       }));
       return {
-        content: `Found ${list.length} document(s) in teamspace "${(ts as { name?: string }).name ?? params.teamspace}".`,
+        content: `Found ${list.length} document(s) in teamspace "${ts.name ?? params.teamspace}".`,
         details: { count: list.length, documents: list },
       };
     },
@@ -285,7 +292,7 @@ export const tools: HulyToolDefinition[] = [
       document: Type.String(),
     }),
     async handler(params, tctx) {
-      const d = await tctx.client.findOne(DOCUMENT_CLASS, { _id: params.document });
+      const d = await tctx.client.findOne<DocumentDoc>(DOCUMENT_CLASS, { _id: params.document });
       if (!d) {
         return {
           content: `Document "${params.document}" not found.`,
@@ -294,7 +301,7 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // Document.content = MarkupBlobRef → fetchMarkup resolve to markdown.
-      const contentRef = (d as { content?: unknown }).content;
+      const contentRef = d.content;
       let content: string | undefined;
       if (contentRef) {
         try {
@@ -309,20 +316,19 @@ export const tools: HulyToolDefinition[] = [
           // Markup fetch fail (blob missing/corrupted) — return metadata without content.
         }
       }
-      // T-88 #123: resolve teamspace name + createdOn.
-      const tsId = (d as { space?: string }).space;
+      // T-88 #123: resolve teamspace name + createdOn. T-90: native TeamspaceDoc.
       let teamspaceName: string | undefined;
-      if (tsId) {
-        const ts = await tctx.client.findOne(TEAMSPACE_CLASS, { _id: tsId });
-        teamspaceName = (ts as { name?: string } | null)?.name;
+      if (d.space) {
+        const ts = await tctx.client.findOne<TeamspaceDoc>(TEAMSPACE_CLASS, { _id: d.space });
+        teamspaceName = ts?.name;
       }
       return {
-        content: `Document ${(d as { title?: string }).title ?? ""}`,
+        content: `Document ${d.title ?? ""}`,
         details: {
           id: d._id,
-          title: (d as { title?: string }).title,
-          teamspace: teamspaceName ?? tsId,
-          createdOn: (d as { createdOn?: number }).createdOn,
+          title: d.title,
+          teamspace: teamspaceName ?? d.space,
+          createdOn: d.createdOn,
           content,
         },
       };

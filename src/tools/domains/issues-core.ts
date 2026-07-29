@@ -20,6 +20,7 @@ import {
   NO_PARENT_REF,
   ISSUE_KIND_REF,
 } from "./_class-refs.js";
+import type { TagElementDoc, TagReferenceDoc } from "./_entity-types.js";
 import {
   topLevelIssueParent,
   attachIssueChild,
@@ -685,11 +686,11 @@ export const tools: HulyToolDefinition[] = [
       }
       // T-45 + T-58: validate tag tồn tại — try by title first, fallback by _id.
       // T-58: dùng TAG_CLASS (TagElement) thay LABEL_CLASS (deprecated — view:class:Label
-      // 0 match runtime). Label workflow giờ dùng tag entity (redirect từ labels.ts).
+      // 0 match runtime). Label workflow giờ dùng tag entity. T-90: native TagElementDoc.
       const label =
-        (await tctx.client.findOne(TAG_CLASS, {
+        (await tctx.client.findOne<TagElementDoc>(TAG_CLASS, {
           title: params.label,
-        })) ?? (await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.label) }));
+        })) ?? (await tctx.client.findOne<TagElementDoc>(TAG_CLASS, { _id: idRef(params.label) }));
       if (!label) {
         return {
           content: `Label/tag "${params.label}" not found. Create via huly_create_tag first.`,
@@ -697,19 +698,18 @@ export const tools: HulyToolDefinition[] = [
           details: { label: params.label, identifier: params.identifier },
         };
       }
-      const labelDoc = label as { _id: string; title?: string; color?: number };
       // T-83 #118: labels = TagReference AttachedDoc (collection "labels"), KHÔNG
       // inline Issue.labels field. $push labels (T-45) = silent data loss (field
       // không tồn tại runtime). Migrate sang addCollection matching attach_tag (T-69).
-      // Idempotent: findAll TagReference check existing.
-      const existing = await tctx.client.findAll(
+      // T-90: native TagReferenceDoc. Idempotent: findAll check existing.
+      const existing = await tctx.client.findAll<TagReferenceDoc>(
         TAG_REFERENCE_CLASS,
         {
           attachedTo: issue._id,
           attachedToClass: ISSUE_CLASS,
           collection: "labels",
-          tag: labelDoc._id,
-        } as never,
+          tag: label._id,
+        },
         {},
       );
       if (existing.length > 0) {
@@ -718,19 +718,19 @@ export const tools: HulyToolDefinition[] = [
           details: { added: false, idempotent: true, label: params.label },
         };
       }
-      // addCollection TagReference AttachedDoc (collection "labels").
-      const attrs: Record<string, unknown> = {
-        tag: labelDoc._id,
-        title: labelDoc.title ?? params.label,
-        color: Number(labelDoc.color ?? 0),
-      };
+      // addCollection TagReference AttachedDoc (collection "labels"). T-90: satisfies.
+      const attrs = {
+        tag: label._id,
+        title: label.title ?? params.label,
+        color: Number(label.color ?? 0),
+      } satisfies Partial<TagReferenceDoc>;
       const tagRefId = await tctx.client.addCollection(
         TAG_REFERENCE_CLASS,
-        issue.space as never,
-        issue._id as never,
+        idRef(issue.space),
+        idRef(issue._id),
         ISSUE_CLASS,
         "labels",
-        attrs as never,
+        attrs,
       );
       return {
         content: `Added label ${params.label} to ${params.identifier}.`,
@@ -738,7 +738,7 @@ export const tools: HulyToolDefinition[] = [
           added: true,
           identifier: params.identifier,
           label: params.label,
-          labelId: labelDoc._id,
+          labelId: label._id,
           tagRefId,
         },
       };
@@ -770,11 +770,11 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // Validate tag exists (T-58: TAG_CLASS thay LABEL_CLASS deprecated).
+      // Validate tag exists (T-58: TAG_CLASS thay LABEL_CLASS deprecated). T-90: native TagElementDoc.
       const label =
-        (await tctx.client.findOne(TAG_CLASS, {
+        (await tctx.client.findOne<TagElementDoc>(TAG_CLASS, {
           title: params.label,
-        })) ?? (await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.label) }));
+        })) ?? (await tctx.client.findOne<TagElementDoc>(TAG_CLASS, { _id: idRef(params.label) }));
       if (!label) {
         return {
           content: `Label "${params.label}" not found. Cannot remove.`,
@@ -782,17 +782,16 @@ export const tools: HulyToolDefinition[] = [
           details: { label: params.label, identifier: params.identifier },
         };
       }
-      const labelDoc = label as { _id: string };
       // T-83 #118: findAll TagReference matching tag trên issue (matching detach_tag).
-      // $pull labels (T-45) = silent no-op (field không tồn tại runtime).
-      const refs = await tctx.client.findAll(
+      // $pull labels (T-45) = silent no-op (field không tồn tại runtime). T-90: native TagReferenceDoc.
+      const refs = await tctx.client.findAll<TagReferenceDoc>(
         TAG_REFERENCE_CLASS,
         {
           attachedTo: issue._id,
           attachedToClass: ISSUE_CLASS,
           collection: "labels",
-          tag: labelDoc._id,
-        } as never,
+          tag: label._id,
+        },
         {},
       );
       if (refs.length === 0) {
@@ -802,12 +801,11 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       // removeDoc each matching TagReference.
-      for (const r of refs) {
-        const ref = r as { _id: string; space?: string };
+      for (const ref of refs) {
         await tctx.client.removeDoc(
           TAG_REFERENCE_CLASS,
-          (ref.space ?? issue.space) as never,
-          ref._id as never,
+          idRef(ref.space ?? issue.space),
+          idRef(ref._id),
         );
       }
       return {
@@ -816,7 +814,7 @@ export const tools: HulyToolDefinition[] = [
           removed: true,
           identifier: params.identifier,
           label: params.label,
-          labelId: labelDoc._id,
+          labelId: label._id,
           removedCount: refs.length,
         },
       };
