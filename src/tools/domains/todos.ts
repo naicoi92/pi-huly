@@ -3,7 +3,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { ISSUE_CLASS, TODO_CLASS } from "./_class-refs.js";
+import { ISSUE_CLASS, TODO_CLASS, PROJECT_TODO_CLASS, TODOS_SPACE } from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -12,7 +12,6 @@ import {
   safeUpdateDoc,
   safeRemoveDoc,
 } from "./_common.js";
-import { mdToMarkup } from "../../markup/markup.js";
 
 /**
  * ToDoPriority enum (audit §5 — @hcengineering/time).
@@ -61,14 +60,19 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      const todos = ((issue as { todos?: unknown[] }).todos ?? []) as Array<{
-        _id?: string;
-        title?: string;
-        done?: boolean;
-      }>;
+      // T-79 #102: issue.todos là CollectionSize counter (number), KHÔNG array.
+      // Query todos qua findAll theo attachedTo=issue._id (trusted planner.ts).
+      const todos = (await tctx.client.findAll(TODO_CLASS, {
+        attachedTo: issue._id,
+      } as never)) as Array<{ _id: string; title?: string; doneOn?: number | null }>;
+      const summary = todos.map((t) => ({
+        _id: t._id,
+        title: t.title ?? "",
+        done: t.doneOn != null,
+      }));
       return {
-        content: `Found ${todos.length} todo(s) on ${params.identifier}.`,
-        details: { count: todos.length, todos },
+        content: `Found ${summary.length} todo(s) on ${params.identifier}.`,
+        details: { count: summary.length, todos: summary },
       };
     },
   }),
@@ -83,7 +87,14 @@ export const tools: HulyToolDefinition[] = [
       todo: Type.String(),
     }),
     async handler(params, tctx) {
-      const t = await tctx.client.findOne(TODO_CLASS, { _id: params.todo });
+      const t = (await tctx.client.findOne(TODO_CLASS, { _id: params.todo })) as {
+        _id: string;
+        title?: string;
+        doneOn?: number | null;
+        user?: string;
+        dueDate?: number | null;
+        priority?: number;
+      } | null;
       if (!t) {
         return {
           content: `Todo "${params.todo}" not found.`,
@@ -92,13 +103,16 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       return {
-        content: `Todo: ${(t as { title?: string }).title ?? ""}`,
+        content: `Todo: ${t.title ?? ""}`,
         details: {
           _id: t._id,
-          title: (t as { title?: string }).title,
-          done: (t as { done?: boolean }).done,
-          owner: (t as { owner?: string }).owner,
-          dueDate: (t as { dueDate?: number }).dueDate,
+          title: t.title,
+          // T-79 #102: Huly ToDo dùng doneOn (timestamp|null), KHÔNG `done` bool.
+          doneOn: t.doneOn ?? null,
+          done: t.doneOn != null,
+          owner: t.user,
+          dueDate: t.dueDate ?? null,
+          priority: t.priority,
         },
       };
     },
@@ -132,33 +146,42 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // T-46 #28 (audit §5): ToDo extends AttachedDoc với required fields.
-      // Trước đây addCollection thiếu attachedToClass + user + visibility + rank
-      // + priority + workslots → platform:status:UnknownError.
+      // T-46 #28 + T-79 #102: ProjectToDo = subclass cho issue-attached todo.
+      // space = time.space.ToDos (KHÔNG issue.space). doneOn:null (KHÔNG `done`).
+      // attachedTo/attachedToClass = positional addCollection args (KHÔNG trong data).
+      // description = MarkupBlobRef qua uploadMarkup (KHÔNG JSON.stringify).
       const priority = TODO_PRIORITY_MAP[params.priority ?? "medium"];
+      const todoId = `time:todo.${Math.random().toString(36).slice(2, 14)}` as never;
+      let descriptionRef: unknown = null;
+      if (params.description !== undefined && params.description.trim() !== "") {
+        descriptionRef = await tctx.client.uploadMarkup(
+          PROJECT_TODO_CLASS,
+          todoId,
+          "description",
+          params.description,
+          "markdown",
+        );
+      }
       try {
         const id = await tctx.client.addCollection(
-          TODO_CLASS,
-          issue.space as never,
+          PROJECT_TODO_CLASS,
+          TODOS_SPACE,
           issue._id as never,
           ISSUE_CLASS,
           "todos",
           {
             title: params.title,
-            description:
-              params.description !== undefined
-                ? JSON.stringify(mdToMarkup(params.description))
-                : undefined,
-            attachedTo: issue._id,
-            attachedToClass: ISSUE_CLASS,
+            description: descriptionRef,
             attachedSpace: issue.space,
             user: tctx.currentUser.id, // Ref<Employee>
-            priority, // ToDoPriority number enum (audit §5)
+            priority, // ToDoPriority number enum
             visibility: "Public", // Visibility.Public default
             rank: "", // lexorank empty — server gán nếu empty
             workslots: 0,
+            doneOn: null, // T-79: open todo (KHÔNG `done:false`)
             dueDate: params.dueDate,
           },
+          todoId,
         );
         return {
           content: `Created todo "${params.title}" on ${params.identifier}.`,
@@ -171,8 +194,8 @@ export const tools: HulyToolDefinition[] = [
         return {
           content:
             `Failed to create todo "${params.title}" on ${params.identifier} ` +
-            `(class ${TODO_CLASS}). Server error: ${msg}. ` +
-            `Verify issue exists and ToDo required fields are valid.`,
+            `(class ${PROJECT_TODO_CLASS}). Server error: ${msg}. ` +
+            `Verify issue exists and ProjectToDo required fields are valid.`,
           isError: true,
           details: {
             identifier: params.identifier,
@@ -240,7 +263,7 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const updResult = await safeUpdateDoc(tctx.client, TODO_CLASS, t, {
-        done: true,
+        doneOn: Date.now(), // T-79 #102: timestamp (KHÔNG `done:true` no-op)
       });
       if (!updResult.ok) return updResult.error;
       return {
@@ -269,7 +292,7 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const updResult = await safeUpdateDoc(tctx.client, TODO_CLASS, t, {
-        done: false,
+        doneOn: null, // T-79 #102: clear completion (KHÔNG `done:false` no-op)
       });
       if (!updResult.ok) return updResult.error;
       return {
@@ -294,7 +317,13 @@ export const tools: HulyToolDefinition[] = [
       todo: Type.String(),
     }),
     async handler(params, tctx) {
-      const t = await tctx.client.findOne(TODO_CLASS, { _id: params.todo });
+      const t = (await tctx.client.findOne(TODO_CLASS, { _id: params.todo })) as {
+        _id: string;
+        space: string;
+        attachedTo?: string;
+        attachedToClass?: string;
+        attachedSpace?: string;
+      } | null;
       if (!t) {
         return {
           content: `Todo "${params.todo}" not found.`,
@@ -302,8 +331,27 @@ export const tools: HulyToolDefinition[] = [
           details: { todo: params.todo },
         };
       }
-      const delResult = await safeRemoveDoc(tctx.client, TODO_CLASS, t);
+      // T-79 #102: issue-attached todo = ProjectToDo subclass. removeDoc dùng
+      // PROJECT_TODO_CLASS (trusted planner.ts deleteTodo). Personal todo (base
+      // ToDo) dùng TODO_CLASS — distinguish qua attachedToClass + attachedTo.
+      const isIssueTodo =
+        t.attachedToClass === ISSUE_CLASS && t.attachedTo != null && t.attachedTo !== "";
+      const delResult = await safeRemoveDoc(
+        tctx.client,
+        isIssueTodo ? PROJECT_TODO_CLASS : TODO_CLASS,
+        t,
+      );
       if (!delResult.ok) return delResult.error;
+      // Decrement parent Issue.todo counter (CollectionSize) — tránh drift.
+      if (isIssueTodo && t.attachedTo) {
+        const issueSpace = (t.attachedSpace ?? t.space) as never;
+        await tctx.client.updateDoc(
+          ISSUE_CLASS,
+          issueSpace,
+          t.attachedTo as never,
+          { $inc: { todos: -1 } } as never,
+        );
+      }
       return {
         content: `Deleted todo ${params.todo}.`,
         details: { deleted: true, todo: params.todo },
