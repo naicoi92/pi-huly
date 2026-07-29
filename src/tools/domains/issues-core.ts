@@ -13,6 +13,8 @@ import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
 import {
   ISSUE_CLASS,
   PROJECT_CLASS,
+  PERSON_CLASS,
+  TAG_REFERENCE_CLASS,
   TAG_CLASS,
   idRef,
   NO_PARENT_REF,
@@ -154,6 +156,10 @@ export const tools: HulyToolDefinition[] = [
         component?: string;
         dueDate?: number;
         estimation?: number;
+        parents?: Array<{ _id?: string; identifier?: string }>;
+        subIssues?: number;
+        modifiedOn?: number;
+        createdOn?: number;
       };
       // T-41 #23: Issue.description là MarkupBlobRef (document ref), KHÔNG inline
       // markup string. fetchMarkup resolve ref → markdown content qua collaborator.
@@ -177,20 +183,55 @@ export const tools: HulyToolDefinition[] = [
           descriptionRef = f.description;
         }
       }
+      // T-80 #103: resolve raw refs → human names. status _id → name (qua
+      // getProjectStatuses ProjectType traversal). assignee Person _id → name.
+      // labels = TagReference attachedTo issue. parentIssue = parents[last].
+      let statusName = f.status;
+      if (f.status !== undefined) {
+        const projectStatuses = await getProjectStatuses(tctx.client, tctx.project!);
+        const match = projectStatuses?.statuses.find((s) => s._id === f.status);
+        if (match) statusName = match.name;
+      }
+      let assigneeName: string | undefined;
+      if (f.assignee !== undefined && f.assignee !== null) {
+        const person = await tctx.client.findOne(PERSON_CLASS, { _id: f.assignee } as never);
+        assigneeName = (person as { name?: string } | null)?.name;
+      }
+      let labels: Array<{ title?: unknown; color?: unknown }> = [];
+      if (f._id !== undefined) {
+        const tagRefs = (await tctx.client.findAll(TAG_REFERENCE_CLASS, {
+          attachedTo: f._id,
+        } as never)) as Array<{ title?: unknown; color?: unknown }>;
+        labels = tagRefs;
+      }
+      const directParent =
+        f.parents !== undefined && f.parents.length > 0
+          ? f.parents[f.parents.length - 1]
+          : undefined;
       return {
-        content: `${f.identifier}: ${f.title ?? ""}\n\nStatus: ${f.status ?? "?"} · Priority: ${f.priority ?? "?"} · Assignee: ${f.assignee ?? "?"}\n\n${description ?? ""}`,
+        content:
+          `${f.identifier}: ${f.title ?? ""}\n\n` +
+          `Status: ${statusName ?? "?"} · Priority: ${f.priority ?? "?"} · Assignee: ${assigneeName ?? "?"}\n\n` +
+          `${description ?? ""}`,
         details: {
           identifier: f.identifier,
           title: f.title,
           description,
           descriptionRef,
-          status: f.status,
+          status: statusName,
+          statusRef: f.status,
           priority: f.priority,
-          assignee: f.assignee,
+          assignee: assigneeName,
+          assigneeRef: f.assignee,
           milestone: f.milestone,
           component: f.component,
           dueDate: f.dueDate,
           estimation: f.estimation,
+          parentIssue: directParent?.identifier,
+          subIssues: f.subIssues,
+          labels: labels.map((l) => ({ title: l.title, color: l.color })),
+          modifiedOn: f.modifiedOn,
+          createdOn: f.createdOn,
         },
       };
     },
@@ -316,7 +357,7 @@ export const tools: HulyToolDefinition[] = [
       title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
       priority: prioritySchema,
-      assignee: Type.Optional(Type.String()),
+      assignee: Type.Optional(Type.Union([Type.String(), Type.Null()])),
       status: Type.Optional(Type.String()),
       dueDate: Type.Optional(Type.Integer()),
       estimation: Type.Optional(Type.Integer()),
@@ -362,7 +403,25 @@ export const tools: HulyToolDefinition[] = [
         }
       }
       if (params.priority !== undefined) ops.priority = params.priority;
-      if (params.assignee !== undefined) ops.assignee = params.assignee;
+      if (params.assignee !== undefined) {
+        // T-80 #103: resolve assignee email/name → Person._id (đồng bộ create_issue).
+        // Trước đây push raw string vào Ref<Person> → garbage. Hỗ trợ null (unassign).
+        if (params.assignee === null) {
+          ops.assignee = null;
+        } else {
+          const personId = await findPersonByEmailOrName(tctx.client, params.assignee);
+          if (!personId) {
+            return {
+              content:
+                `Assignee "${params.assignee}" not found (no Person matching email/name). ` +
+                `Assignee unchanged.`,
+              isError: true,
+              details: { assignee: params.assignee, identifier: params.identifier },
+            };
+          }
+          ops.assignee = personId;
+        }
+      }
       if (params.dueDate !== undefined) ops.dueDate = params.dueDate;
       if (params.estimation !== undefined) ops.estimation = params.estimation;
       // T-47 #36: resolve status short name ("Done") → full ref
