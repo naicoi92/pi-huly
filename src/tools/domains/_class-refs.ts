@@ -141,6 +141,11 @@ export const LABEL_CLASS = classRef("view:class:Label");
 // time (ToDo — chữ viết hoa D, NOT "Todo")
 // ToDo extends AttachedDoc, define trong @hcengineering/time (KHÔNG phải task).
 export const TODO_CLASS = classRef("time:class:ToDo"); // T-43: task:Todo → time:ToDo
+// T-79 #102: ProjectToDo = subclass cho issue-attached todo (KHÔNG base ToDo).
+// Verified trusted huly-mcp planner.ts: createIssueTodo dùng time.class.ProjectToDo.
+export const PROJECT_TODO_CLASS = classRef("time:class:ProjectToDo");
+// T-79 #102: shared space cho mọi todo (KHÔNG issue.space). Trusted planner.ts:141.
+export const TODOS_SPACE = spaceRef("time:space:ToDos");
 
 // T-59 (2026-07-28): TS_RELATION_CLASS XÓA — Issue relations KHÔNG phải class
 // riêng. Issue.relations?: RelatedDocument[] + Issue.blockedBy?: RelatedDocument[]
