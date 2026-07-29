@@ -66,6 +66,13 @@ export const TIME_SPEND_REPORT_CLASS = classRef("tracker:class:TimeSpendReport")
 // Pi-huly đoán tracker pkg → sai domain.
 export const TASK_TYPE_CLASS = classRef("task:class:TaskType"); // T-43: tracker → task
 export const PROJECT_TYPE_CLASS = classRef("task:class:ProjectType"); // T-43: tracker → task
+// T-86 #121: Mixin doc + task.mixin.TaskTypeClass — UNVERIFIED (task pkg not
+// installed locally, không runtime self-host). Refs theo Huly naming convention
+// `<plugin>:<kind>:<Name>` (same convention verified core:space:Model, core:class:Space).
+export const MIXIN_CLASS = classRef("core:class:Mixin");
+export const TASK_TYPE_MIXIN = classRef("task:mixin:TaskTypeClass");
+export const CLASSIFIER_KIND_MIXIN = 2; // ClassifierKind.MIXIN (numeric enum)
+export const MODEL_LABEL_PREFIX = "embedded:embedded:"; // getEmbeddedLabel() format
 
 // Document / Teamspace / DocumentSnapshot — T-65 (2026-07-28): SUPERSEDES
 // T-58 interface-orphan conclusion. Real class registered trong

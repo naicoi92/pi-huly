@@ -24,7 +24,13 @@ vi.mock("../../../client/errors.js", () => ({
 
 import { getClient } from "../../../client/pool.js";
 import { tools } from "../task-management.js";
-import { TASK_TYPE_CLASS, PROJECT_TYPE_CLASS, MODEL_SPACE } from "../_class-refs.js";
+import {
+  TASK_TYPE_CLASS,
+  PROJECT_TYPE_CLASS,
+  MODEL_SPACE,
+  MIXIN_CLASS,
+  TASK_TYPE_MIXIN,
+} from "../_class-refs.js";
 
 const ctx = { hasUI: false, cwd: "/proj", ui: { confirm: vi.fn() } } as never;
 
@@ -35,6 +41,7 @@ function makeClient() {
     findOne: vi.fn(),
     createDoc: vi.fn().mockResolvedValue("new-id"),
     updateDoc: vi.fn().mockResolvedValue(undefined),
+    createMixin: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -180,12 +187,12 @@ describe("T-73: create_issue_status full workflow registration", () => {
   });
 });
 
-describe("T-73: create_task_type parent field + register projectType.tasks", () => {
-  it("create tasktype → parent + copy sibling template + register", async () => {
+describe("T-86: create_task_type Mixin doc + createMixin + statuses copy (#121)", () => {
+  it("create tasktype → Mixin classifier doc + createMixin + targetClass mixin ref + statuses copy", async () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({ _id: "pt-1", tasks: ["tt-existing"] }) // projectType
+      .mockResolvedValueOnce({ _id: "pt-1", tasks: ["tt-existing"], statuses: [] }) // projectType
       .mockResolvedValueOnce(undefined) // idempotent check (not exist)
       .mockResolvedValueOnce({
         // sibling template
@@ -195,6 +202,7 @@ describe("T-73: create_task_type parent field + register projectType.tasks", () 
         targetClass: "tracker:class:Issue",
         statusClass: "tracker:class:IssueStatus",
         statusCategories: ["Won"],
+        statuses: ["s1", "s2"], // T-86: copy từ template (KHÔNG [])
       });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
@@ -207,16 +215,45 @@ describe("T-73: create_task_type parent field + register projectType.tasks", () 
     );
 
     expect(result.isError).toBeUndefined();
-    const createCall = client.createDoc.mock.calls[0];
-    expect(createCall?.[1]).toBe(MODEL_SPACE);
-    const attrs = createCall?.[2] as Record<string, unknown>;
-    expect(attrs.parent).toBe("pt-1"); // KHÔNG ofProjectType
-    expect(attrs.statusClass).toBe("tracker:class:IssueStatus"); // copied from template
-    expect(attrs.targetClass).toBe("tracker:class:Issue");
-    expect(
-      ((client.updateDoc.mock.calls[0]?.[3] ?? {}) as { tasks?: string[] }).tasks?.length,
-    ).toBe(2);
-    expect(result.details).toMatchObject({ registered: true });
+    // T-86: 2 createDoc — Mixin classifier (call 0) + TaskType (call 1).
+    expect(client.createDoc).toHaveBeenCalledTimes(2);
+    const mixinCall = client.createDoc.mock.calls[0];
+    expect(mixinCall?.[0]).toBe(MIXIN_CLASS);
+    expect(mixinCall?.[1]).toBe(MODEL_SPACE);
+    const mixinAttrs = mixinCall?.[2] as Record<string, unknown>;
+    expect(mixinAttrs.extends).toBe("task:class:Task"); // template.ofClass
+    expect(mixinAttrs.kind).toBe(2); // ClassifierKind.MIXIN
+    expect(mixinAttrs.label).toBe("embedded:embedded:Bug"); // getEmbeddedLabel format
+    // Mixin _id = targetClassId (<taskTypeId>:type:mixin).
+    expect(mixinCall?.[3]).toMatch(/:type:mixin$/);
+
+    // T-86: createMixin(targetClassRef, MIXIN_CLASS, MODEL_SPACE, TASK_TYPE_MIXIN, {taskType,projectType}).
+    expect(client.createMixin).toHaveBeenCalledTimes(1);
+    const mixinCallArgs = client.createMixin.mock.calls[0] as unknown[];
+    expect(mixinCallArgs?.[0]).toMatch(/:type:mixin$/); // targetClassRef
+    expect(mixinCallArgs?.[1]).toBe(MIXIN_CLASS);
+    expect(mixinCallArgs?.[2]).toBe(MODEL_SPACE);
+    expect(mixinCallArgs?.[3]).toBe(TASK_TYPE_MIXIN);
+    expect(mixinCallArgs?.[4]).toMatchObject({ projectType: "pt-1" });
+
+    // TaskType doc (call 1): targetClass = new mixin ref (KHÔNG template), statuses copied.
+    const ttCall = client.createDoc.mock.calls[1];
+    expect(ttCall?.[0]).toBe(TASK_TYPE_CLASS);
+    const ttAttrs = ttCall?.[2] as Record<string, unknown>;
+    expect(ttAttrs.targetClass).toMatch(/:type:mixin$/); // T-86: new mixin ref
+    expect(ttAttrs.targetClass).not.toBe("tracker:class:Issue");
+    expect(ttAttrs.statuses).toEqual(["s1", "s2"]); // T-86: copy template
+
+    // ProjectType update: tasks append + statuses append {_id, taskType}.
+    const ptUpdate = client.updateDoc.mock.calls[0]?.[3] as {
+      tasks?: string[];
+      statuses?: Array<{ _id: string; taskType: string }>;
+    };
+    expect(ptUpdate.tasks?.length).toBe(2); // existing + new
+    expect(ptUpdate.statuses?.length).toBe(2); // 2 template statuses appended
+    expect(ptUpdate.statuses?.[0]).toMatchObject({ _id: "s1", taskType: expect.any(String) });
+
+    expect(result.details).toMatchObject({ mixinCreated: true, registered: true });
   });
 
   it("no sibling template → isError (cannot copy required fields)", async () => {

@@ -19,6 +19,10 @@ import {
   MODEL_SPACE,
   STATUS_CATEGORY_REFS,
   ISSUE_STATUS_ATTRIBUTE,
+  MIXIN_CLASS,
+  TASK_TYPE_MIXIN,
+  CLASSIFIER_KIND_MIXIN,
+  MODEL_LABEL_PREFIX,
 } from "./_class-refs.js";
 import { workspaceParam } from "./_common.js";
 
@@ -164,36 +168,88 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const taskTypeId = genId("task:tasktype");
-      // Copy required fields from template + override name/parent.
+      // T-86 #121: derive targetClass mixin ref + create Mixin classifier doc +
+      // createMixin(TaskTypeClass) để Huly apply task-typing behavior. Trước đây
+      // skip cả 2 → task type tồn tại nhưng KHÔNG apply TaskTypeClass mixin.
+      // UNVERIFIED: core:class:Mixin + task:mixin:TaskTypeClass theo naming
+      // convention (task pkg not installed locally — flag như T-43).
+      const targetClassId = `${taskTypeId}:type:mixin`;
+      const ofClass = template.ofClass as string | undefined;
+      const mixinData: Record<string, unknown> = {
+        extends: ofClass,
+        kind: CLASSIFIER_KIND_MIXIN,
+        label: MODEL_LABEL_PREFIX + params.name,
+      };
+      const templateIcon = template.icon as string | undefined;
+      if (templateIcon !== undefined) mixinData.icon = templateIcon;
+      await tctx.client.createDoc(
+        MIXIN_CLASS,
+        MODEL_SPACE,
+        mixinData as never,
+        targetClassId as never,
+      );
+      await tctx.client.createMixin(
+        targetClassId as never,
+        MIXIN_CLASS,
+        MODEL_SPACE,
+        TASK_TYPE_MIXIN,
+        { taskType: taskTypeId, projectType: projectType._id } as never,
+      );
+      // T-86 #121: statuses copy từ template (KHÔNG start []) + targetClass =
+      // new mixin ref (KHÔNG copy template.targetClass).
+      const templateStatusIds = (template.statuses as string[] | undefined) ?? [];
       const taskData: Record<string, unknown> = {
         name: params.name,
         parent: projectType._id,
         descriptor: template.descriptor,
         kind: template.kind,
         ofClass: template.ofClass,
-        targetClass: template.targetClass,
+        targetClass: targetClassId, // T-86: new mixin ref
         statusClass: template.statusClass,
         statusCategories: template.statusCategories,
-        statuses: [], // new task type starts empty
+        statuses: templateStatusIds, // T-86: copy template (KHÔNG [])
       };
+      if (templateIcon !== undefined) taskData.icon = templateIcon;
+      const templateColor = template.color as unknown;
+      if (templateColor !== undefined) taskData.color = templateColor;
+      const allowedAsChildOf = template.allowedAsChildOf as unknown;
+      if (allowedAsChildOf !== undefined) taskData.allowedAsChildOf = allowedAsChildOf;
       const id = await tctx.client.createDoc(
         TASK_TYPE_CLASS,
         MODEL_SPACE,
         taskData as never,
         taskTypeId as never,
       );
-      // Register vào projectType.tasks (idempotent append).
-      if (!existingTaskIds.includes(taskTypeId)) {
-        await tctx.client.updateDoc(
-          PROJECT_TYPE_CLASS,
-          MODEL_SPACE,
-          projectType._id as never,
-          { tasks: [...existingTaskIds, taskTypeId] } as never,
-        );
-      }
+      // T-86 #121: register projectType.tasks + statuses append {id,taskType}.
+      const ptStatuses =
+        (projectType as { statuses?: Array<{ _id?: string; taskType?: string }> }).statuses ?? [];
+      const appendedStatuses = [
+        ...ptStatuses,
+        ...templateStatusIds
+          .filter((sid) => !ptStatuses.some((s) => s._id === sid))
+          .map((sid) => ({ _id: sid, taskType: taskTypeId })),
+      ];
+      await tctx.client.updateDoc(
+        PROJECT_TYPE_CLASS,
+        MODEL_SPACE,
+        projectType._id as never,
+        {
+          tasks: existingTaskIds.includes(taskTypeId)
+            ? existingTaskIds
+            : [...existingTaskIds, taskTypeId],
+          statuses: appendedStatuses,
+        } as never,
+      );
       return {
-        content: `Created task type "${params.name}" + registered to projectType.tasks.`,
-        details: { id, name: params.name, projectType: projectType._id, registered: true },
+        content: `Created task type "${params.name}" + Mixin classifier + registered to projectType workflow.`,
+        details: {
+          id,
+          name: params.name,
+          projectType: projectType._id,
+          targetClass: targetClassId,
+          mixinCreated: true,
+          registered: true,
+        },
       };
     },
   }),
