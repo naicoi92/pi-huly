@@ -119,6 +119,11 @@ export const TAG_CATEGORY_CLASS = classRef("tags:class:TagCategory");
 // live here, KHÔNG project space). Verified trusted task-management.ts.
 export const MODEL_SPACE = spaceRef("core:space:Model");
 
+// T-81 #104: Status base class (task.class.Status alias core.class.Status).
+// Trusted issues-shared.ts:281 resolve statuses qua core.class.Status + batch $in
+// (KHÔNG findOne IssueStatus per ref — "can fail on some workspaces").
+export const STATUS_CLASS = classRef("core:class:Status");
+
 // T-73: StatusCategory Ref<StatusCategory> map (5 values, format task:statusCategory:<Key>).
 // IssueStatus.category = Ref<StatusCategory> (KHÔNG enum string). Verified T-71 + trusted.
 export const STATUS_CATEGORY_REFS: Record<string, string> = {

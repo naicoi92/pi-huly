@@ -50,10 +50,9 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// getProjectStatuses flow: findOne(PROJECT) → findOne(PROJECT_TYPE) → per-status
-// findOne(ISSUE_STATUS). Returns a loosely-typed vi.fn so mockReturnValueOnce
-// accepts arbitrary issue fixtures without TS narrowing errors.
-function makeStatusResolvingOne() {
+// getProjectStatuses flow (T-81 #104): findOne(PROJECT) → findOne(PROJECT_TYPE)
+// → findAll(core.class.Status, {_id:{$in}}) batch. Returns findOne + findAll mocks.
+function makeStatusResolvingClient() {
   const project = {
     _id: "proj-1",
     identifier: "PD",
@@ -68,23 +67,22 @@ function makeStatusResolvingOne() {
     { _id: "tracker:status:Todo", name: "Todo", category: "task:statusCategory:ToDo" },
     { _id: "tracker:status:Done", name: "Done", category: "task:statusCategory:Won" },
   ];
-  const fn = vi.fn();
-  fn.mockImplementation((cls: unknown, query: { _id?: unknown; identifier?: unknown }) => {
+  const findOne = vi.fn();
+  findOne.mockImplementation((cls: unknown, query: { _id?: unknown; identifier?: unknown }) => {
     if (query?._id === "pt-1") return projectType;
-    if (query?._id === "tracker:status:Todo") return statuses[0];
-    if (query?._id === "tracker:status:Done") return statuses[1];
     if (cls === "tracker:class:Project" || query?.identifier === "PD") return project;
     return undefined;
   });
-  return fn;
+  return { findOne, findAll: vi.fn().mockResolvedValue(statuses) };
 }
 
 describe("T-80: get_issue resolve raw refs + new fields (#103)", () => {
   it("status _id ref → name (qua getProjectStatuses)", async () => {
+    const statusMocks = makeStatusResolvingClient();
     const client = {
       getCurrentUser: vi.fn().mockResolvedValue({ id: "u1", name: "U", email: "u@x.com" }),
-      findAll: vi.fn().mockResolvedValue([]),
-      findOne: makeStatusResolvingOne(),
+      findAll: statusMocks.findAll,
+      findOne: statusMocks.findOne,
       fetchMarkup: vi.fn(),
     };
     client.findOne.mockReturnValueOnce({
