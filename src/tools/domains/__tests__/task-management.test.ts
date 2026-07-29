@@ -144,6 +144,40 @@ describe("T-73: create_issue_status full workflow registration", () => {
     expect(client.createDoc).not.toHaveBeenCalled();
     expect(client.updateDoc).not.toHaveBeenCalled();
   });
+
+  it("T-87 #122: same name different category → isError (silent workflow corruption guard)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "tt-1",
+        statusClass: "tracker:class:IssueStatus",
+        parent: "pt-1",
+      })
+      .mockResolvedValueOnce({
+        _id: "s1",
+        name: "Done",
+        category: "task:statusCategory:Won", // existing = Won
+      });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const result = await findTool("huly_create_issue_status").execute(
+      "tc1",
+      { taskType: "tt-1", name: "Done", category: "Lost" }, // request = Lost (mismatch)
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/already exists with category/i);
+    expect(text).toMatch(/Won/i); // existing category shown
+    expect(text).toMatch(/Lost/i); // requested category shown
+    // KHÔNG createDoc/updateDoc (reject, không silent idempotent).
+    expect(client.createDoc).not.toHaveBeenCalled();
+    expect(client.updateDoc).not.toHaveBeenCalled();
+  });
 });
 
 describe("T-73: create_task_type parent field + register projectType.tasks", () => {

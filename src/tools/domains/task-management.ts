@@ -249,6 +249,16 @@ export const tools: HulyToolDefinition[] = [
           details: { taskType: params.taskType },
         };
       }
+      // T-73: category = Ref<StatusCategory> (KHÔNG raw enum string). Resolve
+      // trước existing-check để validate category mismatch (T-87 #122).
+      const categoryRef = STATUS_CATEGORY_REFS[params.category];
+      if (!categoryRef) {
+        return {
+          content: `Invalid category "${params.category}". Valid: ${Object.keys(STATUS_CATEGORY_REFS).join(", ")}.`,
+          isError: true,
+          details: { invalidCategory: params.category },
+        };
+      }
       // T-73 review H2: idempotent findOne by {name} trên statusClass ONLY (KHÔNG
       // ofTaskType — that field KHÔNG thuộc Status schema, server strip → query miss).
       const existing = await tctx.client.findOne(
@@ -258,6 +268,23 @@ export const tools: HulyToolDefinition[] = [
         } as never,
       );
       if (existing) {
+        // T-87 #122: validate category match (trusted requireStatusCategoryMatch).
+        // Same name different category = silent workflow corruption. Error rõ.
+        const existingCategory = (existing as { category?: string }).category;
+        if (existingCategory !== undefined && existingCategory !== categoryRef) {
+          return {
+            content:
+              `Status "${params.name}" already exists with category '${existingCategory}', ` +
+              `not requested category '${params.category}'. Use a different name or category.`,
+            isError: true,
+            details: {
+              name: params.name,
+              existingCategory,
+              requestedCategory: params.category,
+              taskType: params.taskType,
+            },
+          };
+        }
         return {
           content: `Status "${params.name}" already exists on taskType ${params.taskType} (idempotent — no-op).`,
           details: {
@@ -266,15 +293,6 @@ export const tools: HulyToolDefinition[] = [
             taskType: params.taskType,
             idempotent: true,
           },
-        };
-      }
-      // T-73: category = Ref<StatusCategory> (KHÔNG raw enum string).
-      const categoryRef = STATUS_CATEGORY_REFS[params.category];
-      if (!categoryRef) {
-        return {
-          content: `Invalid category "${params.category}". Valid: ${Object.keys(STATUS_CATEGORY_REFS).join(", ")}.`,
-          isError: true,
-          details: { invalidCategory: params.category },
         };
       }
       // T-73 review H1: ofAttribute required (Status.ofAttribute: Ref<Attribute<Status>>).
