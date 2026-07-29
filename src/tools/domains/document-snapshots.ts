@@ -21,17 +21,38 @@ export const tools: HulyToolDefinition[] = [
     parameters: Type.Object({
       workspace: workspaceParam,
       document: Type.String({ description: "Document id." }),
+      limit: Type.Optional(Type.Number({ description: "Max snapshots to return." })),
     }),
     async handler(params, tctx) {
-      // Snapshots are AttachedDoc scoped to document via attachedTo.
-      const snaps = await tctx.client.findAll(DOCUMENT_SNAPSHOT_CLASS, {
-        attachedTo: params.document,
-      } as never);
-      const list = snaps.map((s) => ({
-        id: s._id,
-        modifiedBy: (s as { modifiedBy?: string }).modifiedBy,
-        modifiedOn: (s as { modifiedOn?: number }).modifiedOn,
-      }));
+      // T-85 #120: sort newest-first (trusted createdOn: Descending). Snapshots
+      // are AttachedDoc scoped to document via attachedTo.
+      const snaps = await tctx.client.findAll(
+        DOCUMENT_SNAPSHOT_CLASS,
+        { attachedTo: params.document } as never,
+        {
+          sort: { createdOn: -1 },
+          ...(params.limit !== undefined ? { limit: params.limit } : {}),
+        } as never,
+      );
+      // T-85 #120: output {snapshotId, documentId, title, parentDocumentId,
+      // createdOn, modifiedOn} — drop fake modifiedBy (không có trong trusted).
+      const list = snaps.map((s) => {
+        const snap = s as {
+          _id: string;
+          title?: string;
+          parent?: string;
+          createdOn?: number;
+          modifiedOn?: number;
+        };
+        return {
+          snapshotId: snap._id,
+          documentId: params.document,
+          title: snap.title,
+          parentDocumentId: snap.parent,
+          createdOn: snap.createdOn,
+          modifiedOn: snap.modifiedOn,
+        };
+      });
       return {
         content: `Found ${list.length} snapshot(s) for document "${params.document}".`,
         details: { count: list.length, snapshots: list },
@@ -75,13 +96,24 @@ export const tools: HulyToolDefinition[] = [
           // Markup fetch fail — return metadata without content.
         }
       }
+      const snap = s as {
+        _id: string;
+        attachedTo?: string;
+        title?: string;
+        parent?: string;
+        createdOn?: number;
+        modifiedOn?: number;
+      };
       return {
         content: `Snapshot ${params.snapshot}`,
         details: {
-          id: s._id,
+          snapshotId: snap._id,
+          documentId: snap.attachedTo,
+          title: snap.title,
+          parentDocumentId: snap.parent,
+          createdOn: snap.createdOn,
+          modifiedOn: snap.modifiedOn,
           content,
-          modifiedBy: (s as { modifiedBy?: string }).modifiedBy,
-          modifiedOn: (s as { modifiedOn?: number }).modifiedOn,
         },
       };
     },

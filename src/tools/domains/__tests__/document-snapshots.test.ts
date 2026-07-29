@@ -52,29 +52,49 @@ beforeEach(() => {
 });
 
 describe("T-66: document-snapshots ENABLED (DOCUMENT_SNAPSHOT_CLASS)", () => {
-  it("list_document_snapshots → findAll DOCUMENT_SNAPSHOT_CLASS + attachedTo=document", async () => {
+  it("list_document_snapshots → sort createdOn Desc + output fields (no modifiedBy) #120", async () => {
     const client = makeClient();
-    client.findAll = vi
-      .fn()
-      .mockResolvedValue([{ _id: "s-1", modifiedBy: "u1", modifiedOn: 1000 }]);
+    client.findAll = vi.fn().mockResolvedValue([
+      { _id: "s-2", title: "v2", parent: "doc-1", createdOn: 2000, modifiedOn: 2001 },
+      { _id: "s-1", title: "v1", parent: "doc-1", createdOn: 1000, modifiedOn: 1001 },
+    ]);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_list_document_snapshots");
     const result = await tool.execute("tc1", { document: "doc-1" }, undefined, undefined, ctx);
 
     expect(result.isError).toBeUndefined();
-    expect(client.findAll).toHaveBeenCalledWith(DOCUMENT_SNAPSHOT_CLASS, { attachedTo: "doc-1" });
+    // T-85: findAll với sort createdOn Descending (newest-first).
+    const findCall = client.findAll.mock.calls[0];
+    expect(findCall?.[0]).toBe(DOCUMENT_SNAPSHOT_CLASS);
+    expect(findCall?.[1]).toMatchObject({ attachedTo: "doc-1" });
+    expect(findCall?.[2]).toMatchObject({ sort: { createdOn: -1 } });
     const text = result.content[0]?.text ?? "";
-    expect(text).toContain("1 snapshot");
+    expect(text).toContain("2 snapshot");
+    // T-85: output fields — snapshotId/documentId/title/parentDocumentId/createdOn/modifiedOn.
+    const snaps = (result as { details?: { snapshots?: unknown[] } }).details?.snapshots ?? [];
+    expect(snaps[0]).toMatchObject({
+      snapshotId: "s-2",
+      documentId: "doc-1",
+      title: "v2",
+      parentDocumentId: "doc-1",
+      createdOn: 2000,
+      modifiedOn: 2001,
+    });
+    // modifiedBy KHÔNG còn (fake field trusted không có).
+    expect(JSON.stringify(snaps[0])).not.toContain("modifiedBy");
   });
 
-  it("get_document_snapshot → findOne DOCUMENT_SNAPSHOT_CLASS + fetchMarkup", async () => {
+  it("get_document_snapshot → findOne DOCUMENT_SNAPSHOT_CLASS + fetchMarkup + output fields #120", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValue({
       _id: "s-1",
+      attachedTo: "doc-1",
+      title: "v1",
+      parent: "doc-root",
+      createdOn: 1000,
+      modifiedOn: 1001,
       content: { blob: "ref" },
-      modifiedBy: "u1",
-      modifiedOn: 1000,
     });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
@@ -90,6 +110,16 @@ describe("T-66: document-snapshots ENABLED (DOCUMENT_SNAPSHOT_CLASS)", () => {
       { blob: "ref" },
       "markdown",
     );
+    // T-85: output fields — snapshotId/documentId(=attachedTo)/title/parentDocumentId/createdOn.
+    const details = (result as { details?: Record<string, unknown> }).details ?? {};
+    expect(details).toMatchObject({
+      snapshotId: "s-1",
+      documentId: "doc-1",
+      title: "v1",
+      parentDocumentId: "doc-root",
+      createdOn: 1000,
+    });
+    expect(JSON.stringify(details)).not.toContain("modifiedBy");
   });
 
   it("get_document_snapshot not found → isError", async () => {
