@@ -61,7 +61,14 @@ describe("T-81G: list_projects archived-filter + output (#107)", () => {
     const client = {
       getCurrentUser: vi.fn().mockResolvedValue({ id: "u1", name: "U", email: "u@x.com" }),
       findAll: vi.fn().mockResolvedValue([
-        { _id: "p1", identifier: "PD", name: "Dev", description: "d", archived: false, sequence: 42 },
+        {
+          _id: "p1",
+          identifier: "PD",
+          name: "Dev",
+          description: "d",
+          archived: false,
+          sequence: 42,
+        },
         { _id: "p2", identifier: "OLD", name: "Legacy", archived: true, sequence: 3 },
       ]),
       findOne: vi.fn(),
@@ -69,13 +76,7 @@ describe("T-81G: list_projects archived-filter + output (#107)", () => {
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_list_projects");
-    const result = await tool.execute(
-      "tc1",
-      { includeArchived: true },
-      undefined,
-      undefined,
-      ctx,
-    );
+    const result = await tool.execute("tc1", { includeArchived: true }, undefined, undefined, ctx);
 
     expect(client.findAll.mock.calls[0]?.[1]).toEqual({});
     const projects = (result.details as { projects: Array<Record<string, unknown>> }).projects;
@@ -99,8 +100,19 @@ describe("T-81G: get_project defaultStatus + statuses inline (#107)", () => {
       ]),
       findOne: vi
         .fn()
-        .mockResolvedValueOnce({ _id: "sp1", identifier: "PD", name: "Dev", type: "pt-1", defaultIssueStatus: "st-2" }) // get_project project lookup
-        .mockResolvedValueOnce({ _id: "sp1", identifier: "PD", type: "pt-1", defaultIssueStatus: "st-2" }) // getProjectStatuses findOne(PROJECT)
+        .mockResolvedValueOnce({
+          _id: "sp1",
+          identifier: "PD",
+          name: "Dev",
+          type: "pt-1",
+          defaultIssueStatus: "st-2",
+        }) // get_project project lookup
+        .mockResolvedValueOnce({
+          _id: "sp1",
+          identifier: "PD",
+          type: "pt-1",
+          defaultIssueStatus: "st-2",
+        }) // getProjectStatuses findOne(PROJECT)
         .mockResolvedValueOnce({ statuses: [{ _id: "st-1" }, { _id: "st-2" }] }), // getProjectStatuses findOne(PROJECT_TYPE)
     };
     vi.mocked(getClient).mockResolvedValue(client as never);
@@ -110,7 +122,10 @@ describe("T-81G: get_project defaultStatus + statuses inline (#107)", () => {
 
     expect(result.details).toMatchObject({
       defaultStatus: "Done",
-      statuses: [{ name: "Todo", category: "ToDo" }, { name: "Done", category: "Won" }],
+      statuses: [
+        { name: "Todo", category: "ToDo" },
+        { name: "Done", category: "Won" },
+      ],
     });
   });
 });
@@ -181,9 +196,10 @@ describe("T-81G: get_space name-fallback (#107)", () => {
     const client = {
       getCurrentUser: vi.fn().mockResolvedValue({ id: "u1", name: "U", email: "u@x.com" }),
       findOne: vi.fn().mockResolvedValue(null),
-      findAll: vi
-        .fn()
-        .mockResolvedValue([{ _id: "s1", name: "Dup" }, { _id: "s2", name: "Dup" }]),
+      findAll: vi.fn().mockResolvedValue([
+        { _id: "s1", name: "Dup" },
+        { _id: "s2", name: "Dup" },
+      ]),
     };
     vi.mocked(getClient).mockResolvedValue(client as never);
 
@@ -249,13 +265,7 @@ describe("T-81G: get_component lead→name + set_issue_component label/null (#10
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_set_issue_component");
-    await tool.execute(
-      "tc1",
-      { identifier: "PD-1", component: null },
-      undefined,
-      undefined,
-      ctx,
-    );
+    await tool.execute("tc1", { identifier: "PD-1", component: null }, undefined, undefined, ctx);
 
     expect(client.updateDoc.mock.calls[0]?.[3]).toEqual({ component: null });
   });
