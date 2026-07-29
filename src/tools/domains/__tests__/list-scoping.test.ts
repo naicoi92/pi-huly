@@ -125,8 +125,10 @@ describe("T-71: list_templates space scoping", () => {
 });
 
 describe("T-71: list_statuses ProjectType traversal", () => {
-  it("Project → ProjectType.statuses Ref[] → resolve IssueStatus docs + category enum + isDefault", async () => {
+  it("Project → ProjectType.statuses Ref[] → resolve Status docs + category enum + isDefault", async () => {
     const client = makeClient();
+    // T-81 #104: getProjectStatuses dùng findAll(core.class.Status, $in) batch
+    // (KHÔNG findOne IssueStatus per ref).
     client.findOne = vi
       .fn()
       .mockResolvedValueOnce({
@@ -135,9 +137,11 @@ describe("T-71: list_statuses ProjectType traversal", () => {
         type: "pt-1",
         defaultIssueStatus: "st-2",
       }) // Project
-      .mockResolvedValueOnce({ statuses: [{ _id: "st-1" }, { _id: "st-2" }] }) // ProjectType (objects, T-71 B1)
-      .mockResolvedValueOnce({ _id: "st-1", name: "Todo", category: "task:statusCategory:ToDo" })
-      .mockResolvedValueOnce({ _id: "st-2", name: "Done", category: "task:statusCategory:Won" });
+      .mockResolvedValueOnce({ statuses: [{ _id: "st-1" }, { _id: "st-2" }] }); // ProjectType
+    client.findAll = vi.fn().mockResolvedValue([
+      { _id: "st-1", name: "Todo", category: "task:statusCategory:ToDo" },
+      { _id: "st-2", name: "Done", category: "task:statusCategory:Won" },
+    ]);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const result = await findTool(projectTools, "huly_list_statuses").execute(

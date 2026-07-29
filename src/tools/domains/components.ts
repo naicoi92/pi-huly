@@ -13,6 +13,7 @@ import {
   safeRemoveDoc,
   getProjectSpace,
 } from "./_common.js";
+import { findPersonByEmailOrName } from "./contacts.js";
 
 export const tools: HulyToolDefinition[] = [
   // 1. list_components
@@ -57,7 +58,19 @@ export const tools: HulyToolDefinition[] = [
       component: Type.String(),
     }),
     async handler(params, tctx) {
-      const c = await tctx.client.findOne(COMPONENT_CLASS, { _id: params.component });
+      // T-81 #104: scope component lookup theo project (space = project._id).
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const c = await tctx.client.findOne(COMPONENT_CLASS, {
+        _id: params.component,
+        space,
+      } as never);
       if (!c) {
         return {
           content: `Component "${params.component}" not found.`,
@@ -103,10 +116,24 @@ export const tools: HulyToolDefinition[] = [
           details: { project: tctx.project },
         };
       }
+      // T-81 #104: lead = Ref<Employee> (KHÔNG raw string). Resolve Person trước.
+      let leadRef: string | undefined;
+      if (params.lead !== undefined) {
+        leadRef = await findPersonByEmailOrName(tctx.client, params.lead);
+        if (!leadRef) {
+          return {
+            content: `Lead "${params.lead}" not found (no Person matching email/name).`,
+            isError: true,
+            details: { lead: params.lead, project: tctx.project },
+          };
+        }
+      }
+      // T-81 #104: comments:0 default (pattern chung Component/Milestone/IssueTemplate).
       const id = await tctx.client.createDoc(COMPONENT_CLASS, project.space as never, {
         label: params.label,
         description: params.description,
-        lead: params.lead,
+        lead: leadRef,
+        comments: 0,
       });
       return {
         content: `Created component "${params.label}".`,
@@ -130,7 +157,19 @@ export const tools: HulyToolDefinition[] = [
       lead: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
-      const c = await tctx.client.findOne(COMPONENT_CLASS, { _id: params.component });
+      // T-81 #104: scope component lookup theo project.
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const c = await tctx.client.findOne(COMPONENT_CLASS, {
+        _id: params.component,
+        space,
+      } as never);
       if (!c) {
         return {
           content: `Component "${params.component}" not found.`,
@@ -141,7 +180,18 @@ export const tools: HulyToolDefinition[] = [
       const ops: Record<string, unknown> = {};
       if (params.label !== undefined) ops.label = params.label;
       if (params.description !== undefined) ops.description = params.description;
-      if (params.lead !== undefined) ops.lead = params.lead;
+      // T-81 #104: lead = Ref<Employee> (resolve Person, KHÔNG raw string).
+      if (params.lead !== undefined) {
+        const leadRef = await findPersonByEmailOrName(tctx.client, params.lead);
+        if (!leadRef) {
+          return {
+            content: `Lead "${params.lead}" not found (no Person matching email/name).`,
+            isError: true,
+            details: { lead: params.lead, component: params.component },
+          };
+        }
+        ops.lead = leadRef;
+      }
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
@@ -177,8 +227,12 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // T-52 #42: validate component tồn tại trước khi set ref (tránh ref rác).
-      const component = await tctx.client.findOne(COMPONENT_CLASS, { _id: params.component });
+      // T-52 #42 + T-81 #104: validate component tồn tại + scope theo project.
+      const space = issue.space as string;
+      const component = await tctx.client.findOne(COMPONENT_CLASS, {
+        _id: params.component,
+        space,
+      } as never);
       if (!component) {
         return {
           content: `Component "${params.component}" not found.`,
@@ -214,7 +268,19 @@ export const tools: HulyToolDefinition[] = [
       component: Type.String(),
     }),
     async handler(params, tctx) {
-      const c = await tctx.client.findOne(COMPONENT_CLASS, { _id: params.component });
+      // T-81 #104: scope component lookup theo project.
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const c = await tctx.client.findOne(COMPONENT_CLASS, {
+        _id: params.component,
+        space,
+      } as never);
       if (!c) {
         return {
           content: `Component "${params.component}" not found.`,

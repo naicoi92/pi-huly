@@ -408,7 +408,9 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
     client: ReturnType<typeof makeClient>,
     statuses: Array<{ _id: string; name: string; category?: string }>,
   ) {
-    let chain = vi
+    // getProjectStatuses (T-81 #104): findOne(Project) → findOne(ProjectType)
+    // → findAll(core.class.Status, {_id:{$in}}) batch (KHÔNG findOne per IssueStatus).
+    client.findOne = vi
       .fn()
       .mockResolvedValueOnce({
         _id: "i1",
@@ -423,11 +425,7 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
         defaultIssueStatus: statuses[0]?._id ?? "",
       }) // Project
       .mockResolvedValueOnce({ statuses: statuses.map((s) => ({ _id: s._id })) }); // ProjectType
-    // IssueStatus per ref — mockResolvedValueOnce each.
-    for (const s of statuses) {
-      chain = chain.mockResolvedValueOnce(s);
-    }
-    client.findOne = chain;
+    client.findAll = vi.fn().mockResolvedValue(statuses); // core.class.Status batch $in
     return client;
   }
 

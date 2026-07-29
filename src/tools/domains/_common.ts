@@ -5,7 +5,7 @@ import { Type, type TObject, type TOptional, type TString, type TInteger } from 
 import type { Class, Doc, DocumentUpdate, Ref, Space, TxResult } from "@hcengineering/api-client";
 import type { HulyClient } from "../../client/client.js";
 import type { HulyToolResult } from "../builder.js";
-import { PROJECT_CLASS, ISSUE_STATUS_CLASS, PROJECT_TYPE_CLASS } from "./_class-refs.js";
+import { PROJECT_CLASS, PROJECT_TYPE_CLASS, STATUS_CLASS } from "./_class-refs.js";
 
 /** Workspace override param (mọi tool). */
 export const workspaceParam: TOptional<TString> = Type.Optional(
@@ -116,19 +116,28 @@ export async function getProjectStatuses(
     .map((s) => s._id)
     .filter((r): r is string => typeof r === "string");
   const defaultStatusId = (project as { defaultIssueStatus?: string }).defaultIssueStatus ?? "";
-  const statuses: Array<{ _id: string; name: string; category: string; isDefault: boolean }> = [];
-  for (const ref of statusRefs) {
-    const s = await client.findOne(ISSUE_STATUS_CLASS, { _id: ref } as never);
-    if (!s) continue;
-    const rawCat = (s as { category?: string }).category ?? "";
-    // category = Ref<StatusCategory> (vd "task:statusCategory:UnStarted") → enum key.
-    const category = rawCat.split(":").pop() ?? rawCat;
-    statuses.push({
-      _id: s._id,
-      name: (s as { name?: string }).name ?? "",
-      category,
-      isDefault: s._id === defaultStatusId,
-    });
+  // T-81 #104: resolve statuses qua core.class.Status + batch $in (KHÔNG
+  // findOne IssueStatus per ref N+1 — trusted né: "can fail on some workspaces").
+  let statuses: Array<{ _id: string; name: string; category: string; isDefault: boolean }> = [];
+  if (statusRefs.length > 0) {
+    const statusDocs = (await client.findAll(STATUS_CLASS, {
+      _id: { $in: statusRefs },
+    } as never)) as Array<{ _id?: string; name?: string; category?: string }>;
+    statuses = statusRefs
+      .map((ref) => {
+        const s = statusDocs.find((d) => d._id === ref);
+        if (!s) return null;
+        const rawCat = s.category ?? "";
+        return {
+          _id: ref,
+          name: s.name ?? "",
+          category: rawCat.split(":").pop() ?? rawCat,
+          isDefault: ref === defaultStatusId,
+        };
+      })
+      .filter(
+        (x): x is { _id: string; name: string; category: string; isDefault: boolean } => x !== null,
+      );
   }
   return { statuses };
 }
