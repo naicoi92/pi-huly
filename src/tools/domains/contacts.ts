@@ -61,7 +61,8 @@ export const tools: HulyToolDefinition[] = [
       const list = persons.map((p) => ({
         id: p._id,
         name: (p as { name?: string }).name ?? "",
-        email: (p as { email?: string }).email,
+        // T-82 #105: drop dead `email` field — Person.email KHÔNG tồn tại (email
+        // lives trong Channel attachedTo Person). Email resolve defer T-82G.
       }));
       return {
         content: `Found ${list.length} person(s).`,

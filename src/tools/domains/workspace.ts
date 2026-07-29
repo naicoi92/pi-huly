@@ -104,22 +104,24 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 5. update_user_profile — update current user (name)
+  // 5. update_user_profile — update current user name (firstName/lastName)
   defineHulyTool({
     name: "update_user_profile",
     label: "Update user profile",
-    description: "Update current user profile (name).",
+    description:
+      'Update current user name (firstName/lastName → Huly "LastName,FirstName" format). ' +
+      "Bio/city/socialLinks honest-unavailable (account-client ADR pending).",
     promptSnippet: "Update current Huly user profile.",
     parameters: Type.Object({
       workspace: Type.Optional(Type.String()),
-      name: Type.Optional(Type.String({ description: "New display name." })),
+      firstName: Type.Optional(Type.String({ description: "First name." })),
+      lastName: Type.Optional(Type.String({ description: "Last name." })),
     }),
     async handler(params, tctx) {
-      const operations: Record<string, unknown> = {};
-      if (typeof params.name === "string" && params.name.length > 0) {
-        operations.name = params.name;
-      }
-      if (Object.keys(operations).length === 0) {
+      // T-82 #105: Huly Person.name = "LastName,FirstName" (trusted persons.ts:65).
+      // Trước đây ghi raw params.name → phá format. Nay tách firstName/lastName +
+      // formatName. Partial update: parse current name, giữ field không truyền.
+      if (params.firstName === undefined && params.lastName === undefined) {
         return {
           content: "No fields to update.",
           details: { updated: false },
@@ -136,12 +138,31 @@ export const tools: HulyToolDefinition[] = [
           details: { userId: tctx.currentUser.id },
         };
       }
+      const current = parsePersonName((person as { name?: string }).name);
+      const newFirst = params.firstName ?? current.firstName;
+      const newLast = params.lastName ?? current.lastName;
+      const operations: Record<string, unknown> = {
+        name: `${newLast},${newFirst}`,
+      };
       const result = await safeUpdateDoc(tctx.client, PERSON_CLASS, person, operations);
       if (!result.ok) return result.error;
       return {
-        content: `Updated profile: ${Object.keys(operations).join(", ")}`,
-        details: { updated: true, fields: Object.keys(operations) },
+        content: `Updated profile name: ${newLast},${newFirst}`,
+        details: { updated: true, fields: ["name"], name: `${newLast},${newFirst}` },
       };
     },
   }),
 ];
+
+/**
+ * T-82 #105: parse Huly Person.name "LastName,FirstName" → {firstName, lastName}.
+ * Port trusted persons.ts:67 parseName.
+ */
+function parsePersonName(name: string | undefined): { firstName: string; lastName: string } {
+  if (name === undefined) return { firstName: "", lastName: "" };
+  const comma = name.indexOf(",");
+  if (comma !== -1) {
+    return { firstName: name.slice(comma + 1), lastName: name.slice(0, comma) };
+  }
+  return { firstName: name, lastName: "" };
+}
