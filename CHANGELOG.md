@@ -3,6 +3,67 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.9] - 2026-07-29
+
+Hotfix canary #8. **beta.9 follow-up** — slash goal: 7/7 task (5 bug + 2
+enhancement) + bonus T-90 refactor. Audit tiếp tục vs trusted
+`@firfi/huly-mcp` v0.45 — domain chưa cover (labels, document-snapshots,
+time, search, deletion, task-management + issues-core write-path). 5 bug + 2
+enhancement gaps filed (#118-#124). **719 tests** (baseline 710 → +9), CI green.
+Reality-checker audit pass. Tất cả fix verified vs trusted source.
+
+### Fixed
+
+- **issues write-path** (T-83 #118, critical silent data-loss): `add`/`remove_issue_label`
+  vẫn `$push`/`$pull` `labels` (Issue.labels field **KHÔNG tồn tại** runtime) —
+  push silent lost, get never shows (read path T-80 đọc đúng via TagReference).
+  Migrate sang `addCollection(TagReference)` + `removeDoc` matching `attach_tag`/`detach_tag`
+  (T-69 pattern).
+- **deletion** (T-84 #119): `reverseBlocks` query broken (`blockedBy._id` dotted-path
+  → 0 rows, trusted không track direction này) + N+1 findAll (4 query) khi Issue
+  có sẵn `subIssues`/`comments`/`attachments` CollectionSize counters. Read counters
+  trực tiếp, drop N+1 + reverseBlocks. `total` match trusted (no +1 entity).
+- **document-snapshots** (T-85 #120): list default order arbitrary (trusted
+  newest-first) → `sort {createdOn:Descending}` + `limit` param. Output fake
+  `modifiedBy` (không có trong trusted) → drop, thêm `{snapshotId,documentId,title,
+  parentDocumentId,createdOn,modifiedOn}`.
+- **task-management Mixin** (T-86 #121): `create_task_type` skip `core.class.Mixin`
+  doc + `createMixin(task.mixin.TaskTypeClass)` → Huly KHÔNG apply task-typing.
+  Add Mixin classifier doc (extends/kind=MIXIN/label=getEmbeddedLabel) +
+  createMixin + targetClass=new mixin ref + statuses copy từ template +
+  ProjectType.statuses append `{_id,taskType}`. **UNVERIFIED mixin refs**
+  (`core:class:Mixin` + `task:mixin:TaskTypeClass`) — theo Huly naming convention,
+  task pkg not installed locally, flag như T-43.
+- **task-management status category** (T-87 #122): `create_issue_status` idempotent
+  `findOne(statusClass,{name})` silent no-op nhưng KHÔNG check category match.
+  Same name different category = silent workflow corruption → giờ `isError`
+  (trusted `requireStatusCategoryMatch`).
+
+### Added
+
+- **documents/teamspaces output** (T-88 #123): `list_documents` `sort {modifiedOn:Descending}`
+  + teamspace/modifiedOn output; `get_document` teamspace/createdOn; `list_teamspaces`
+  `sort {name:Ascending}` + archived; `get_teamspace` documentCount.
+- **templates output** (T-89 #124): `list_templates` `sort {modifiedOn:Descending}` +
+  priority/modifiedOn/childrenCount; `get_template` resolve description MarkupBlobRef→markdown
+  + assignee(Person name)/component(label)/estimation/modifiedOn/createdOn/children.
+
+### Changed
+
+- **refactor native entity types** (T-90 #133): beta.9 thêm ~24 inline `as` cast
+  (field narrowing lặp + `as never` dư thừa) — đi ngược mục tiêu audit 'scan fake
+  as casts'. Giới thiệu `_entity-types.ts` (13 native interface extend Doc) +
+  `findOne<EntityDoc>(CLASS,...)`/`findAll<EntityDoc>` explicit generic (client đã
+  generic nhưng class constants return `never` → T default Doc → field access ép
+  cast) + `satisfies Partial<EntityDoc>` cho built payloads + `idRef()` cho Ref
+  boundary. **Net -49 `as` cast** vs pre-beta.9 baseline (dù +7 feature). Behavior-preserving.
+
+### Deferred
+
+- T-84 project/component/milestone preview, T-87 cross-project recovery by name,
+  T-88 `url` field (workbenchUrlConfig unavailable), T-86 mixin refs runtime verify
+  (needs self-host).
+
 ## [1.0.0-beta.8] - 2026-07-29
 
 Hotfix canary #7. **beta.7 follow-up** — slash goal `complete-milestone beta.8`:
