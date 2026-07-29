@@ -345,6 +345,49 @@ websocket error: <id> wss://.../_transactor/<token>` + 7 dòng spam khác
 - [x] [T-81G] [L] enhancement(projects/spaces/components): output fields + archived-filter + `update_space` fields + name/label resolution — low | blocked-by: T-81 (same domain) | blocks: (none) | issue: #107 — 8 gaps: get_project thiếu defaultStatus/statuses; list_projects/spaces thiếu archived-filter + sort + rich fields; update_project/space thiếu null-clear + 3 fields (private/archived/autoJoin); get_space name-fallback; get_component lead→name + markdown + label resolve; set_issue_component label-resolve + null. — ✅ done (PR #116 merged cc10817, 703 tests, CI green; DEFERRED memberCount/ownerCount — perf cost, low value)
 - [x] [T-82G] [M] enhancement(milestones/workspace/contacts): `get_milestone` fields + `findPersonByEmailOrName` email path + sort/clear — low | blocked-by: T-82 (same domain) | blocks: T-80 (assignee resolve) | issue: #108 — get_milestone thiếu description/project/modifiedOn; findPersonByEmailOrName chỉ name-match (email path deferred — trusted 5-step: SocialIdentity→Channel→name); list_milestones thiếu sort; set_issue_milestone thiếu null-clear. Cross-ref: unblocks T-80 assignee email resolve. — ✅ done (PR #117 merged 6248c1b; get_milestone +desc/project/modifiedOn/createdOn + findPersonByEmailOrName email via Channel + list_milestones sort + set_issue_milestone null + list_persons city/modifiedOn + list_employees position/active, 710 tests, CI green; DEFERRED SocialIdentity + $like email fallback)
 
+## beta.9 follow-up hotfixes (post-beta.8 — không thuộc milestone)
+
+> **Context**: Audit tiếp tục vs trusted `@firfi/huly-mcp` v0.45 (clone
+> `/tmp/huly-mcp`) — domain chưa cover: labels, document-snapshots, time,
+> search, deletion, task-management + write-path of issues-core. Cross-check
+> từng tool vs trusted source. Song song scan fake `as` type casts (narrowing
+> inline thay vì proper interface).
+>
+> **Kết quả**: 5 bug + 2 enhancement gaps. Critical silent-data-loss 1
+> (add/remove_issue_label `$push` field không tồn tại). High 2 (deletion
+> broken query + N+1, document-snapshots wrong sort + fake field). Medium 2
+> (task-management Mixin skip + category validate). Low 2 enhancement
+> (documents + templates output fields/sort). Filed #118-#124.
+>
+> **Root cause mới**:
+>
+> 1. **T-45 write path unmigrated** (issues-core) — `add/remove_issue_label`
+>    vẫn `$push/$pull labels` (field KHÔNG tồn tại); T-69 (tags.ts) đã migrate
+>    sang `addCollection(TagReference)` nhưng T-45 (issues-core) bị bỏ sót.
+>    Read path (T-80) đọc đúng → mâu thuẫn nội bộ.
+> 2. **`blockedBy._id` dotted-path broken** (deletion) — T-80 đã fix ở
+>    `list_issue_relations` nhưng T-77 audit deletion dùng cùng broken query.
+> 3. **CollectionSize counters bị bỏ qua** (deletion) — Issue có sẵn
+>    `subIssues`/`comments`/`attachments` counter nhưng pi-huly N+1 findAll
+>    thay vì đọc trực tiếp (perf + correctness).
+> 4. **Mixin doc skip** (task-management) — `createTaskType` trusted tạo
+>    `core.class.Mixin` doc + `createMixin(TaskTypeClass)` để register task
+>    typing behavior; pi-huly skip cả 2 → task type tồn tại nhưng Huly không
+>    apply mixin.
+> 5. **Sort/output defaults** (documents/templates) — trusted có sẵn
+>    `modifiedOn: Descending` / `name: Ascending`; pi-huly default arbitrary.
+>
+> **Umbrella tracking**: issue #86 `[META]` (comment cập nhật #118-#124).
+> Chi tiết mỗi task ở [`docs/tasks/T-XX.md`](./docs/tasks/) khi grab.
+
+- [ ] [T-83] [M] bug(issues write-path): `add`/`remove_issue_label` dùng `$push`/`$pull` `labels` (field KHÔNG tồn tại) — silent data loss, migrate sang `addCollection(TagReference)` — critical | blocked-by: (none) | blocks: (none) | issue: #118 — T-45 (issues-core.ts) write path **chưa migrated** sang T-69 (tags.ts) pattern. `Issue.labels` KHÔNG tồn tại inline; labels = `tags:class:TagReference` AttachedDoc (`collection:"labels"`). Read path `get_issue` (T-80) đọc đúng via `findAll(TagReference, {attachedTo})`. Internal contradiction: push silent lost, get never shows. Surgical: match `attach_tag`/`detach_tag` implementation (resolve Tag → addCollection TagReference → idempotent findAll check). Hoặc mark deprecated alias → redirect sang tag tools (lower diff).
+- [ ] [T-84] [M] bug(deletion): `reverseBlocks` query broken (dotted-path) + N+1 findAll thay vì CollectionSize counters + total +1 entity sai — high | blocked-by: (none) | blocks: (none) | issue: #119 — `reverseBlocks` dùng `"blockedBy._id"` dotted-path (T-80 confirmed trả 0 rows, phải object form `{blockedBy:{_id,_class}}`) → counter luôn 0. Trusted `previewIssueDeletion` KHÔNG track direction này — chỉ `issue.blockedBy` inline. N+1 findAll (4 query) khi Issue có sẵn counters `subIssues`/`comments`/`attachments` (CollectionSize). Total cộng +1 entity sai (trusted `totalAffected = subIssues+comments+attachments+blockedBy+relations`). DEFER project/component/milestone preview.
+- [ ] [T-85] [S] bug(document-snapshots): thiếu sort `createdOn: Descending` + thiếu `title`/`createdOn`/`parentDocumentId` + fake `modifiedBy` field — high | blocked-by: (none) | blocks: (none) | issue: #120 — list default order arbitrary (trusted newest-first). Output `{id, modifiedBy, modifiedOn}` — `modifiedBy` không có trong trusted (có thể không tồn tại). Trusted summary: `{snapshotId, documentId, teamspaceId, title, parentDocumentId, createdOn, modifiedOn}`. Bonus: list thiếu `limit` param.
+- [ ] [T-86] [M] bug(task-management): `create_task_type` skip Mixin doc + `createMixin(TaskTypeClass)` + statuses copy — Huly KHÔNG apply task typing — medium | blocked-by: (none) | blocks: (none) | issue: #121 — trusted tạo `core.class.Mixin` doc (extends `template.ofClass`, kind=MIXIN) → derive `targetClassRef="<taskTypeId>:type:mixin"`, sau đó `createMixin(targetClassRef, ..., task.mixin.TaskTypeClass, {taskType, projectType})`. Pi-huly skip cả 2 → task type tồn tại nhưng Huly không apply TaskTypeClass mixin behavior. Bonus: `taskData.targetClass` copy template (sai — phải new Mixin ref); `statuses` start `[]` (phải copy template); ProjectType.statuses thiếu append `{_id, taskType}`.
+- [ ] [T-87] [S] bug(task-management): `create_issue_status` KHÔNG validate category match — silent workflow corruption — medium | blocked-by: (none) | blocks: (none) | issue: #122 — pi-huly idempotent `findOne(statusClass, {name})` returns no-op nhưng KHÔNG check `existingStatus.category === params.category`. User pass same name different category → silent idempotent (no-op) thay vì error. Trusted `requireStatusCategoryMatch` fails rõ category mismatch. DEFER cross-project recovery by name.
+- [ ] [T-88] [M] enhancement(documents): `list`/`get_documents` + teamspaces thiếu sort + output fields — low | blocked-by: (none) | blocks: (none) | issue: #123 — list_documents thiếu `sort: modifiedOn: Descending` + `teamspace`/`modifiedOn` output. get_document thiếu `teamspace`/`createdOn`. list_teamspaces thiếu `sort: name: Ascending` + `archived`. get_teamspace thiếu document count. DEFERRED: `url` field (workbenchUrlConfig unavailable — KNOWN LIMITATION).
+- [ ] [T-89] [M] enhancement(templates): `list`/`get_templates` thiếu sort + output fields — low | blocked-by: (none) | blocks: (none) | issue: #124 — list thiếu `sort: modifiedOn: Descending` + `priority`/`modifiedOn`/`childrenCount`. get thiếu `priority`/`assignee` (name)/`component` (label)/`estimation`/`modifiedOn`/`createdOn`/`children` + raw `description` (không resolve MarkupBlobRef → markdown).
+
 ---
 
 ## Size / priority distribution
@@ -377,5 +420,11 @@ websocket error: <id> wss://.../_transactor/<token>` + 7 dòng spam khác
   - **Enhancement low**: T-79G (todos update fields+schedule), T-81G (output fields+filters), T-82G (milestone fields + email resolve — unblocks T-80).
   - DAG phụ thuộc: T-79→T-79G · T-81→T-81G · T-82→T-82G→T-80 (email resolve).
   - Task detail files: [`docs/tasks/T-79.md`..`T-82G.md`](./docs/tasks/) (created).
-- Task detail files: [`docs/tasks/`](./docs/tasks/) (1 task = 1 file, self-contained cho AFK agent).
-- Audit source of truth: [`docs/design/11-runtime-audit.md`](./docs/design/11-runtime-audit.md).
+- **beta.9 follow-up chain (T-83..T-89 open)**: audit tiếp tục domain chưa cover (labels/document-snapshots/time/search/deletion/task-management + issues-core write-path). 5 bug + 2 enhancement gaps filed #118-#124. Critical silent-data-loss 1 (T-83 labels `$push` field không tồn tại), high 2 (T-84 deletion broken query + N+1, T-85 snapshots wrong sort + fake field), medium 2 (T-86 task Mixin skip, T-87 status category validate), low 2 (T-88 documents, T-89 templates output/sort).
+  - **Critical path (silent data loss)**: T-83 (add/remove_issue_label migrate sang addCollection).
+  - **High**: T-84 (deletion reverseBlocks broken + CollectionSize counters), T-85 (document-snapshots sort + output fields).
+  - **Medium**: T-86 (create_task_type Mixin doc + createMixin), T-87 (create_issue_status category validate).
+  - **Enhancement low**: T-88 (documents list/get + teamspaces sort + output), T-89 (templates list/get sort + output).
+  - DAG phụ thuộc: (không — tất cả independent).
+  - DEFERRED: T-84 project/component/milestone preview, T-85 get by title/createdOn identifier, T-87 cross-project recovery by name, T-88 url field (workbenchUrlConfig unavailable), T-90 comments collection filter (low — skip tạo issue).
+  - Task detail files: TODO (`docs/tasks/T-83.md`..`T-89.md` khi grab).

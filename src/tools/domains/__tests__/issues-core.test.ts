@@ -32,7 +32,7 @@ vi.mock("../../../markup/markup.js", () => ({
 
 import { getClient } from "../../../client/pool.js";
 import { tools } from "../issues-core.js";
-import { ISSUE_CLASS, PROJECT_CLASS, ISSUE_KIND_REF } from "../_class-refs.js";
+import { ISSUE_CLASS, PROJECT_CLASS, ISSUE_KIND_REF, TAG_REFERENCE_CLASS } from "../_class-refs.js";
 
 const ctx = {
   hasUI: false,
@@ -246,8 +246,10 @@ describe("T-41: get_issue description ref → markdown (#23)", () => {
   });
 });
 
-// T-45: add_issue_label validate tồn tại + TagReference object shape (#27)
-describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
+// T-45 + T-83: add_issue_label validation + addCollection TagReference (migrated từ $push)
+// T-45 (#27): validate label tồn tại. T-83 (#118): migrate $push labels (silent data
+// loss — field không tồn tại) sang addCollection(TagReference) matching attach_tag (T-69).
+describe("T-83: add_issue_label addCollection TagReference (#118)", () => {
   it("label KHÔNG tồn tại → isError + suggest create_tag trước (T-58 redirect)", async () => {
     const client = makeClient();
     // findOne: lần 1 = issue lookup, lần 2 = tag lookup (not found)
@@ -276,12 +278,14 @@ describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
     expect(client.updateDoc).not.toHaveBeenCalled();
   });
 
-  it("label tồn tại → push TagReference object shape { tag, title, color }", async () => {
+  it("label tồn tại → addCollection TagReference { tag, title, color } (#118)", async () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1", labels: [] }) // issue
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" }) // issue
       .mockResolvedValueOnce({ _id: "label-1", title: "bug", color: 5 }); // label found
+    // findAll TagReference: chưa có label nào attached (idempotent check pass).
+    client.findAll = vi.fn().mockResolvedValue([]);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_add_issue_label");
@@ -294,34 +298,31 @@ describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    // updateDoc được gọi với $push object (KHÔNG phải raw string)
-    expect(client.updateDoc).toHaveBeenCalledTimes(1);
-    const updateCall = client.updateDoc.mock.calls[0];
-    const ops = updateCall?.[3];
-    expect(ops).toMatchObject({
-      $push: {
-        labels: {
-          tag: "label-1", // Ref<TagElement> — KHÔNG phải title string
-          title: "bug",
-          color: 5,
-        },
-      },
+    // T-83: addCollection TagReference (KHÔNG updateDoc $push — field không tồn tại).
+    expect(client.updateDoc).not.toHaveBeenCalled();
+    expect(client.addCollection).toHaveBeenCalledTimes(1);
+    const callArgs = client.addCollection.mock.calls[0];
+    expect(callArgs?.[0]).toBe(TAG_REFERENCE_CLASS);
+    expect(callArgs?.[1]).toBe("sp1"); // issue.space
+    expect(callArgs?.[2]).toBe("i1"); // issue._id
+    expect(callArgs?.[3]).toBe(ISSUE_CLASS); // attachedToClass
+    expect(callArgs?.[4]).toBe("labels"); // collection
+    expect(callArgs?.[5]).toMatchObject({
+      tag: "label-1", // Ref<TagElement> — KHÔNG phải title string
+      title: "bug",
+      color: 5,
     });
   });
 
   it("label đã có trên issue (idempotent) → no-op, không duplicate", async () => {
     const client = makeClient();
     // findOne calls: issue lookup (1) + label lookup by title (2) → found.
-    // Code skip _id fallback khi title lookup thành công.
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({
-        _id: "i1",
-        space: "sp1",
-        identifier: "PD-1",
-        labels: [{ tag: "label-1", title: "bug", color: 5 }], // đã có
-      })
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
       .mockResolvedValueOnce({ _id: "label-1", title: "bug", color: 5 }); // label found by title
+    // T-83: findAll TagReference trả về existing ref → idempotent.
+    client.findAll = vi.fn().mockResolvedValue([{ _id: "tagref-1", tag: "label-1" }]);
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_add_issue_label");
@@ -336,7 +337,8 @@ describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
     expect(text).toMatch(/already|no-op|idempotent/i);
-    // updateDoc KHÔNG gọi
+    // addCollection + updateDoc KHÔNG gọi
+    expect(client.addCollection).not.toHaveBeenCalled();
     expect(client.updateDoc).not.toHaveBeenCalled();
   });
 
@@ -363,6 +365,74 @@ describe("T-45: add_issue_label validation + TagReference shape (#27)", () => {
     // findOne lần 3 query bằng _id (fallback sau title miss)
     const thirdCall = client.findOne.mock.calls[2];
     expect(thirdCall?.[1]).toMatchObject({ _id: "label-1" });
+  });
+});
+
+// T-83: remove_issue_label removeDoc TagReference (#118) — migrate từ $pull
+describe("T-83: remove_issue_label removeDoc TagReference (#118)", () => {
+  it("label attached → findAll TagReference + removeDoc matching", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" }) // issue
+      .mockResolvedValueOnce({ _id: "label-1", title: "bug", color: 5 }); // label found
+    // findAll TagReference: 2 matching refs (defensive — detach từng).
+    client.findAll = vi.fn().mockResolvedValue([
+      { _id: "tagref-1", space: "sp1", tag: "label-1" },
+      { _id: "tagref-2", space: "sp1", tag: "label-1" },
+    ]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_remove_issue_label");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", label: "bug" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(client.updateDoc).not.toHaveBeenCalled(); // KHÔNG $pull
+    // removeDoc từng matching TagReference.
+    expect(client.removeDoc).toHaveBeenCalledTimes(2);
+    const firstCall = client.removeDoc.mock.calls[0];
+    expect(firstCall?.[0]).toBe(TAG_REFERENCE_CLASS);
+    expect(firstCall?.[1]).toBe("sp1");
+    expect(firstCall?.[2]).toBe("tagref-1");
+    // findAll query includes collection "labels" + tag filter.
+    const findCall = client.findAll.mock.calls[0]?.[1];
+    expect(findCall).toMatchObject({
+      attachedTo: "i1",
+      attachedToClass: ISSUE_CLASS,
+      collection: "labels",
+      tag: "label-1",
+    });
+  });
+
+  it("label không trên issue → no-op (idempotent)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "i1", space: "sp1", identifier: "PD-1" })
+      .mockResolvedValueOnce({ _id: "label-1", title: "bug", color: 5 });
+    client.findAll = vi.fn().mockResolvedValue([]); // KHÔNG có matching TagReference
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_remove_issue_label");
+    const result = await tool.execute(
+      "tc1",
+      { identifier: "PD-1", label: "bug" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/no-op|idempotent/i);
+    expect(client.removeDoc).not.toHaveBeenCalled();
+    expect(client.updateDoc).not.toHaveBeenCalled();
   });
 });
 
