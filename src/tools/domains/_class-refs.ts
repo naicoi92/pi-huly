@@ -45,6 +45,10 @@ export function spaceRef(space: string): never {
 export const PERSON_CLASS = classRef("contact:class:Person");
 export const EMPLOYEE_CLASS = classRef("contact:mixin:Employee"); // T-43: class → mixin
 export const CONTACT_CLASS = classRef("contact:class:Contact");
+// T-82G #108: Channel = email/phone provider attachments on Person.
+// Email resolve: findOne(Channel, {value: email, provider: Email}).
+export const CHANNEL_CLASS = classRef("contact:class:Channel");
+export const EMAIL_PROVIDER = "contact:channelProvider:Email";
 
 // tracker (Issues/Milestones/Components/Projects — extends Task)
 // Issue/Milestone/Component/Project/IssueStatus/IssueTemplate/TimeSpendReport

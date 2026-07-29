@@ -74,7 +74,11 @@ describe("T-71: list_milestones space scoping", () => {
       undefined,
       ctx,
     );
-    expect(client.findAll).toHaveBeenCalledWith(MILESTONE_CLASS, { space: "sp1" }, {});
+    expect(client.findAll).toHaveBeenCalledWith(
+      MILESTONE_CLASS,
+      { space: "sp1" },
+      { sort: { modifiedOn: -1 } }, // T-82G #108: sort modifiedOn desc
+    );
   });
 
   it("project not found → isError", async () => {

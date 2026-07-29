@@ -3,7 +3,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { PERSON_CLASS, EMPLOYEE_CLASS } from "./_class-refs.js";
+import { PERSON_CLASS, EMPLOYEE_CLASS, CHANNEL_CLASS, EMAIL_PROVIDER } from "./_class-refs.js";
 import { workspaceParam, limitParam } from "./_common.js";
 import type { HulyClient } from "../../client/client.js";
 
@@ -21,6 +21,21 @@ export async function findPersonByEmailOrName(
   client: HulyClient,
   input: string,
 ): Promise<string | undefined> {
+  // T-82G #108: email resolve via Channel (provider email, value exact). Port
+  // trusted contacts-shared.ts findPersonByEmailOrName step 2 (Channel exact).
+  // SocialIdentity + $like fuzzy deferred (perf / workspace-members edge).
+  if (input.includes("@")) {
+    const channel = await client.findOne(CHANNEL_CLASS, {
+      value: input,
+      provider: EMAIL_PROVIDER,
+    } as never);
+    if (channel) {
+      const person = await client.findOne(PERSON_CLASS, {
+        _id: (channel as { attachedTo?: string }).attachedTo,
+      } as never);
+      if (person) return person._id;
+    }
+  }
   // Name match (Huly Person.name = "LastName, FirstName").
   const byName = await client.findOne(PERSON_CLASS, { name: input } as never);
   return byName?._id;
@@ -37,10 +52,12 @@ export const tools: HulyToolDefinition[] = [
       const limit = typeof params.limit === "number" ? params.limit : 50;
       const employees = await tctx.client.findAll(EMPLOYEE_CLASS, {}, { limit });
       // T-74: email field KHÔNG tồn tại trên Employee/Person (lives trong Channel).
-      // Drop email claim (was always undefined). name reliable.
+      // T-82G #108: add position + active (Employee mixin fields).
       const list = employees.map((e) => ({
         id: e._id,
         name: (e as { name?: string }).name ?? "",
+        position: (e as { role?: string }).role,
+        active: (e as { active?: boolean }).active !== false,
       }));
       return {
         content: `Found ${list.length} employee(s).`,
@@ -61,8 +78,9 @@ export const tools: HulyToolDefinition[] = [
       const list = persons.map((p) => ({
         id: p._id,
         name: (p as { name?: string }).name ?? "",
-        // T-82 #105: drop dead `email` field — Person.email KHÔNG tồn tại (email
-        // lives trong Channel attachedTo Person). Email resolve defer T-82G.
+        // T-82G #108: add city + modifiedOn. Drop dead email (T-82).
+        city: (p as { city?: string }).city,
+        modifiedOn: (p as { modifiedOn?: number }).modifiedOn,
       }));
       return {
         content: `Found ${list.length} person(s).`,
