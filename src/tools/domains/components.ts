@@ -3,7 +3,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { COMPONENT_CLASS, ISSUE_CLASS, PROJECT_CLASS } from "./_class-refs.js";
+import { COMPONENT_CLASS, ISSUE_CLASS, PROJECT_CLASS, PERSON_CLASS } from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -78,13 +78,36 @@ export const tools: HulyToolDefinition[] = [
           details: { component: params.component },
         };
       }
+      // T-81G #107: resolve lead raw Ref → Person name; description → markdown.
+      const comp = c as { label?: string; description?: string | null; lead?: string };
+      let leadName: string | undefined;
+      if (comp.lead) {
+        const person = await tctx.client.findOne(PERSON_CLASS, { _id: comp.lead } as never);
+        leadName = (person as { name?: string } | null)?.name;
+      }
+      let description: string | undefined;
+      if (comp.description) {
+        try {
+          const markup = await tctx.client.fetchMarkup(
+            COMPONENT_CLASS,
+            c._id,
+            "description",
+            comp.description,
+            "markdown",
+          );
+          description = typeof markup === "string" ? markup : undefined;
+        } catch {
+          description = undefined;
+        }
+      }
       return {
-        content: `Component ${(c as { label?: string }).label ?? ""}`,
+        content: `Component ${comp.label ?? ""}`,
         details: {
           id: c._id,
-          label: (c as { label?: string }).label,
-          description: (c as { description?: string }).description,
-          lead: (c as { lead?: string }).lead,
+          label: comp.label,
+          description,
+          lead: leadName,
+          leadRef: comp.lead,
         },
       };
     },
@@ -214,7 +237,8 @@ export const tools: HulyToolDefinition[] = [
       workspace: workspaceParam,
       project: projectParam,
       identifier: identifierParam,
-      component: Type.String(),
+      // T-81G #107: component = label OR _id; null → clear (unassign).
+      component: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     }),
     async handler(params, tctx) {
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
@@ -227,15 +251,33 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // T-52 #42 + T-81 #104: validate component tồn tại + scope theo project.
+      // T-81G #107: component=null → clear (unassign).
+      if (params.component === null) {
+        const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, {
+          component: null,
+        });
+        if (!updResult.ok) return updResult.error;
+        return {
+          content: `Cleared component on ${params.identifier}.`,
+          details: { identifier: params.identifier, component: null },
+        };
+      }
+      // T-52 #42 + T-81 #104 + T-81G #107: resolve component by _id OR label + scope.
       const space = issue.space as string;
-      const component = await tctx.client.findOne(COMPONENT_CLASS, {
+      let component = await tctx.client.findOne(COMPONENT_CLASS, {
         _id: params.component,
         space,
       } as never);
       if (!component) {
+        // T-81G #107: label-fallback resolve.
+        component = await tctx.client.findOne(COMPONENT_CLASS, {
+          label: params.component,
+          space,
+        } as never);
+      }
+      if (!component) {
         return {
-          content: `Component "${params.component}" not found.`,
+          content: `Component "${params.component}" not found (by _id or label).`,
           isError: true,
           details: { identifier: params.identifier, component: params.component },
         };

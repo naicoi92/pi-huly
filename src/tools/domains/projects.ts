@@ -27,12 +27,25 @@ export const tools: HulyToolDefinition[] = [
     label: "List projects",
     description: "List Huly projects trong workspace.",
     promptSnippet: "List Huly projects.",
-    parameters: Type.Object({ workspace: workspaceParam }),
-    async handler(_params, tctx) {
-      const projects = await tctx.client.findAll(PROJECT_CLASS, {}, {});
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      includeArchived: Type.Optional(
+        Type.Boolean({ description: "Include archived projects (default false)." }),
+      ),
+    }),
+    async handler(params, tctx) {
+      // T-81G #107: archived-filter default (exclude archived) + sort name asc.
+      const query: Record<string, unknown> =
+        params.includeArchived === true ? {} : { archived: { $ne: true } };
+      const projects = await tctx.client.findAll(PROJECT_CLASS, query as never, {
+        sort: { name: 1 },
+      });
       const list = projects.map((p) => ({
         identifier: (p as { identifier?: string }).identifier ?? "",
         name: (p as { name?: string }).name ?? "",
+        description: (p as { description?: string }).description,
+        archived: (p as { archived?: boolean }).archived === true,
+        total: (p as { sequence?: number }).sequence ?? 0,
       }));
       return {
         content: `Found ${list.length} project(s): ${list.map((p) => p.identifier).join(", ")}`,
@@ -66,6 +79,11 @@ export const tools: HulyToolDefinition[] = [
         description?: string;
         archived?: boolean;
       };
+      // T-81G #107: inline defaultStatus + statuses[] (convenience — avoid extra
+      // list_statuses call). getProjectStatuses resolves qua core.class.Status.
+      const statusResult = await getProjectStatuses(tctx.client, tctx.project!);
+      const statuses = statusResult?.statuses ?? [];
+      const defaultStatus = statuses.find((s) => s.isDefault)?.name;
       return {
         content: `Project ${projFields.identifier}: ${projFields.name ?? ""}`,
         details: {
@@ -73,6 +91,8 @@ export const tools: HulyToolDefinition[] = [
           name: projFields.name,
           description: projFields.description,
           archived: projFields.archived ?? false,
+          defaultStatus,
+          statuses: statuses.map((s) => ({ name: s.name, category: s.category })),
         },
       };
     },
@@ -145,7 +165,7 @@ export const tools: HulyToolDefinition[] = [
       workspace: workspaceParam,
       project: projectParam,
       name: Type.Optional(Type.String()),
-      description: Type.Optional(Type.String()),
+      description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     }),
     async handler(params, tctx) {
       const existing = await tctx.client.findOne(PROJECT_CLASS, {
@@ -160,15 +180,24 @@ export const tools: HulyToolDefinition[] = [
       }
       const operations: Record<string, unknown> = {};
       if (typeof params.name === "string") operations.name = params.name;
-      if (typeof params.description === "string") operations.description = params.description;
+      // T-81G #107: description=null → $unset clear.
+      if (params.description !== undefined) {
+        if (params.description === null) {
+          operations.$unset = { description: "" };
+        } else {
+          operations.description = params.description;
+        }
+      }
       if (Object.keys(operations).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
       const updResult = await safeUpdateDoc(tctx.client, PROJECT_CLASS, existing, operations);
       if (!updResult.ok) return updResult.error;
+      const fields = Object.keys(operations).filter((f) => f !== "$unset");
+      if (operations.$unset !== undefined) fields.push("description(clear)");
       return {
-        content: `Updated project ${tctx.project}: ${Object.keys(operations).join(", ")}`,
-        details: { updated: true, fields: Object.keys(operations) },
+        content: `Updated project ${tctx.project}: ${fields.join(", ")}`,
+        details: { updated: true, fields },
       };
     },
   }),

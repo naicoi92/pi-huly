@@ -12,13 +12,24 @@ export const tools: HulyToolDefinition[] = [
     name: "list_spaces",
     label: "List spaces",
     description: "List Huly spaces (teamspaces + tracker spaces).",
-    parameters: Type.Object({ workspace: workspaceParam }),
-    async handler(_params, tctx) {
-      const spaces = await tctx.client.findAll(SPACE_CLASS, {}, {});
+    parameters: Type.Object({
+      workspace: workspaceParam,
+      includeArchived: Type.Optional(
+        Type.Boolean({ description: "Include archived spaces (default false)." }),
+      ),
+    }),
+    async handler(params, tctx) {
+      // T-81G #107: archived-filter default + widen output (class, privacy).
+      const query: Record<string, unknown> =
+        params.includeArchived === true ? {} : { archived: { $ne: true } };
+      const spaces = await tctx.client.findAll(SPACE_CLASS, query as never, {});
       const list = spaces.map((s) => ({
         _id: s._id,
         name: (s as { name?: string }).name ?? "",
         description: (s as { description?: string }).description,
+        class: (s as { _class?: string })._class,
+        private: (s as { private?: boolean }).private === true,
+        archived: (s as { archived?: boolean }).archived === true,
       }));
       return {
         content: `Found ${list.length} space(s).`,
@@ -37,20 +48,51 @@ export const tools: HulyToolDefinition[] = [
       space: Type.String(),
     }),
     async handler(params, tctx) {
-      const s = await tctx.client.findOne(SPACE_CLASS, { _id: params.space });
+      // T-81G #107: name-fallback — _id trước, exact name sau, ambiguous → isError.
+      let s = (await tctx.client.findOne(SPACE_CLASS, { _id: params.space })) as {
+        _id: string;
+        _class?: string;
+        name?: string;
+        description?: string;
+        private?: boolean;
+        archived?: boolean;
+      } | null;
       if (!s) {
-        return {
-          content: `Space "${params.space}" not found.`,
-          isError: true,
-          details: { space: params.space },
-        };
+        const byName = (await tctx.client.findAll(SPACE_CLASS, {
+          name: params.space,
+        } as never)) as Array<{
+          _id: string;
+          _class?: string;
+          name?: string;
+        }>;
+        if (byName.length === 0) {
+          return {
+            content: `Space "${params.space}" not found (by _id or name).`,
+            isError: true,
+            details: { space: params.space },
+          };
+        }
+        if (byName.length > 1) {
+          return {
+            content: `Space name "${params.space}" ambiguous (${byName.length} matches). Use _id.`,
+            isError: true,
+            details: {
+              space: params.space,
+              candidates: byName.map((x) => ({ _id: x._id, name: x.name })),
+            },
+          };
+        }
+        s = byName[0]!;
       }
       return {
-        content: `Space ${(s as { name?: string }).name ?? ""}`,
+        content: `Space ${s.name ?? ""}`,
         details: {
           _id: s._id,
-          name: (s as { name?: string }).name,
-          description: (s as { description?: string }).description,
+          name: s.name,
+          description: s.description,
+          class: s._class,
+          private: s.private === true,
+          archived: s.archived === true,
         },
       };
     },
@@ -104,12 +146,16 @@ export const tools: HulyToolDefinition[] = [
   defineHulyTool({
     name: "update_space",
     label: "Update space",
-    description: "Update space (name, description).",
+    description: "Update space (name, description, private, archived, autoJoin).",
     parameters: Type.Object({
       workspace: workspaceParam,
       space: Type.String(),
       name: Type.Optional(Type.String()),
-      description: Type.Optional(Type.String()),
+      description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      // T-81G #107: add private, archived, autoJoin (trusted có 5 fields).
+      private: Type.Optional(Type.Boolean()),
+      archived: Type.Optional(Type.Boolean()),
+      autoJoin: Type.Optional(Type.Boolean()),
     }),
     async handler(params, tctx) {
       const s = await tctx.client.findOne(SPACE_CLASS, { _id: params.space });
@@ -122,15 +168,23 @@ export const tools: HulyToolDefinition[] = [
       }
       const ops: Record<string, unknown> = {};
       if (params.name !== undefined) ops.name = params.name;
-      if (params.description !== undefined) ops.description = params.description;
+      if (params.description !== undefined) {
+        if (params.description === null) ops.$unset = { description: "" };
+        else ops.description = params.description;
+      }
+      if (params.private !== undefined) ops.private = params.private;
+      if (params.archived !== undefined) ops.archived = params.archived;
+      if (params.autoJoin !== undefined) ops.autoJoin = params.autoJoin;
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
       }
       const updResult = await safeUpdateDoc(tctx.client, SPACE_CLASS, s, ops);
       if (!updResult.ok) return updResult.error;
+      const fields = Object.keys(ops).filter((f) => f !== "$unset");
+      if (ops.$unset !== undefined) fields.push("description(clear)");
       return {
-        content: `Updated space ${params.space}.`,
-        details: { updated: true, fields: Object.keys(ops) },
+        content: `Updated space ${params.space}: ${fields.join(", ")}`,
+        details: { updated: true, fields },
       };
     },
   }),
