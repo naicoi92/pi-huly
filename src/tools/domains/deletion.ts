@@ -34,56 +34,39 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // T-77: cascade preview — count comments + attachments + subIssues +
-      // reverse-blocks + inline blockedBy/relations (before chỉ comments+attachments).
-      const comments = await tctx.client.findAll(
-        "chunter:class:ChatMessage" as never,
-        { attachedTo: entity._id },
-        {},
-      );
-      const attachments = await tctx.client.findAll(
-        "attachment:class:Attachment" as never,
-        { attachedTo: entity._id },
-        {},
-      );
-      // subIssues: direct child issues (AttachedDoc attachedTo=entity).
-      const subIssues = await tctx.client.findAll(
-        ISSUE_CLASS,
-        { attachedTo: entity._id } as never,
-        {},
-      );
-      // Reverse blocks: issues whose blockedBy references this entity.
-      const reverseBlocks = await tctx.client.findAll(
-        ISSUE_CLASS,
-        { "blockedBy._id": entity._id } as never,
-        {},
-      );
-      // Inline arrays trên Issue (RelatedDocument[]).
+      // T-84 #119: read CollectionSize counters trực tiếp từ entity (subIssues/
+      // comments/attachments) + inline blockedBy/relations. KHÔNG N+1 findAll
+      // (Issue có sẵn counters) + KHÔNG reverseBlocks (dotted-path `blockedBy._id`
+      // broken query — T-80 confirmed trả 0 rows; trusted previewIssueDeletion
+      // không track direction này). total match trusted formula (no +1 entity).
       const issueFields = entity as {
+        subIssues?: number;
+        comments?: number;
+        attachments?: number;
         blockedBy?: Array<{ _id?: string }>;
         relations?: Array<{ _id?: string }>;
       };
+      const subIssues = issueFields.subIssues ?? 0;
+      const comments = issueFields.comments ?? 0;
+      const attachments = issueFields.attachments ?? 0;
       const blockedByCount = issueFields.blockedBy?.length ?? 0;
       const relationsCount = issueFields.relations?.length ?? 0;
       const cascade = {
         entity: entity._id,
-        comments: comments.length,
-        attachments: attachments.length,
-        subIssues: subIssues.length,
+        comments,
+        attachments,
+        subIssues,
         blockedBy: blockedByCount,
         relations: relationsCount,
-        reverseBlocks: reverseBlocks.length,
-        total: 1 + comments.length + attachments.length + subIssues.length + reverseBlocks.length,
+        total: subIssues + comments + attachments + blockedByCount + relationsCount,
       };
       const warnings: string[] = [];
-      if (subIssues.length > 0) warnings.push(`${subIssues.length} sub-issue(s) orphaned`);
-      if (reverseBlocks.length > 0)
-        warnings.push(`${reverseBlocks.length} issue(s) lose a block reference`);
+      if (subIssues > 0) warnings.push(`${subIssues} sub-issue(s) orphaned`);
       if (blockedByCount > 0) warnings.push(`${blockedByCount} blockedBy reference(s) dropped`);
       if (relationsCount > 0) warnings.push(`${relationsCount} relation(s) dropped`);
       const warnText = warnings.length > 0 ? ` Warnings: ${warnings.join("; ")}.` : "";
       return {
-        content: `Deletion preview for ${params.identifier}: ${cascade.total} item(s) affected (1 entity + ${cascade.comments} comments + ${cascade.attachments} attachments + ${cascade.subIssues} sub-issues + ${cascade.reverseBlocks} reverse-blocks).${warnText}`,
+        content: `Deletion preview for ${params.identifier}: ${cascade.total} item(s) affected (${subIssues} sub-issues + ${comments} comments + ${attachments} attachments + ${blockedByCount} blockedBy + ${relationsCount} relations).${warnText}`,
         details: { cascade, warnings: warnings.length > 0 ? warnings : undefined },
       };
     },
