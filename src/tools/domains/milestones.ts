@@ -32,6 +32,10 @@ function stringToMilestoneStatus(s: string): number {
   }
   return v;
 }
+/** T-82 #105: reverse map number → string (READ path). T-72 chỉ fix write. */
+function milestoneStatusToString(n: unknown): string {
+  return Object.entries(MILESTONE_STATUS_MAP).find(([, v]) => v === n)?.[0] ?? "planned";
+}
 import {
   workspaceParam,
   projectParam,
@@ -64,7 +68,9 @@ export const tools: HulyToolDefinition[] = [
       const list = milestones.map((m) => ({
         id: m._id,
         label: (m as { label?: string }).label ?? "",
-        status: (m as { status?: string }).status ?? "planned",
+        // T-82 #105: status READ trả string (KHÔNG raw number — dead `?? "planned"`
+        // before fix vì 0 không nullish).
+        status: milestoneStatusToString((m as { status?: number }).status),
         targetDate: (m as { targetDate?: number }).targetDate,
       }));
       return {
@@ -99,7 +105,8 @@ export const tools: HulyToolDefinition[] = [
         details: {
           id: m._id,
           label: (m as { label?: string }).label,
-          status: (m as { status?: string }).status,
+          // T-82 #105: status READ trả string (KHÔNG raw number).
+          status: milestoneStatusToString((m as { status?: number }).status),
           targetDate: (m as { targetDate?: number }).targetDate,
         },
       };
