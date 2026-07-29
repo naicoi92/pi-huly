@@ -3,7 +3,13 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { ISSUE_TEMPLATE_CLASS, ISSUE_CLASS, PROJECT_CLASS } from "./_class-refs.js";
+import {
+  ISSUE_TEMPLATE_CLASS,
+  ISSUE_CLASS,
+  PROJECT_CLASS,
+  PERSON_CLASS,
+  COMPONENT_CLASS,
+} from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -47,11 +53,30 @@ export const tools: HulyToolDefinition[] = [
           details: { project: tctx.project },
         };
       }
-      const tpls = await tctx.client.findAll(ISSUE_TEMPLATE_CLASS, { space } as never, {});
-      const list = tpls.map((t) => ({
-        _id: t._id,
-        title: (t as { title?: string }).title ?? "",
-      }));
+      // T-89 #124: sort modifiedOn Descending + output priority/modifiedOn/childrenCount.
+      const tpls = await tctx.client.findAll(
+        ISSUE_TEMPLATE_CLASS,
+        { space } as never,
+        {
+          sort: { modifiedOn: -1 },
+        } as never,
+      );
+      const list = tpls.map((t) => {
+        const tpl = t as {
+          _id: string;
+          title?: string;
+          priority?: string;
+          modifiedOn?: number;
+          children?: unknown[];
+        };
+        return {
+          _id: tpl._id,
+          title: tpl.title ?? "",
+          priority: tpl.priority,
+          modifiedOn: tpl.modifiedOn,
+          childrenCount: tpl.children?.length ?? 0,
+        };
+      });
       return {
         content: `Found ${list.length} template(s).`,
         details: { count: list.length, templates: list },
@@ -79,12 +104,57 @@ export const tools: HulyToolDefinition[] = [
           details: { template: params.template },
         };
       }
+      const tpl = t as {
+        _id: string;
+        title?: string;
+        description?: unknown;
+        priority?: string;
+        assignee?: string | null;
+        component?: string | null;
+        estimation?: number;
+        modifiedOn?: number;
+        createdOn?: number;
+        children?: unknown[];
+      };
+      // T-89 #124: resolve description MarkupBlobRef → markdown.
+      let description: string | undefined;
+      if (tpl.description) {
+        try {
+          description = await tctx.client.fetchMarkup(
+            ISSUE_TEMPLATE_CLASS,
+            tpl._id,
+            "description",
+            tpl.description,
+            "markdown",
+          );
+        } catch {
+          // Markup fetch fail — omit description.
+        }
+      }
+      // T-89 #124: resolve assignee (Person name) + component (label).
+      let assigneeName: string | undefined;
+      if (tpl.assignee) {
+        const person = await tctx.client.findOne(PERSON_CLASS, { _id: tpl.assignee } as never);
+        assigneeName = (person as { name?: string } | null)?.name;
+      }
+      let componentLabel: string | undefined;
+      if (tpl.component) {
+        const comp = await tctx.client.findOne(COMPONENT_CLASS, { _id: tpl.component } as never);
+        componentLabel = (comp as { label?: string } | null)?.label;
+      }
       return {
-        content: `Template ${(t as { title?: string }).title ?? ""}`,
+        content: `Template ${tpl.title ?? ""}`,
         details: {
-          _id: t._id,
-          title: (t as { title?: string }).title,
-          description: (t as { description?: string }).description,
+          _id: tpl._id,
+          title: tpl.title,
+          description,
+          priority: tpl.priority,
+          assignee: assigneeName ?? tpl.assignee,
+          component: componentLabel ?? tpl.component,
+          estimation: tpl.estimation,
+          modifiedOn: tpl.modifiedOn,
+          createdOn: tpl.createdOn,
+          children: tpl.children,
         },
       };
     },
