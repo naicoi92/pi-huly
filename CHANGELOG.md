@@ -3,6 +3,55 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.8] - 2026-07-29
+
+Hotfix canary #7. **beta.7 follow-up** — slash goal `complete-milestone beta.8`:
+7/7 task (4 bug + 3 enhancement). Fresh audit vs trusted `@firfi/huly-mcp` v0.45
+ra soát tools KHÔNG cover bởi T-65..T-77 (todos, issues read-path,
+projects/spaces/components, milestones/workspace/contacts). 4 bug issues + 3 gap
+issues filed (#102-#108). 710 tests (baseline 650 → +60), CI green cả
+ubuntu+macos. Tất cả fix verified vs trusted source.
+
+### Fixed
+
+- **todos** (T-79 #102): 7/7 tool sai data model — `ProjectToDo` class (KHÔNG base
+  `ToDo`), `doneOn: Timestamp|null` (KHÔNG `done` bool), space `time.space.ToDos`,
+  `Todoable.todos` = CollectionSize counter (KHÔNG array). `complete`/`reopen` lúc
+  trước silent no-op (`{done:true/false}` — field KHÔNG tồn tại). `delete` dec
+  parent counter.
+- **issues read-path** (T-80 #103): `get_issue` raw status/assignee ref → name +
+  add labels/parentIssue/subIssues/modifiedOn; `list_issue_relations` **broken
+  blocks query** (`blockedBy._id` dotted → object form `{blockedBy:{_id,_class}}`)
+  + resolve raw `_id`→identifier; `update_issue` assignee raw push → resolve
+  Person + null clear.
+- **projects/spaces/components** (T-81 #104): component `lead` raw string →
+  `Ref<Employee>`; create `comments:0`; `getProjectStatuses` N+1 `IssueStatus` →
+  `core.class.Status` batch `$in` (trusted né "can fail on some workspaces");
+  component lookups thiếu `space:project._id` (project isolation).
+- **milestones/workspace/contacts** (T-82 #105): milestone status READ raw number
+  → string (`milestoneStatusToString` reverse map; T-72 chỉ fix write); `list_persons`
+  dead `email` field; `update_user_profile` ghi raw `Person.name` phá format →
+  `firstName`/`lastName` → `"LastName,First"`.
+
+### Added
+
+- **todos** (T-79G #106): `update_todo` +owner/priority/visibility + description
+  via `uploadMarkup` (KHÔNG raw string) + `dueDate=null` clear.
+- **projects/spaces/components** (T-81G #107): archived-filter + sort + widen output
+  (description/total/class/private/archived); `get_project` inline statuses;
+  `get_space` name-fallback; `update_space` +private/archived/autoJoin;
+  `get_component` lead→name + markdown; `set_issue_component` label-resolve + null.
+- **milestones/workspace/contacts** (T-82G #108): `get_milestone` +description/project/
+  modifiedOn/createdOn; `findPersonByEmailOrName` **email resolve via Channel**
+  (unblocks assignee email input); `list_milestones` sort; `set_issue_milestone`
+  null clear; `list_persons` +city/modifiedOn; `list_employees` +position/active.
+
+### Deferred (low-risk, documented)
+
+- `schedule_todo`/`unschedule_todo` (T-79G): WorkSlot model needs separate verify.
+- `memberCount`/`ownerCount` (spaces, T-81G): perf cost, low value.
+- `SocialIdentity` + `$like` email fallback (T-82G): workspace-members edge.
+
 ## [1.0.0-beta.7] - 2026-07-29
 
 Hotfix canary #6. **User-reported blocker fix**: `create_teamspace` was
