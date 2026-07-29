@@ -330,19 +330,42 @@ export const tools: HulyToolDefinition[] = [
         _id?: string;
         _class?: string;
       }>;
-      // Reverse query cho "blocks": issues có blockedBy._id === issue._id.
-      const blockedResults = await tctx.client.findAll(ISSUE_CLASS, {
-        "blockedBy._id": issue._id,
-      });
-      const blocksList = (blockedResults as Array<{ _id?: string; _class?: string }>).map((r) => ({
+      // T-80 #103: blocks = REVERSE QUERY. Dotted-path `{ "blockedBy._id": x }`
+      // returns NO rows trong Huly query engine — phải object form
+      // `{ blockedBy: { _id, _class } }` (verified trusted PR #48 comment).
+      const blockedResults = (await tctx.client.findAll(ISSUE_CLASS, {
+        blockedBy: { _id: issue._id, _class: ISSUE_CLASS },
+      } as never)) as Array<{ _id?: string; identifier?: string; _class?: string }>;
+      // T-80 #103: resolve raw _id → identifier (batch findAll $in). Trước đây
+      // trả raw Ref → LLM không dùng được kết quả.
+      const allIds = [
+        ...blockedResults.map((r) => r._id),
+        ...blockedBy.map((r) => r._id),
+        ...relations.map((r) => r._id),
+      ].filter((id): id is string => typeof id === "string");
+      const idMap = new Map<string, string>();
+      if (allIds.length > 0) {
+        const resolved = (await tctx.client.findAll(ISSUE_CLASS, {
+          _id: { $in: allIds },
+        } as never)) as Array<{ _id?: string; identifier?: string }>;
+        for (const r of resolved) {
+          if (r._id !== undefined && r.identifier !== undefined) {
+            idMap.set(r._id, r.identifier);
+          }
+        }
+      }
+      const blocksList = blockedResults.map((r) => ({
+        identifier: r._id !== undefined ? idMap.get(r._id) : undefined,
         targetIssueId: r._id,
         direction: "blocks" as const,
       }));
       const blockedList = blockedBy.map((r) => ({
+        identifier: r._id !== undefined ? idMap.get(r._id) : undefined,
         targetIssueId: r._id,
         direction: "is-blocked-by" as const,
       }));
       const relList = relations.map((r) => ({
+        identifier: r._id !== undefined ? idMap.get(r._id) : undefined,
         targetIssueId: r._id,
         direction: "relates-to" as const,
       }));

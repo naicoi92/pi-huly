@@ -389,7 +389,7 @@ describe("T-61: remove_issue_relation — đối xứng add", () => {
 });
 
 describe("T-61: list_issue_relations — 3 hướng rõ ràng + reverse query cho blocks", () => {
-  it("blocks = reverse query findAll { 'blockedBy._id': issue._id }", async () => {
+  it("blocks = reverse query findAll object form { blockedBy: { _id, _class } }", async () => {
     // Kịch bản thực: PD-19 blocks PD-22 → data lưu ở PD-22.blockedBy = [PD-19]
     // list_issue_relations(PD-19) phải tìm thấy PD-22 qua reverse query.
     const client = makeClient();
@@ -398,7 +398,7 @@ describe("T-61: list_issue_relations — 3 hướng rõ ràng + reverse query ch
       space: "sp1",
       identifier: "PD-19",
     });
-    // findAll trả về các issues có blockedBy._id === "i19" → PD-22 (i22)
+    // findAll call 1 (blocks query) + call 2 ($in resolve) cùng trả PD-22.
     client.findAll = vi
       .fn()
       .mockResolvedValue([{ _id: "i22", _class: "tracker:class:Issue", identifier: "PD-22" }]);
@@ -408,19 +408,20 @@ describe("T-61: list_issue_relations — 3 hướng rõ ràng + reverse query ch
     const result = await tool.execute("tc1", { identifier: "PD-19" }, undefined, undefined, ctx);
 
     expect(result.isError).toBeUndefined();
-    // T-61: gọi findAll với reverse query 'blockedBy._id' === issue._id
+    // T-80 #103: object form (KHÔNG dotted 'blockedBy._id' — returns no rows).
     expect(client.findAll).toHaveBeenCalledWith("tracker:class:Issue", {
-      "blockedBy._id": "i19",
+      blockedBy: { _id: "i19", _class: "tracker:class:Issue" },
     });
     const details = result.details as {
       count: number;
-      relations: Array<{ direction: string; targetIssueId: string }>;
+      relations: Array<{ direction: string; targetIssueId: string; identifier?: string }>;
     };
     expect(details.count).toBe(1);
     expect(details.relations).toHaveLength(1);
     expect(details.relations[0]).toMatchObject({
       direction: "blocks",
       targetIssueId: "i22",
+      identifier: "PD-22",
     });
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("1 blocks");
