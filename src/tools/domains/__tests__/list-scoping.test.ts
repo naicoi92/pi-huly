@@ -124,7 +124,11 @@ describe("T-71: list_templates space scoping", () => {
       undefined,
       ctx,
     );
-    expect(client.findAll).toHaveBeenCalledWith(ISSUE_TEMPLATE_CLASS, { space: "sp1" }, {});
+    expect(client.findAll).toHaveBeenCalledWith(
+      ISSUE_TEMPLATE_CLASS,
+      { space: "sp1" },
+      expect.objectContaining({ sort: { modifiedOn: -1 } }),
+    );
   });
 });
 
