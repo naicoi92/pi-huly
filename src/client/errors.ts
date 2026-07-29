@@ -102,9 +102,10 @@ export class UnavailableError extends HulyError {
 }
 
 // PlatformError duck-type shape (matches @hcengineering/platform PlatformError).
+type IntlStringObj = { _id?: string; default?: string; key?: string; value?: string };
 type StatusLike = {
   severity: string;
-  code: string | { _id?: string; default?: string } | object;
+  code: string | IntlStringObj;
   params?: Record<string, unknown>;
 };
 
@@ -116,15 +117,14 @@ type PlatformErrorLike = Error & {
 function statusCode(code: StatusLike["code"]): string {
   if (typeof code === "string") return code;
   if (code && typeof code === "object") {
-    const obj = code as { _id?: string; default?: string; key?: string; value?: string };
-    return obj._id ?? obj.default ?? obj.key ?? obj.value ?? "";
+    return code._id ?? code.default ?? code.key ?? code.value ?? "";
   }
   return "";
 }
 
 /** Check if error looks like a PlatformError (duck-type, no instanceof). */
 function isPlatformError(e: unknown): e is PlatformErrorLike {
-  return e instanceof Error && "status" in e && typeof (e as PlatformErrorLike).status === "object";
+  return e instanceof Error && "status" in e && typeof e.status === "object";
 }
 
 /** Network error patterns (raw Error, NOT PlatformError). */
@@ -332,7 +332,7 @@ export type ToolResult = {
  * dùng chung single source of truth (tránh drift khi thêm pattern mới).
  */
 export const LEAK_PATTERNS = [
-  // Generic key=value assignment: token=..., password: "...", Authorization: Bearer xxx
+  // Generic key=value assignment (token / password / secret / api_key / authorization).
   /(?:token|password|secret|api[_-]?key|authorization)\s*[=:]\s*['"]?[A-Za-z0-9_.+/ -]{8,}['"]?/gi,
   // GitHub tokens (classic PAT, fine-grained, npm)
   /ghp_[A-Za-z0-9]{36,}/g,

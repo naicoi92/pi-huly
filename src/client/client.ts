@@ -15,7 +15,6 @@ import {
   createRestTxOperations,
   getWorkspaceToken,
   type Account,
-  type AuthOptions,
   type ConnectOptions,
   type AttachedData,
   type AttachedDoc,
@@ -37,7 +36,7 @@ import {
   type WithLookup,
   type WithMarkup,
 } from "@hcengineering/api-client";
-import { mapError, type HulyError } from "./errors.js";
+import { mapError } from "./errors.js";
 import { DEFAULT_UPSTREAM_NOISE_PATTERNS, runWithConsoleFilter } from "./console-filter.js";
 import { loadConfig } from "../config/config.js";
 
@@ -47,7 +46,7 @@ export type Transport = "ws" | "rest";
 /** Huly credentials: url tách + auth union (D8) + workspace BẮT BUỘC. */
 export type HulyCredentials = {
   url: string;
-} & AuthOptions;
+} & ConnectOptions;
 
 /** Current user shape (mapped từ Account, D15 FR-18). */
 export interface CurrentUser {
@@ -218,20 +217,20 @@ export async function createHulyClient(
   try {
     const { url, ...auth } = creds;
     if (transport === "ws") {
-      const connectFn = () => connect(url, auth as ConnectOptions);
+      const connectFn = () => connect(url, auth);
       // T-62: wrap connect() — upstream replay tải model diff + warn cache-miss
       // hàng loạt. Filter chỉ active trong scope connect (try/finally restore).
       const client =
         patterns !== null ? await runWithConsoleFilter(patterns, connectFn) : await connectFn();
-      return makeWsClient(client, () => connectStorage(url, auth as AuthOptions));
+      return makeWsClient(client, () => connectStorage(url, auth));
     }
     // rest
-    const rest = await connectRest(url, auth as AuthOptions);
-    const { endpoint, workspaceId, token } = await getWorkspaceToken(url, auth as AuthOptions);
+    const rest = await connectRest(url, auth);
+    const { endpoint, workspaceId, token } = await getWorkspaceToken(url, auth);
     const tx = await createRestTxOperations(endpoint, workspaceId, token);
-    return makeRestClient(rest, tx, () => connectStorage(url, auth as AuthOptions));
+    return makeRestClient(rest, tx, () => connectStorage(url, auth));
   } catch (e) {
-    throw mapError(e) as HulyError;
+    throw mapError(e);
   }
 }
 
@@ -251,26 +250,15 @@ function makeWsClient(
     removeDoc: (...args) => client.removeDoc(...args),
     addCollection: (...args) => client.addCollection(...args),
     createMixin: (...args) => client.createMixin(...args),
-    // T-41: PlatformClient có fetchMarkup built-in (delegate MarkupOperations).
-    // Signature branded Ref<Class>/Ref<Doc> nhưng runtime string — cast bypass.
-    // T-66: uploadMarkup/updateMarkup cùng MarkupOperations interface.
-    fetchMarkup: (...args) =>
-      (client as unknown as { fetchMarkup: (...a: unknown[]) => Promise<string> }).fetchMarkup(
-        ...args,
-      ),
-    uploadMarkup: (...args) =>
-      (client as unknown as { uploadMarkup: (...a: unknown[]) => Promise<unknown> }).uploadMarkup(
-        ...args,
-      ),
-    updateMarkup: (...args) =>
-      (client as unknown as { updateMarkup: (...a: unknown[]) => Promise<void> }).updateMarkup(
-        ...args,
-      ),
-    // T-77: searchFulltext — PlatformClient có thể KHÔNG expose; cast-access.
-    // Nếu undefined runtime → handler fulltext_search fallback $like.
+    // T-41: PlatformClient có fetchMarkup built-in (MarkupOperations interface).
+    // T-66: uploadMarkup/updateMarkup cùng interface. Native types (ambient).
+    fetchMarkup: (...args) => client.fetchMarkup(...args),
+    uploadMarkup: (...args) => client.uploadMarkup(...args),
+    updateMarkup: (...args) => client.updateMarkup(...args),
+    // T-77: searchFulltext — optional trên PlatformClient. Guard runtime +
+    // helpful error nếu undefined (handler fulltext_search fallback $like).
     searchFulltext: (...args) => {
-      const fn = (client as unknown as { searchFulltext?: (...a: unknown[]) => Promise<unknown> })
-        .searchFulltext;
+      const fn = client.searchFulltext;
       if (typeof fn !== "function") {
         throw new Error("searchFulltext not available on WS transport — fallback to $like.");
       }
@@ -288,7 +276,7 @@ function makeWsClient(
       const stream = await cachedStorage.get(blobId);
       const chunks: Buffer[] = [];
       for await (const chunk of stream) {
-        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
       }
       return Buffer.concat(chunks);
     },
@@ -345,10 +333,7 @@ function makeRestClient(
       );
     },
     // T-77: REST has searchFulltext (RestClient.searchFulltext exists).
-    searchFulltext: (...args) =>
-      (rest as unknown as { searchFulltext: (...a: unknown[]) => Promise<unknown> }).searchFulltext(
-        ...args,
-      ),
+    searchFulltext: (...args) => rest.searchFulltext(...args),
     // T-75: blob storage ops (lazy connectStorage).
     uploadBlob: async (filename, buffer, contentType) => {
       if (!cachedStorage) cachedStorage = await getStorage();
@@ -361,7 +346,7 @@ function makeRestClient(
       const stream = await cachedStorage.get(blobId);
       const chunks: Buffer[] = [];
       for await (const chunk of stream) {
-        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
       }
       return Buffer.concat(chunks);
     },

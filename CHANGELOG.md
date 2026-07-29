@@ -26,7 +26,7 @@ Reality-checker audit pass. Tất cả fix verified vs trusted source.
 - **document-snapshots** (T-85 #120): list default order arbitrary (trusted
   newest-first) → `sort {createdOn:Descending}` + `limit` param. Output fake
   `modifiedBy` (không có trong trusted) → drop, thêm `{snapshotId,documentId,title,
-  parentDocumentId,createdOn,modifiedOn}`.
+parentDocumentId,createdOn,modifiedOn}`.
 - **task-management Mixin** (T-86 #121): `create_task_type` skip `core.class.Mixin`
   doc + `createMixin(task.mixin.TaskTypeClass)` → Huly KHÔNG apply task-typing.
   Add Mixin classifier doc (extends/kind=MIXIN/label=getEmbeddedLabel) +
@@ -42,11 +42,11 @@ Reality-checker audit pass. Tất cả fix verified vs trusted source.
 ### Added
 
 - **documents/teamspaces output** (T-88 #123): `list_documents` `sort {modifiedOn:Descending}`
-  + teamspace/modifiedOn output; `get_document` teamspace/createdOn; `list_teamspaces`
-  `sort {name:Ascending}` + archived; `get_teamspace` documentCount.
+  - teamspace/modifiedOn output; `get_document` teamspace/createdOn; `list_teamspaces`
+    `sort {name:Ascending}` + archived; `get_teamspace` documentCount.
 - **templates output** (T-89 #124): `list_templates` `sort {modifiedOn:Descending}` +
   priority/modifiedOn/childrenCount; `get_template` resolve description MarkupBlobRef→markdown
-  + assignee(Person name)/component(label)/estimation/modifiedOn/createdOn/children.
+  - assignee(Person name)/component(label)/estimation/modifiedOn/createdOn/children.
 
 ### Changed
 
