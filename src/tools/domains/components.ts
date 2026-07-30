@@ -152,7 +152,11 @@ export const tools: HulyToolDefinition[] = [
         }
       }
       // T-81 #104: comments:0 default (pattern chung Component/Milestone/IssueTemplate).
-      const id = await tctx.client.createDoc(COMPONENT_CLASS, project.space as never, {
+      // T-97 (#143): space = project._id (getProjectSpace canonical), KHÔNG
+      // project.space (T-67 assumption project._id===project.space SAI cho ws này
+      // → component orphan, set_issue_component scope issue.space=project._id
+      // không thấy). Đồng bộ list/get/update/set/delete (dùng getProjectSpace).
+      const id = await tctx.client.createDoc(COMPONENT_CLASS, project._id as never, {
         label: params.label,
         description: params.description,
         lead: leadRef,

@@ -73,7 +73,7 @@ describe("T-51 #41: create_template project space resolve", () => {
     expect(client.createDoc).not.toHaveBeenCalled();
   });
 
-  it("project exists → createDoc dùng project.space", async () => {
+  it("project exists → createDoc dùng project._id", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValue({ _id: "proj-1", space: "tpl-space" });
     vi.mocked(getClient).mockResolvedValue(client as never);
@@ -83,7 +83,8 @@ describe("T-51 #41: create_template project space resolve", () => {
 
     expect(result.isError).toBeUndefined();
     const call = client.createDoc.mock.calls[0];
-    expect(call?.[1]).toBe("tpl-space");
+    // T-97 (#143): space = project._id ("proj-1"), KHÔNG project.space.
+    expect(call?.[1]).toBe("proj-1");
     expect(call?.[1]).not.toBe("ws1");
   });
 });
@@ -122,7 +123,7 @@ describe("T-51 #41: create_issue_from_template (2 lookup paths)", () => {
     expect(client.createDoc).not.toHaveBeenCalled();
   });
 
-  it("happy path (cả 2 tồn tại) → createDoc dùng project.space", async () => {
+  it("happy path (cả 2 tồn tại) → createDoc dùng project._id", async () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
@@ -135,7 +136,8 @@ describe("T-51 #41: create_issue_from_template (2 lookup paths)", () => {
 
     expect(result.isError).toBeUndefined();
     const call = client.createDoc.mock.calls[0];
-    expect(call?.[1]).toBe("happy-space");
+    // T-97 (#143): space = project._id ("proj-1"), KHÔNG project.space.
+    expect(call?.[1]).toBe("proj-1");
     expect(call?.[1]).not.toBe("ws1");
   });
 });

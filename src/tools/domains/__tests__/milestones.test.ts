@@ -74,7 +74,7 @@ describe("T-51 #41: create_milestone project space resolve (no silent fallback)"
     expect(client.createDoc).not.toHaveBeenCalled();
   });
 
-  it("project exists → createDoc dùng project.space (KHÔNG fallback workspace)", async () => {
+  it("project exists → createDoc dùng project._id (KHÔNG fallback workspace)", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValue({ _id: "proj-1", space: "proj-space-xyz" });
     vi.mocked(getClient).mockResolvedValue(client as never);
@@ -91,7 +91,8 @@ describe("T-51 #41: create_milestone project space resolve (no silent fallback)"
     expect(result.isError).toBeUndefined();
     expect(client.createDoc).toHaveBeenCalledTimes(1);
     const call = client.createDoc.mock.calls[0];
-    expect(call?.[1]).toBe("proj-space-xyz");
+    // T-97 (#143): arg 2 = space = project._id.
+    expect(call?.[1]).toBe("proj-1");
     expect(call?.[1]).not.toBe("ws1");
   });
 });

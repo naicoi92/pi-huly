@@ -172,9 +172,10 @@ export const tools: HulyToolDefinition[] = [
         params.description !== undefined
           ? JSON.stringify(mdToMarkup(params.description))
           : undefined;
+      // T-97 (#143): space = project._id (KHÔNG project.space).
       const id = await tctx.client.createDoc(
         ISSUE_TEMPLATE_CLASS,
-        project.space as never,
+        project._id as never,
         {
           title: params.title,
           description: descMarkup,
@@ -234,9 +235,10 @@ export const tools: HulyToolDefinition[] = [
         component?: string | null;
         description?: string;
       };
+      // T-97 (#143): space = project._id (đồng bộ create_issue issues-core).
       const id = await tctx.client.createDoc(
         ISSUE_CLASS,
-        project.space as never,
+        project._id as never,
         {
           title,
           description: tplFields.description,
