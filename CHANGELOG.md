@@ -3,6 +3,39 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.17] - 2026-07-30
+
+**beta.17 — write-persistence round-trip hunt (R11). Tìm 2 HIGH bug trên chiều mới
+(write-then-read verification): description field broken (5 tool path) + todo priority
+map inverted (4/5 wrong).** Hunt rounds trước verify return-value (update trả OK) nhưng
+KHÔNG re-get để confirm persist → silent data loss không bị bắt. R11 re-get mọi update
+field → bắt được #160 (description garbage) + #161 (priority semantic sai).
+
+### Fixed
+
+- **description field broken — component/milestone/todo (#160, HIGH)**: create/update
+  component + milestone push RAW STRING vào MarkupBlobRef description field → server
+  store garbage, get_component/get_milestone đọc `undefined`. update_todo description
+  dùng `updateMarkup` (collaborator.updateContent, chỉ EDIT blob existing) → FAIL khi
+  todo tạo chưa có description. get_todo KHÔNG fetch description (details thiếu field).
+  Fix: `uploadMarkup→ref` (mirror create/update_issue, R11 proven persist) cho
+  component/milestone create+update + update_todo; get_todo +fetchMarkup render.
+
+- **TODO_PRIORITY_MAP inverted (#161, HIGH)**: map `high:0, medium:1, low:2,
+  no-priority:3, urgent:4` → 4/5 SAI (chỉ urgent đúng). Huly canonical:
+  `0=None, 1=Low, 2=Medium, 3=High, 4=Urgent` (ascending severity). Set todo priority
+  "high" lưu 0=None, "no-priority" lưu 3=High — semantic đảo hoàn toàn. Fix map +
+  `TODO_PRIORITY_LABELS` reverse render trong get_todo (readable label).
+
+### Tests
+
+- e2e-live-hunt8 (write-persistence round-trip): update_issue priority/dueDate/
+  estimation/description, update_component/milestone description, update_todo description,
+  update_project description — all re-get confirm persist. + 5-priority semantic correctness.
+  13/13 pass.
+- Unit: components/milestones/todos/t79g updated uploadMarkup→ref path assertions.
+
+
 ## [1.0.0-beta.16] - 2026-07-30
 
 **beta.16 — input-validation hardening (error-path + empty-input hunt, 4 bug class).**
