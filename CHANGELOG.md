@@ -3,6 +3,24 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.18] - 2026-07-31
+
+**beta.18 — fix ESM/CJS build runtime crash. Bundle ESM `import { connect }` từ
+CommonJS upstream (`@hcengineering/api-client`, `core`, `text-core`, `text-markdown`)
+crash lúc load vì upstream dùng dynamic `__reExport(require(...))` loop → Node
+`cjs-module-lexer` không detect named exports → `SyntaxError: Named export 'connect'
+not found`. Extension fail load toàn bộ; `connect`, `markdownToMarkup`, `makeCollabId`,
+`jsonToMarkup` đều `undefined` runtime.**
+
+### Fixed
+
+- **CJS interop crash (#162, CRITICAL)**: `src/client/client.ts` + `src/markup/markup.ts`
+  đổi named value imports → default import + destructure (`import apiClient from
+"@hcengineering/api-client"; const { connect, ... } = apiClient`). Types giữ
+  `import type` (erased runtime). Namespace imports (`coreNs.makeCollabId` = `undefined`)
+  cũng fix qua default import. `client.test.ts` mock thêm `default` export.
+  Verify: dist smoke load OK, 739/739 tests pass.
+
 ## [1.0.0-beta.17] - 2026-07-30
 
 **beta.17 — write-persistence round-trip hunt (R11). Tìm 2 HIGH bug trên chiều mới
@@ -22,7 +40,7 @@ field → bắt được #160 (description garbage) + #161 (priority semantic sa
   component/milestone create+update + update_todo; get_todo +fetchMarkup render.
 
 - **TODO_PRIORITY_MAP inverted (#161, HIGH)**: map `high:0, medium:1, low:2,
-  no-priority:3, urgent:4` → 4/5 SAI (chỉ urgent đúng). Huly canonical:
+no-priority:3, urgent:4` → 4/5 SAI (chỉ urgent đúng). Huly canonical:
   `0=None, 1=Low, 2=Medium, 3=High, 4=Urgent` (ascending severity). Set todo priority
   "high" lưu 0=None, "no-priority" lưu 3=High — semantic đảo hoàn toàn. Fix map +
   `TODO_PRIORITY_LABELS` reverse render trong get_todo (readable label).
@@ -34,7 +52,6 @@ field → bắt được #160 (description garbage) + #161 (priority semantic sa
   update_project description — all re-get confirm persist. + 5-priority semantic correctness.
   13/13 pass.
 - Unit: components/milestones/todos/t79g updated uploadMarkup→ref path assertions.
-
 
 ## [1.0.0-beta.16] - 2026-07-30
 

@@ -4,12 +4,12 @@
 // Parser = @hcengineering/text-markdown (markdownToMarkup/markupToMarkdown).
 // Native-ref transform (browse-URL) = reimplement ở T-08b (separate module).
 
-import {
-  markdownToMarkup,
-  markupToMarkdown,
-  type MarkdownOptions,
-} from "@hcengineering/text-markdown";
+// CJS interop: @hcengineering/text-markdown ships CommonJS → named ESM imports
+// crash at runtime. Default import + destructure.
+import textMarkdown from "@hcengineering/text-markdown";
+import type { MarkdownOptions } from "@hcengineering/text-markdown";
 import type { MarkupNode } from "@hcengineering/text-core";
+const { markdownToMarkup, markupToMarkdown } = textMarkdown;
 
 /** Re-export MarkupNode type cho consumer. */
 export type { MarkupNode, MarkdownOptions };
