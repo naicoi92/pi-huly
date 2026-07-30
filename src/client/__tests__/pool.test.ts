@@ -37,7 +37,6 @@ function makeMockClient(transport: "ws" | "rest" = "ws") {
     createMixin: vi.fn(),
     fetchMarkup: vi.fn(), // T-41
     uploadMarkup: vi.fn(), // T-66
-    updateMarkup: vi.fn(), // T-66
     getAccount: vi.fn(),
   };
 }

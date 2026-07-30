@@ -121,13 +121,6 @@ declare module "@hcengineering/api-client" {
       markup: string,
       format: "markdown" | "html" | "markup",
     ): Promise<unknown>;
-    updateMarkup(
-      objectClass: string,
-      objectId: string,
-      objectAttr: string,
-      markup: string,
-      format: "markdown" | "html" | "markup",
-    ): Promise<void>;
     // T-77: fulltext search (WS PlatformClient có thể KHÔNG expose — optional).
     searchFulltext?(query: unknown, options?: unknown): Promise<unknown>;
     getAccount(): Promise<Account>;

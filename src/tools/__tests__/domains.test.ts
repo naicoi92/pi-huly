@@ -44,7 +44,6 @@ function makeClient() {
     createMixin: vi.fn().mockResolvedValue(undefined),
     fetchMarkup: vi.fn().mockResolvedValue(""),
     uploadMarkup: vi.fn().mockResolvedValue({ blob: "ref" }),
-    updateMarkup: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -223,7 +222,7 @@ describe("error path coverage", () => {
     expect(client.createDoc).toHaveBeenCalledTimes(1);
   });
 
-  it("edit_document ENABLED (T-66) — search-replace gọi fetchMarkup + updateMarkup", async () => {
+  it("edit_document ENABLED (T-66) — search-replace gọi fetchMarkup + uploadMarkup + updateDoc", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValue({
       _id: "d1",
@@ -232,7 +231,7 @@ describe("error path coverage", () => {
       space: "ts-1",
     });
     client.fetchMarkup = vi.fn().mockResolvedValue("hello world");
-    client.updateMarkup = vi.fn().mockResolvedValue(undefined);
+    client.uploadMarkup = vi.fn().mockResolvedValue({ blob: "new-ref" });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = allTools.find((t) => t.name === "huly_edit_document")!;
@@ -243,10 +242,11 @@ describe("error path coverage", () => {
       undefined,
       ctx,
     );
-    // T-66: edit_document ENABLED — search-replace path
+    // T-66: edit_document ENABLED — search-replace path (uploadMarkup + updateDoc, no updateMarkup)
     expect(result.isError).toBeUndefined();
     expect(result.details).toMatchObject({ updated: true, mode: "search-replace" });
-    expect(client.updateMarkup).toHaveBeenCalledTimes(1);
+    expect(client.uploadMarkup).toHaveBeenCalledTimes(1);
+    expect(client.updateDoc).toHaveBeenCalledTimes(1);
   });
 
   it("get_issue cross-project identifier → isError", async () => {

@@ -375,33 +375,18 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const ops: Record<string, unknown> = {};
-      // T-72 review: track in-place description update (updateMarkup execute NHƯNG
-      // KHÔNG thêm vào ops → guard empty-ops + response phải account cho flag này).
-      let descriptionUpdatedInPlace = false;
       if (params.title !== undefined) ops.title = params.title;
-      // T-72 #80: description = MarkupBlobRef. Nếu issue đã có description ref →
-      // updateMarkup overwrite; chưa có → uploadMarkup create + ops.description = ref.
+      // T-72 #80: description = MarkupBlobRef. Library KHÔNG có updateMarkup —
+      // luôn uploadMarkup (new version) + ops.description = ref.
       if (params.description !== undefined) {
-        const existingDesc = (issue as { description?: unknown }).description;
-        if (existingDesc) {
-          await tctx.client.updateMarkup(
-            ISSUE_CLASS,
-            issue._id,
-            "description",
-            params.description,
-            "markdown",
-          );
-          descriptionUpdatedInPlace = true;
-        } else {
-          const ref = await tctx.client.uploadMarkup(
-            ISSUE_CLASS,
-            issue._id,
-            "description",
-            params.description,
-            "markdown",
-          );
-          ops.description = ref;
-        }
+        const ref = await tctx.client.uploadMarkup(
+          ISSUE_CLASS,
+          issue._id,
+          "description",
+          params.description,
+          "markdown",
+        );
+        ops.description = ref;
       }
       if (params.priority !== undefined) ops.priority = params.priority;
       if (params.assignee !== undefined) {
@@ -488,21 +473,12 @@ export const tools: HulyToolDefinition[] = [
         }
         ops.status = match._id;
       }
-      if (Object.keys(ops).length === 0 && !descriptionUpdatedInPlace) {
+      if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
-      }
-      // T-72 review: nếu chỉ description in-place (ops empty), KHÔNG gọi updateDoc
-      // (description đã write qua updateMarkup). Response báo success.
-      if (Object.keys(ops).length === 0 && descriptionUpdatedInPlace) {
-        return {
-          content: `Updated issue ${params.identifier}: description`,
-          details: { updated: true, identifier: params.identifier, fields: ["description"] },
-        };
       }
       const updResult = await safeUpdateDoc(tctx.client, ISSUE_CLASS, issue, ops);
       if (!updResult.ok) return updResult.error;
       const fields = Object.keys(ops);
-      if (descriptionUpdatedInPlace) fields.push("description");
       return {
         content: `Updated issue ${params.identifier}: ${fields.join(", ")}`,
         details: { updated: true, identifier: params.identifier, fields },

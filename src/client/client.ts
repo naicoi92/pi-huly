@@ -117,8 +117,7 @@ export interface HulyClient {
   // MarkupOperations (T-41 — fetch markup content từ MarkupBlobRef; T-66 — upload/update)
   // Issue.description / Document.content là MarkupBlobRef (document ref), KHÔNG inline string.
   // fetchMarkup resolve ref → markdown/html/markup string theo format.
-  // uploadMarkup/upload-save markup → trả MarkupBlobRef (cho create/edit document).
-  // updateMarkup overwrite markup blob đã có (edit document khi doc.content đã tồn tại).
+  // uploadMarkup/upload-save markup → trả MarkupBlobRef (create + edit document).
   // Ref branded types bypass (string runtime, Ref compile-time).
   fetchMarkup(
     objectClass: string,
@@ -134,14 +133,6 @@ export interface HulyClient {
     markup: string,
     format: "markdown" | "html" | "markup",
   ): Promise<unknown>;
-  updateMarkup(
-    objectClass: string,
-    objectId: string,
-    objectAttr: string,
-    markup: string,
-    format: "markdown" | "html" | "markup",
-  ): Promise<void>;
-
   // T-77: Fulltext search API (relevance-ranked, fulltext index).
   // Signature: searchFulltext({query, classes?, spaces?}, {limit?}) → {docs, total?}.
   // WS PlatformClient có thể KHÔNG expose — handler fallback $like nếu throw.
@@ -250,11 +241,10 @@ function makeWsClient(
     removeDoc: (...args) => client.removeDoc(...args),
     addCollection: (...args) => client.addCollection(...args),
     createMixin: (...args) => client.createMixin(...args),
-    // T-41: PlatformClient có fetchMarkup built-in (MarkupOperations interface).
-    // T-66: uploadMarkup/updateMarkup cùng interface. Native types (ambient).
+    // T-41: PlatformClient có fetchMarkup/uploadMarkup built-in (MarkupOperations).
+    // Library KHÔNG có updateMarkup — edit = uploadMarkup + updateDoc.
     fetchMarkup: (...args) => client.fetchMarkup(...args),
     uploadMarkup: (...args) => client.uploadMarkup(...args),
-    updateMarkup: (...args) => client.updateMarkup(...args),
     // T-77: searchFulltext — optional trên PlatformClient. Guard runtime +
     // helpful error nếu undefined (handler fulltext_search fallback $like).
     searchFulltext: (...args) => {
@@ -324,12 +314,6 @@ function makeRestClient(
       throw new Error(
         "uploadMarkup not supported on REST transport. Use WS transport (default) " +
           "to save document content (MarkupBlobRef).",
-      );
-    },
-    updateMarkup: () => {
-      throw new Error(
-        "updateMarkup not supported on REST transport. Use WS transport (default) " +
-          "to update document content (MarkupBlobRef).",
       );
     },
     // T-77: REST has searchFulltext (RestClient.searchFulltext exists).

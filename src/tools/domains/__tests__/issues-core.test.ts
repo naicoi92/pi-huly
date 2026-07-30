@@ -51,7 +51,6 @@ function makeClient() {
     addCollection: vi.fn().mockResolvedValue("internal-id-abc"),
     fetchMarkup: vi.fn(),
     uploadMarkup: vi.fn().mockResolvedValue({ blob: "ref" }),
-    updateMarkup: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -630,7 +629,7 @@ describe("T-47: update_issue status persist + assignee leak (#36)", () => {
   });
 });
 
-describe("T-72: update_issue description MarkupBlobRef (uploadMarkup/updateMarkup)", () => {
+describe("T-72: update_issue description MarkupBlobRef (uploadMarkup+updateDoc, no updateMarkup)", () => {
   it("description mới (issue chưa có description) → uploadMarkup + ops.description = ref", async () => {
     const client = makeClient();
     client.findOne = vi
@@ -660,7 +659,7 @@ describe("T-72: update_issue description MarkupBlobRef (uploadMarkup/updateMarku
     expect(ops.description).toEqual({ blob: "new-ref" });
   });
 
-  it("description update (issue đã có description) → updateMarkup overwrite (KHÔNG uploadMarkup)", async () => {
+  it("description update (issue đã có description) → uploadMarkup + updateDoc (KHÔNG updateMarkup)", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValueOnce({
       _id: "i1",
@@ -668,7 +667,7 @@ describe("T-72: update_issue description MarkupBlobRef (uploadMarkup/updateMarku
       identifier: "PD-1",
       description: { blob: "existing-ref" },
     });
-    client.updateMarkup = vi.fn().mockResolvedValue(undefined);
+    client.uploadMarkup = vi.fn().mockResolvedValue({ blob: "new-ref" });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_update_issue");
@@ -681,18 +680,18 @@ describe("T-72: update_issue description MarkupBlobRef (uploadMarkup/updateMarku
     );
 
     expect(result.isError).toBeUndefined();
-    // T-72 review: response success (KHÔNG "No fields to update"), updateDoc KHÔNG gọi
     expect(result.details).toMatchObject({ updated: true });
     expect((result.details as { fields: string[] }).fields).toContain("description");
-    expect(client.updateMarkup).toHaveBeenCalledWith(
+    // Library KHÔNG có updateMarkup → luôn uploadMarkup + updateDoc.
+    expect(client.uploadMarkup).toHaveBeenCalledWith(
       ISSUE_CLASS,
       "i1",
       "description",
       "# updated",
       "markdown",
     );
-    expect(client.uploadMarkup).not.toHaveBeenCalled();
-    expect(client.updateDoc).not.toHaveBeenCalled();
+    const ops = client.updateDoc.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(ops.description).toEqual({ blob: "new-ref" });
   });
 });
 

@@ -217,7 +217,6 @@ class MockHulyStore {
   ): Promise<{ blob: string }> {
     return { blob: `blob-${_id.slice(0, 8)}` };
   }
-  async updateMarkup(): Promise<void> {}
 
   /** Seed helper — inject doc directly (bypass createDoc cho test setup). */
   seed(_class: string, doc: Record<string, unknown>): string {
