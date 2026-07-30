@@ -422,19 +422,10 @@ export const tools: HulyToolDefinition[] = [
       // Markup blobs immutable — @hcengineering KHÔNG có updateMarkup method.
       // Mỗi edit = uploadMarkup (tạo version mới) + updateDoc point content → ref mới.
       const saveContent = async (text: string): Promise<void> => {
-        const ref = await tctx.client.uploadMarkup(
-          DOCUMENT_CLASS,
-          d._id,
-          "content",
-          text,
-          "markdown",
-        );
-        await tctx.client.updateDoc(
-          DOCUMENT_CLASS,
-          ((d as { space?: unknown }).space as never) ?? TEAMSPACE_PARENT_SPACE,
-          d._id as never,
-          { content: ref } as never,
-        );
+        // T-103 #156: createMarkup (uploadMarkup/createContent rpc) KHÔNG update
+        // document đã tồn tại (content unchanged + 0 snapshot). Dùng updateMarkup
+        // (updateContent rpc) — edit operation đúng cho existing doc content.
+        await tctx.client.updateMarkup!(DOCUMENT_CLASS, d._id, "content", text, "markdown");
       };
 
       // Mode validation: content vs old_text/new_text mutually exclusive.

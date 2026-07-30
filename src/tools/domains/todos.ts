@@ -239,16 +239,19 @@ export const tools: HulyToolDefinition[] = [
       }
       const ops: Record<string, unknown> = {};
       if (params.title !== undefined) ops.title = params.title;
-      // T-79G #106: description = MarkupBlobRef. Library KHÔNG có updateMarkup —
-      // luôn uploadMarkup (new version) + ops.description = ref.
+      // T-103 #106: description = MarkupBlobRef. updateMarkup (updateContent rpc) —
+      // uploadMarkup/createMarkup (createContent) chỉ tạo INITIAL version, KHÔNG
+      // persist cho todo đã tồn tại (mirror #156 edit_document fix).
+      let descUpdated = false;
       if (params.description !== undefined) {
-        ops.description = await tctx.client.uploadMarkup(
+        await tctx.client.updateMarkup!(
           TODO_CLASS,
           t._id,
           "description",
           params.description,
           "markdown",
         );
+        descUpdated = true;
       }
       // T-79G #106: owner → user: Ref<Employee> (resolve Person).
       if (params.owner !== undefined) {
@@ -275,12 +278,15 @@ export const tools: HulyToolDefinition[] = [
           ops.dueDate = params.dueDate;
         }
       }
-      if (Object.keys(ops).length === 0) {
+      if (Object.keys(ops).length === 0 && !descUpdated) {
         return { content: "No fields to update.", details: { updated: false } };
       }
-      const updResult = await safeUpdateDoc(tctx.client, TODO_CLASS, t, ops);
-      if (!updResult.ok) return updResult.error;
+      if (Object.keys(ops).length > 0) {
+        const updResult = await safeUpdateDoc(tctx.client, TODO_CLASS, t, ops);
+        if (!updResult.ok) return updResult.error;
+      }
       const fields = Object.keys(ops).filter((f) => f !== "$unset");
+      if (descUpdated) fields.push("description");
       if (ops.$unset !== undefined) fields.push("dueDate(clear)");
       return {
         content: `Updated todo ${params.todo}: ${fields.join(", ")}`,

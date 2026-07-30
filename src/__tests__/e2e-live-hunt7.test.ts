@@ -156,15 +156,37 @@ describeLive("T-91 phase 7 — bug-hunt round 7 (FINAL scan: search/admin/worksp
   // phải Person._id — là account/session id) → findOne returns null → isError
   // 'Person not found'. Fix: resolve qua email→Channel→attachedTo→Person
   // (findPersonByEmailOrName pattern, works in create_issue).
-  it.fails("workspace: update_user_profile (BUG #157 — Person lookup sai id)", async () => {
+  it("workspace: update_user_profile (T-103 #157: email resolve, KHÔNG lookup-by-id)", async () => {
+    // Capture original name để restore (mutate rồi revert — không để lại dirt).
+    const before = await findTool("get_user_profile").execute(
+      "h7-ws-before",
+      {},
+      undefined,
+      undefined,
+      ctx(),
+    );
+    const origName = String(detail(detail(before.details, "user"), "name") ?? "");
+    // parse Huly "Last,First" → firstName.
+    const origFirst = origName.includes(",") ? origName.slice(origName.indexOf(",") + 1) : origName;
+
+    const probe = `h7probe${Date.now() % 100000}`;
     const upd = await findTool("update_user_profile").execute(
       "h7-ws-upd",
-      { firstName: `h7probe${Date.now() % 100000}` },
+      { firstName: probe },
       undefined,
       undefined,
       ctx(),
     );
     expect(upd.isError, `update_user_profile: ${upd.content[0]?.text}`).toBeUndefined();
+
+    // restore original firstName.
+    await findTool("update_user_profile").execute(
+      "h7-ws-restore",
+      { firstName: origFirst },
+      undefined,
+      undefined,
+      ctx(),
+    );
   });
 
   // 4. task-management admin: create_task_type (T-73 complexity) live.
