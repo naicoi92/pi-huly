@@ -14,6 +14,7 @@ import {
   ISSUE_CLASS,
   PROJECT_CLASS,
   PERSON_CLASS,
+  COMPONENT_CLASS,
   TAG_REFERENCE_CLASS,
   TAG_CLASS,
   idRef,
@@ -55,10 +56,16 @@ export const tools: HulyToolDefinition[] = [
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
-      status: Type.Optional(Type.String()),
+      status: Type.Optional(
+        Type.String({
+          description: "IssueStatus name or _id (resolved → Ref). See huly_list_statuses.",
+        }),
+      ),
       statusCategory: statusCategorySchema,
       assignee: Type.Optional(Type.String()),
-      component: Type.Optional(Type.String()),
+      component: Type.Optional(
+        Type.String({ description: "Component label or _id (resolved → Ref)." }),
+      ),
       parentIssue: Type.Optional(Type.String()),
       titleSearch: Type.Optional(Type.String()),
       limit: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -75,7 +82,45 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const query: Record<string, unknown> = { space };
-      if (params.status !== undefined) query.status = params.status;
+      // T-102 #153: status resolve name → IssueStatus._id (mirror update_issue T-98).
+      // Issue.status = Ref<IssueStatus>, raw name → 0 match. Match _id exact trước,
+      // fallback name. Invalid → isError + list valid. Empty workflow → isError.
+      if (params.status !== undefined) {
+        const projectStatuses = await getProjectStatuses(tctx.client, tctx.project!);
+        if (!projectStatuses) {
+          return {
+            content: `Project "${tctx.project}" not found.`,
+            isError: true,
+            details: { project: tctx.project },
+          };
+        }
+        const statuses = projectStatuses.statuses;
+        if (statuses.length === 0) {
+          return {
+            content:
+              "No workflow statuses configured for this project. " +
+              "Set up project workflow first (huly_create_issue_status).",
+            isError: true,
+            details: { requestedStatus: params.status, noStatusesConfigured: true },
+          };
+        }
+        const requested = params.status.trim();
+        const byId = statuses.find((s) => s._id === requested);
+        const byName = statuses.find((s) => s.name === requested);
+        const match = byId ?? byName;
+        if (match === undefined) {
+          const valid = statuses
+            .map((s) => s.name)
+            .filter((n) => n.length > 0)
+            .join(", ");
+          return {
+            content: `Invalid status "${params.status}". Valid statuses: ${valid}.`,
+            isError: true,
+            details: { invalidStatus: params.status, validStatuses: statuses.map((s) => s.name) },
+          };
+        }
+        query.status = match._id;
+      }
       if (params.statusCategory !== undefined) query.statusCategory = params.statusCategory;
       // T-71: assignee resolve email/name → Person._id (Issue.assignee = Ref<Person>).
       if (params.assignee !== undefined) {
@@ -89,7 +134,29 @@ export const tools: HulyToolDefinition[] = [
         }
         query.assignee = personId;
       }
-      if (params.component !== undefined) query.component = params.component;
+      // T-102 #153: component resolve label/_id → Component._id (mirror
+      // set_issue_component T-81G). Issue.component = Ref<Component>, raw label
+      // → 0 match. Try _id first, then label. Both miss → isError.
+      if (params.component !== undefined) {
+        let component = await tctx.client.findOne(COMPONENT_CLASS, {
+          _id: params.component,
+          space,
+        } as never);
+        if (!component) {
+          component = await tctx.client.findOne(COMPONENT_CLASS, {
+            label: params.component,
+            space,
+          } as never);
+        }
+        if (!component) {
+          return {
+            content: `Component "${params.component}" not found (by _id or label).`,
+            isError: true,
+            details: { component: params.component },
+          };
+        }
+        query.component = (component as { _id: string })._id;
+      }
       // T-68: parentIssue filter → resolve identifier → _id, query.attachedTo.
       if (params.parentIssue !== undefined) {
         const parent = await tctx.client.findOne(ISSUE_CLASS, {
