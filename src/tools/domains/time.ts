@@ -31,6 +31,15 @@ export const tools: HulyToolDefinition[] = [
       description: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
+      // T-103 #158: guard value > 0 (schema min 0.01 unenforced — negative =
+      // time corruption, 0 = noise). Reject loudly.
+      if (!(params.value > 0)) {
+        return {
+          content: `log_time value must be > 0 hours (got ${params.value}). Negative corrupts tracked time, 0 is noise.`,
+          isError: true,
+          details: { identifier: params.identifier, value: params.value },
+        };
+      }
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
         identifier: resolveIdentifier(tctx.project!, params.identifier),
       });
