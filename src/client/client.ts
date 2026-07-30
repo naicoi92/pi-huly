@@ -396,9 +396,16 @@ function makeRestClient(
 
 /** Map Account → CurrentUser (D15 FR-18 assignee default). */
 function accountToUser(account: Account): CurrentUser {
+  // T-103 #157: primarySocialId có thể là numeric id (Google/huly login), KHÔNG
+  // email. Extract email THẬT từ fullSocialIds[type=email].value (fallback
+  // primarySocialId nếu không có — vd workspace chỉ có 1 social id).
+  const emailSocial = (
+    account as { fullSocialIds?: Array<{ type: string; value: string }> }
+  ).fullSocialIds?.find((s) => s.type === "email");
+  const email = emailSocial?.value ?? account.primarySocialId;
   return {
     id: account.uuid,
     name: account.primarySocialId,
-    email: account.primarySocialId,
+    email,
   };
 }

@@ -12,7 +12,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { PERSON_CLASS, idRef } from "./_class-refs.js";
+import { PERSON_CLASS } from "./_class-refs.js";
 import { safeUpdateDoc } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -127,13 +127,16 @@ export const tools: HulyToolDefinition[] = [
           details: { updated: false },
         };
       }
-      // T-50 #40: lookup Person record để resolve .space ĐÚNG (Person.space).
+      // T-103 #157: Person linked to account qua `personUuid` field (= account.uuid
+      // = currentUser.id). Lookup-by-_id fail (Person._id = generated id, KHÔNG
+      // uuid). Channel(email) cũng KHÔNG reliable (numeric socialId). personUuid
+      // là canonical account→Person link.
       const person = await tctx.client.findOne(PERSON_CLASS, {
-        _id: idRef(tctx.currentUser.id),
-      });
+        personUuid: tctx.currentUser.id,
+      } as never);
       if (!person) {
         return {
-          content: `Person "${tctx.currentUser.id}" not found. Cannot update profile.`,
+          content: `Person for current user (uuid ${tctx.currentUser.id}) not found. Cannot update profile.`,
           isError: true,
           details: { userId: tctx.currentUser.id },
         };
