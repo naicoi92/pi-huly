@@ -51,7 +51,6 @@ function makeClient() {
     removeDoc: vi.fn().mockResolvedValue(undefined),
     fetchMarkup: vi.fn().mockResolvedValue("# doc content"),
     uploadMarkup: vi.fn().mockResolvedValue({ blob: "blob-ref" }),
-    updateMarkup: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -311,7 +310,7 @@ describe("T-66: document CRUD ENABLED (DOCUMENT_CLASS + space scoping)", () => {
     );
   });
 
-  it("edit_document content mode (existing blob) → updateMarkup", async () => {
+  it("edit_document content mode → uploadMarkup + updateDoc", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValue({
       _id: "d-1",
@@ -331,10 +330,11 @@ describe("T-66: document CRUD ENABLED (DOCUMENT_CLASS + space scoping)", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(client.updateMarkup).toHaveBeenCalledTimes(1);
+    expect(client.uploadMarkup).toHaveBeenCalledTimes(1);
+    expect(client.updateDoc).toHaveBeenCalledTimes(1);
   });
 
-  it("edit_document search-replace → fetchMarkup + updateMarkup", async () => {
+  it("edit_document search-replace → fetchMarkup + uploadMarkup + updateDoc", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValue({
       _id: "d-1",
@@ -356,13 +356,14 @@ describe("T-66: document CRUD ENABLED (DOCUMENT_CLASS + space scoping)", () => {
 
     expect(result.isError).toBeUndefined();
     expect(client.fetchMarkup).toHaveBeenCalledTimes(1);
-    expect(client.updateMarkup).toHaveBeenCalledWith(
+    expect(client.uploadMarkup).toHaveBeenCalledWith(
       DOCUMENT_CLASS,
       "d-1",
       "content",
       "hello earth foo",
       "markdown",
     );
+    expect(client.updateDoc).toHaveBeenCalledTimes(1);
   });
 
   it("edit_document search not found → isError", async () => {
@@ -386,7 +387,7 @@ describe("T-66: document CRUD ENABLED (DOCUMENT_CLASS + space scoping)", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(client.updateMarkup).not.toHaveBeenCalled();
+    expect(client.uploadMarkup).not.toHaveBeenCalled();
   });
 
   it("edit_document content + old_text mutual exclusive → isError", async () => {

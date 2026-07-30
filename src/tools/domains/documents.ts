@@ -17,8 +17,8 @@
 //
 // Document model (verified trusted documents-edit.ts):
 //   - findAll/findOne DOCUMENT_CLASS + space=teamspace._id (scoping)
-//   - content = MarkupBlobRef → fetchMarkup (get) / uploadMarkup (create) /
-//     updateMarkup (edit khi doc.content đã tồn tại)
+//   - content = MarkupBlobRef → fetchMarkup (get) / uploadMarkup (create+edit).
+//     Library KHÔNG có updateMarkup — edit = uploadMarkup + updateDoc (new ref).
 //   - parent: Ref<Document> (document hierarchy), rank (lexorank)
 
 import { Type } from "typebox";
@@ -394,7 +394,7 @@ export const tools: HulyToolDefinition[] = [
     },
   }),
 
-  // 9. edit_document — T-66: DOCUMENT_CLASS + updateMarkup/uploadMarkup
+  // 9. edit_document — T-66: DOCUMENT_CLASS + uploadMarkup+updateDoc (no updateMarkup)
   defineHulyTool({
     name: "edit_document",
     label: "Edit document",
@@ -419,6 +419,23 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const existingContentRef = (d as { content?: unknown }).content;
+      // Markup blobs immutable — @hcengineering KHÔNG có updateMarkup method.
+      // Mỗi edit = uploadMarkup (tạo version mới) + updateDoc point content → ref mới.
+      const saveContent = async (text: string): Promise<void> => {
+        const ref = await tctx.client.uploadMarkup(
+          DOCUMENT_CLASS,
+          d._id,
+          "content",
+          text,
+          "markdown",
+        );
+        await tctx.client.updateDoc(
+          DOCUMENT_CLASS,
+          ((d as { space?: unknown }).space as never) ?? TEAMSPACE_PARENT_SPACE,
+          d._id as never,
+          { content: ref } as never,
+        );
+      };
 
       // Mode validation: content vs old_text/new_text mutually exclusive.
       if (params.content !== undefined && (params.old_text || params.new_text)) {
@@ -432,25 +449,7 @@ export const tools: HulyToolDefinition[] = [
       // Mode 1: full content replace.
       if (params.content !== undefined) {
         const newContent = params.content.trim() === "" ? "" : params.content;
-        if (existingContentRef) {
-          // Doc has existing content blob → updateMarkup overwrite.
-          await tctx.client.updateMarkup(DOCUMENT_CLASS, d._id, "content", newContent, "markdown");
-        } else {
-          // No existing blob → uploadMarkup create new, attach ref.
-          const ref = await tctx.client.uploadMarkup(
-            DOCUMENT_CLASS,
-            d._id,
-            "content",
-            newContent,
-            "markdown",
-          );
-          await tctx.client.updateDoc(
-            DOCUMENT_CLASS,
-            ((d as { space?: unknown }).space as never) ?? TEAMSPACE_PARENT_SPACE,
-            d._id as never,
-            { content: ref } as never,
-          );
-        }
+        await saveContent(newContent);
         return {
           content: `Updated document ${params.document} content.`,
           details: { updated: true, mode: "content-replace", document: d._id },
@@ -494,7 +493,7 @@ export const tools: HulyToolDefinition[] = [
           : current.substring(0, idx) +
             params.new_text +
             current.substring(idx + params.old_text.length);
-        await tctx.client.updateMarkup(DOCUMENT_CLASS, d._id, "content", updated, "markdown");
+        await saveContent(updated);
         return {
           content: `Updated document ${params.document} (search-replace).`,
           details: {

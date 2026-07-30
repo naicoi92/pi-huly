@@ -239,29 +239,16 @@ export const tools: HulyToolDefinition[] = [
       }
       const ops: Record<string, unknown> = {};
       if (params.title !== undefined) ops.title = params.title;
-      // T-79G #106: description = MarkupBlobRef (uploadMarkup/create or
-      // updateMarkup/overwrite). Trước đây gán raw string.
-      let descriptionUpdatedInPlace = false;
+      // T-79G #106: description = MarkupBlobRef. Library KHÔNG có updateMarkup —
+      // luôn uploadMarkup (new version) + ops.description = ref.
       if (params.description !== undefined) {
-        const existing = (t as { description?: unknown }).description;
-        if (existing) {
-          await tctx.client.updateMarkup(
-            TODO_CLASS,
-            t._id,
-            "description",
-            params.description,
-            "markdown",
-          );
-          descriptionUpdatedInPlace = true;
-        } else {
-          ops.description = await tctx.client.uploadMarkup(
-            TODO_CLASS,
-            t._id,
-            "description",
-            params.description,
-            "markdown",
-          );
-        }
+        ops.description = await tctx.client.uploadMarkup(
+          TODO_CLASS,
+          t._id,
+          "description",
+          params.description,
+          "markdown",
+        );
       }
       // T-79G #106: owner → user: Ref<Employee> (resolve Person).
       if (params.owner !== undefined) {
@@ -288,20 +275,13 @@ export const tools: HulyToolDefinition[] = [
           ops.dueDate = params.dueDate;
         }
       }
-      if (Object.keys(ops).length === 0 && !descriptionUpdatedInPlace) {
+      if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };
-      }
-      if (Object.keys(ops).length === 0 && descriptionUpdatedInPlace) {
-        return {
-          content: `Updated todo ${params.todo}: description`,
-          details: { updated: true, fields: ["description"] },
-        };
       }
       const updResult = await safeUpdateDoc(tctx.client, TODO_CLASS, t, ops);
       if (!updResult.ok) return updResult.error;
       const fields = Object.keys(ops).filter((f) => f !== "$unset");
       if (ops.$unset !== undefined) fields.push("dueDate(clear)");
-      if (descriptionUpdatedInPlace) fields.push("description");
       return {
         content: `Updated todo ${params.todo}: ${fields.join(", ")}`,
         details: { updated: true, fields },

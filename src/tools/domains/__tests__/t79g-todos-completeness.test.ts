@@ -42,7 +42,6 @@ function makeClient() {
     updateDoc: vi.fn().mockResolvedValue(undefined),
     removeDoc: vi.fn().mockResolvedValue(undefined),
     uploadMarkup: vi.fn().mockResolvedValue({ blob: "ref-new" }),
-    updateMarkup: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -94,7 +93,7 @@ describe("T-79G: update_todo owner/priority/visibility (#106)", () => {
 });
 
 describe("T-79G: update_todo description markup (#106)", () => {
-  it("description + existing ref → updateMarkup overwrite (KHÔNG raw string)", async () => {
+  it("description + existing ref → uploadMarkup + updateDoc (KHÔNG updateMarkup)", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValueOnce({
       _id: "t1",
@@ -112,16 +111,18 @@ describe("T-79G: update_todo description markup (#106)", () => {
       ctx,
     );
 
-    expect(client.updateMarkup).toHaveBeenCalledWith(
+    // Library KHÔNG có updateMarkup → luôn uploadMarkup + updateDoc.
+    expect(client.uploadMarkup).toHaveBeenCalledWith(
       "time:class:ToDo",
       "t1",
       "description",
       "new text",
       "markdown",
     );
-    // updateDoc NOT called (only in-place description update)
-    expect(client.updateDoc).not.toHaveBeenCalled();
-    expect(result.details).toMatchObject({ updated: true, fields: ["description"] });
+    const ops = client.updateDoc.mock.calls[0]?.[3] as Record<string, unknown>;
+    expect(ops.description).toEqual({ blob: "ref-new" });
+    expect(result.details).toMatchObject({ updated: true });
+    expect((result.details as { fields: string[] }).fields).toContain("description");
   });
 
   it("description + no existing ref → uploadMarkup create → ops.description = ref", async () => {
