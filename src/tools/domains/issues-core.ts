@@ -322,6 +322,37 @@ export const tools: HulyToolDefinition[] = [
         }
         assigneeRef = personId ?? null; // default không resolve → null (unassigned)
       }
+      // T-98 (#144): resolve status name → IssueStatus._id (mirror update_issue).
+      // Trước đây push raw name string vào Ref<IssueStatus> → server silent-reject,
+      // status lost. Guard: chỉ resolve khi params.status provided; statuses rỗng
+      // (workspace chưa config workflow) → leave undefined (server default, KHÔNG
+      // fail create); provided + statuses exist + no match → error rõ.
+      let statusRef: string | undefined;
+      if (params.status !== undefined && params.status !== "") {
+        const projectStatuses = await getProjectStatuses(tctx.client, tctx.project!);
+        if (projectStatuses && projectStatuses.statuses.length > 0) {
+          const requested = params.status.trim();
+          const match =
+            projectStatuses.statuses.find((s) => s._id === requested) ??
+            projectStatuses.statuses.find((s) => s.name === requested);
+          if (!match) {
+            const valid = projectStatuses.statuses
+              .map((s) => s.name)
+              .filter(Boolean)
+              .join(", ");
+            return {
+              content: `Invalid status "${params.status}". Valid statuses: ${valid}. Issue not created.`,
+              isError: true,
+              details: {
+                invalidStatus: params.status,
+                validStatuses: projectStatuses.statuses.map((s) => s.name),
+              },
+            };
+          }
+          statusRef = match._id;
+        }
+        // statuses empty → leave undefined (server default), don't block create.
+      }
       const id = await tctx.client.addCollection(
         ISSUE_CLASS,
         project._id as never, // space = project (issues live trong project space)
@@ -333,7 +364,7 @@ export const tools: HulyToolDefinition[] = [
           description: descriptionRef,
           priority: params.priority,
           assignee: assigneeRef,
-          status: params.status,
+          status: statusRef,
           number: sequence,
           kind: ISSUE_KIND_REF,
           identifier,

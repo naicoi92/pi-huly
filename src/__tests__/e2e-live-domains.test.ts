@@ -16,6 +16,7 @@ import { tools as components } from "../tools/domains/components.js";
 import { tools as documents } from "../tools/domains/documents.js";
 import { tools as templates } from "../tools/domains/issues-templates.js";
 import { tools as search } from "../tools/domains/search.js";
+import { tools as projects } from "../tools/domains/projects.js";
 
 const E2E_PROJECT = process.env.HULY_E2E_PROJECT;
 const describeLive = E2E_PROJECT ? describe : describe.skip;
@@ -31,6 +32,7 @@ const ALL = [
   ...documents,
   ...templates,
   ...search,
+  ...projects,
 ];
 function findTool(name: string) {
   const t = ALL.find((x) => x.name === name);
@@ -205,21 +207,43 @@ describeLive("T-91 phase 2 — domain round-trip (hunt bug mới)", () => {
     }
   });
 
-  // update_issue status: valid (từ list_statuses) + invalid → error rõ.
-  it("update_issue status valid + invalid", async () => {
-    const identifier = await mkIssue(project, `e2e-st-${Date.now()}`);
+  // T-98 (#144): create_issue với status valid → get_issue status matches.
+  // Trước đây push raw name → silent-reject, status lost.
+  it("create_issue status resolve → get_issue matches (T-98 #144)", async () => {
+    const ls = await findTool("huly_list_statuses").execute(
+      "d-st-list",
+      { project },
+      undefined,
+      undefined,
+      ctx(),
+    );
+    const statuses = (detail(ls.details, "statuses") as Array<{ name?: string }>) ?? [];
+    const statusName = statuses[0]?.name;
+    if (!statusName) return; // workspace chưa config workflow → skip (guard T-98)
+
+    // T-98: tạo issue TRỰC TIẾP với status (trước đây raw push → silent lost).
+    const created = await findTool("huly_create_issue").execute(
+      "d-st98-create",
+      { project, title: `e2e-st98-${Date.now()}`, priority: "low", status: statusName },
+      undefined,
+      undefined,
+      ctx(),
+    );
+    const identifier = detail(created.details, "identifier") as string | undefined;
+    expect(created.isError, `create with status: ${created.content[0]?.text}`).toBeUndefined();
+    expect(identifier).toBeTruthy();
+
     try {
-      const invalid = await findTool("huly_update_issue").execute(
-        "d-st-invalid",
-        { project, identifier, status: "NonExistentStatus_XYZ" },
+      const got = await findTool("huly_get_issue").execute(
+        "d-st98-get",
+        { project, identifier: identifier as string },
         undefined,
         undefined,
         ctx(),
       );
-      expect(invalid.isError, "invalid status phải error").toBe(true);
-      expect(invalid.content[0]?.text).toMatch(/Valid statuses:/i);
+      expect(detail(got.details, "status"), `status phải = ${statusName}`).toBe(statusName);
     } finally {
-      await delIssue(project, identifier);
+      await delIssue(project, identifier as string);
     }
   });
 
