@@ -170,6 +170,14 @@ export const tools: HulyToolDefinition[] = [
       description: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
+      // T-103 #160: guard title non-empty.
+      if (params.title.trim() === "") {
+        return {
+          content: `create_template title must be non-empty.`,
+          isError: true,
+          details: { title: params.title },
+        };
+      }
       const project = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: tctx.project,
       });

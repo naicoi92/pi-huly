@@ -176,6 +176,14 @@ export const tools: HulyToolDefinition[] = [
       }),
     }),
     async handler(params, tctx) {
+      // T-103 #160: guard label non-empty.
+      if (params.label.trim() === "") {
+        return {
+          content: `create_milestone label must be non-empty.`,
+          isError: true,
+          details: { label: params.label },
+        };
+      }
       const project = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: tctx.project,
       });

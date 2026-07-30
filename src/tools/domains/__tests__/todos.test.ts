@@ -485,3 +485,19 @@ describe("T-103 #106: update_todo description updateMarkup + fields", () => {
     expect(call?.[3]).toEqual({ $unset: { dueDate: "" } });
   });
 });
+
+describe("T-103 #160: create_todo title guard (non-empty)", () => {
+  it("empty title → isError, addCollection KHÔNG gọi", async () => {
+    const client = makeClient();
+    vi.mocked(getClient).mockResolvedValue(client as never);
+    const r = await findTool("huly_create_todo").execute(
+      "t1",
+      { title: "", identifier: "PD-1" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(r.isError).toBe(true);
+    expect(client.addCollection).not.toHaveBeenCalled();
+  });
+});

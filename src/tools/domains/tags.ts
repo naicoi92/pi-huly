@@ -69,6 +69,14 @@ export const tools: HulyToolDefinition[] = [
       color: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
+      // T-103 #160: guard title non-empty.
+      if (params.title.trim() === "") {
+        return {
+          content: `create_tag title must be non-empty.`,
+          isError: true,
+          details: { title: params.title },
+        };
+      }
       // T-93 (#139): tạo trong PROJECT space (project._id self-ref qua
       // getProjectSpace), KHÔNG spaceRef(tctx.workspace) (workspace-handle string
       // → tag orphan, list/attach không thấy). File header: tags PROJECT-SCOPED.
