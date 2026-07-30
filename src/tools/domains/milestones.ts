@@ -97,7 +97,19 @@ export const tools: HulyToolDefinition[] = [
       milestone: Type.String({ description: "Milestone id." }),
     }),
     async handler(params, tctx) {
-      const m = await tctx.client.findOne(MILESTONE_CLASS, { _id: params.milestone });
+      // T-100 (#146): scope milestone lookup theo project space (mirror components.ts T-81).
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const m = await tctx.client.findOne(MILESTONE_CLASS, {
+        _id: params.milestone,
+        space,
+      } as never);
       if (!m) {
         return {
           content: `Milestone "${params.milestone}" not found.`,
@@ -213,7 +225,19 @@ export const tools: HulyToolDefinition[] = [
       ),
     }),
     async handler(params, tctx) {
-      const m = await tctx.client.findOne(MILESTONE_CLASS, { _id: params.milestone });
+      // T-100 (#146): scope milestone lookup theo project space.
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const m = await tctx.client.findOne(MILESTONE_CLASS, {
+        _id: params.milestone,
+        space,
+      } as never);
       if (!m) {
         return {
           content: `Milestone "${params.milestone}" not found.`,
@@ -281,8 +305,12 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier, milestone: null },
         };
       }
-      // T-52 #42: validate milestone tồn tại trước khi set ref.
-      const milestone = await tctx.client.findOne(MILESTONE_CLASS, { _id: params.milestone });
+      // T-100 (#146): scope milestone lookup theo issue space (issue đã load,
+      // = project._id — giống set_issue_component, tránh getProjectSpace thừa).
+      const milestone = await tctx.client.findOne(MILESTONE_CLASS, {
+        _id: params.milestone,
+        space: issue.space,
+      } as never);
       if (!milestone) {
         return {
           content: `Milestone "${params.milestone}" not found.`,
@@ -318,7 +346,19 @@ export const tools: HulyToolDefinition[] = [
       milestone: Type.String(),
     }),
     async handler(params, tctx) {
-      const m = await tctx.client.findOne(MILESTONE_CLASS, { _id: params.milestone });
+      // T-100 (#146): scope milestone lookup theo project space.
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const m = await tctx.client.findOne(MILESTONE_CLASS, {
+        _id: params.milestone,
+        space,
+      } as never);
       if (!m) {
         return {
           content: `Milestone "${params.milestone}" not found.`,

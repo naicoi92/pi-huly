@@ -89,9 +89,19 @@ export const tools: HulyToolDefinition[] = [
       template: Type.String(),
     }),
     async handler(params, tctx) {
+      // T-100 (#146): scope template lookup theo project space (mirror components.ts T-81).
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
       const tpl = await tctx.client.findOne<IssueTemplateDoc>(ISSUE_TEMPLATE_CLASS, {
         _id: params.template,
-      });
+        space,
+      } as never);
       if (!tpl) {
         return {
           content: `Template "${params.template}" not found.`,
@@ -209,23 +219,27 @@ export const tools: HulyToolDefinition[] = [
       title: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
-      const tpl = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, { _id: params.template });
-      if (!tpl) {
-        return {
-          content: `Template "${params.template}" not found.`,
-          isError: true,
-          details: { template: params.template },
-        };
-      }
+      // T-100 (#146): project first — dùng project._id scope cho tpl lookup
+      // (tránh getProjectSpace thừa; handler tạo issue trong project._id space).
       const project = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: tctx.project,
       });
-      // T-51 #41: project null → isError rõ ràng, KHÔNG fallback workspace.
       if (!project) {
         return {
           content: `Project "${tctx.project}" not found. Run /huly init or check binding.`,
           isError: true,
           details: { project: tctx.project },
+        };
+      }
+      const tpl = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, {
+        _id: params.template,
+        space: project._id,
+      } as never);
+      if (!tpl) {
+        return {
+          content: `Template "${params.template}" not found.`,
+          isError: true,
+          details: { template: params.template },
         };
       }
       const title = params.title ?? (tpl as { title?: string }).title ?? "Untitled";
@@ -269,7 +283,19 @@ export const tools: HulyToolDefinition[] = [
       description: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
-      const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, { _id: params.template });
+      // T-100 (#146): scope template lookup theo project space.
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, {
+        _id: params.template,
+        space,
+      } as never);
       if (!t) {
         return {
           content: `Template "${params.template}" not found.`,
@@ -310,7 +336,19 @@ export const tools: HulyToolDefinition[] = [
       template: Type.String(),
     }),
     async handler(params, tctx) {
-      const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, { _id: params.template });
+      // T-100 (#146): scope template lookup theo project space.
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, {
+        _id: params.template,
+        space,
+      } as never);
       if (!t) {
         return {
           content: `Template "${params.template}" not found.`,
@@ -346,7 +384,19 @@ export const tools: HulyToolDefinition[] = [
       estimation: Type.Optional(Type.Integer()),
     }),
     async handler(params, tctx) {
-      const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, { _id: params.template });
+      // T-100 (#146): scope template lookup theo project space.
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, {
+        _id: params.template,
+        space,
+      } as never);
       if (!t) {
         return {
           content: `Template "${params.template}" not found.`,
@@ -421,7 +471,19 @@ export const tools: HulyToolDefinition[] = [
       childId: Type.String({ description: "IssueTemplateChild.id to remove." }),
     }),
     async handler(params, tctx) {
-      const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, { _id: params.template });
+      // T-100 (#146): scope template lookup theo project space.
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const t = await tctx.client.findOne(ISSUE_TEMPLATE_CLASS, {
+        _id: params.template,
+        space,
+      } as never);
       if (!t) {
         return {
           content: `Template "${params.template}" not found.`,
