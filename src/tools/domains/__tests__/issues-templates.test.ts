@@ -171,6 +171,30 @@ describe("T-76: add_template_child builds IssueTemplateChild object + replaces a
     expect(typeof children[0]?.id).toBe("string"); // generated id
   });
 
+  it("add with assignee+component → child stores resolved _id refs (T-101 #147)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "tpl-1", space: "sp1", children: [] }) // template
+      .mockResolvedValueOnce({ _id: "person-1", name: "Alice" }) // Person (assignee name)
+      .mockResolvedValueOnce({ _id: "comp-1", label: "Backend" }); // Component
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = tools.find((t) => t.name === "huly_add_template_child")!;
+    const result = await tool.execute(
+      "tc1",
+      { template: "tpl-1", title: "Sub", assignee: "Alice", component: "Backend" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(result.isError).toBeUndefined();
+    const ops = client.updateDoc.mock.calls[0]?.[3] as Record<string, unknown>;
+    const child = (ops.children as Array<Record<string, unknown>>)[0];
+    expect(child.assignee).toBe("person-1"); // T-101: resolved Person._id (KHÔNG raw "Alice")
+    expect(child.component).toBe("comp-1"); // T-101: resolved Component._id (KHÔNG raw "Backend")
+  });
+
   it("template not found → isError", async () => {
     const client = makeClient();
     client.findOne = vi.fn().mockResolvedValueOnce(undefined);

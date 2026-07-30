@@ -19,6 +19,7 @@ import {
   getProjectSpace,
 } from "./_common.js";
 import { mdToMarkup } from "../../markup/markup.js";
+import { findPersonByEmailOrName } from "./contacts.js";
 
 /** T-76: IssueTemplateChild object shape (replaces raw string in children array). */
 interface TemplateChild {
@@ -353,6 +354,36 @@ export const tools: HulyToolDefinition[] = [
           details: { template: params.template },
         };
       }
+      // T-101 (#147): resolve assignee/component → Ref _id (KHÔNG raw string).
+      // Trước đây child.assignee/component = raw email/label → garbage Ref (cousin
+      // #141). Chỉ resolve khi provided (existing test không truyền → no shift).
+      let assigneeRef: string | undefined;
+      if (params.assignee !== undefined) {
+        assigneeRef = await findPersonByEmailOrName(tctx.client, params.assignee);
+        if (!assigneeRef) {
+          return {
+            content: `Assignee "${params.assignee}" not found (no Person matching email/name).`,
+            isError: true,
+            details: { assignee: params.assignee, template: params.template },
+          };
+        }
+      }
+      let componentRef: string | undefined;
+      if (params.component !== undefined) {
+        const tplSpace = (t as { space?: string }).space;
+        const comp = await tctx.client.findOne(COMPONENT_CLASS, {
+          label: params.component,
+          space: tplSpace,
+        } as never);
+        if (!comp) {
+          return {
+            content: `Component "${params.component}" not found.`,
+            isError: true,
+            details: { component: params.component, template: params.template },
+          };
+        }
+        componentRef = (comp as { _id: string })._id;
+      }
       // T-76: build IssueTemplateChild object (KHÔNG raw string).
       const child: TemplateChild = {
         id: genChildId(),
@@ -360,8 +391,8 @@ export const tools: HulyToolDefinition[] = [
       };
       if (params.description !== undefined) child.description = params.description;
       if (params.priority !== undefined) child.priority = params.priority;
-      if (params.assignee !== undefined) child.assignee = params.assignee;
-      if (params.component !== undefined) child.component = params.component;
+      if (params.assignee !== undefined) child.assignee = assigneeRef;
+      if (params.component !== undefined) child.component = componentRef;
       if (params.estimation !== undefined) child.estimation = params.estimation;
       // T-76: replace full children array (KHÔNG $push).
       const existingChildren = ((t as { children?: TemplateChild[] }).children ??
