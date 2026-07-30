@@ -39,7 +39,6 @@ typecheck/lint/fmt green. Live ETEST 76/76.
   numeric params (limit min 1 etc.) — low-severity elsewhere (limit=0 → empty, not
   corruption). TypeCompiler.Check = broader change, deferred.
 
-
 ## [1.0.0-beta.15] - 2026-07-30
 
 **beta.15 — QA e2e fix phase IV (4 bug fixes, reviewer LGTM).** Hunt rounds 5-7
