@@ -116,6 +116,10 @@ export const tools: HulyToolDefinition[] = [
       // T-75: Attachment = AttachedDoc → addCollection (KHÔNG createDoc). Fields
       // {name, file: Ref<Blob>, size, type, lastModified} (KHÔNG contentType/data).
       const targetClass = params.attachedToClass ?? ISSUE_CLASS;
+      // T-93b TODO(#139): space nên là attachedTo entity's space (resolve entity →
+      // ._id → space). Hiện spaceRef(workspace) = handle string — có thể orphan.
+      // add_issue_attachment (project-scoped) đã đúng (issue.space). Generic path
+      // defer đến khi cần (ít dùng — đa số attach qua add_issue_attachment).
       const id = await tctx.client.addCollection(
         ATTACHMENT_CLASS,
         spaceRef(tctx.workspace),

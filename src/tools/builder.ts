@@ -13,7 +13,7 @@
 // Domain module chỉ khai báo opts (schema + handler thuần), builder lo phần binding.
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type Static, type TObject } from "typebox";
+import type { Static, TObject } from "typebox";
 import { getClient } from "../client/pool.js";
 import { mapError, sanitize } from "../client/errors.js";
 import type { HulyClient, CurrentUser } from "../client/client.js";
@@ -282,18 +282,18 @@ export function defineHulyTool<P extends ToolParams>(
         // Sanitize content (08 §A no-leak) — handler có thể return entity có
         // token user paste (vd issue description). Success path cũng strip.
         const contentText = sanitize(result.content);
-        // Non-TUI mode (hasUI !== true — json/print headless LLM-only): KHÔNG có
-        // render hook consumer → details (array list, id entity) bị mất khỏi
-        // context LLM. Append summary details → content để LLM thấy đủ data
-        // lifecycle (#22 list giấu array, #26 create giấu id). TUI mode giữ
-        // nguyên — render layer (render/*.ts) consume details trực tiếp.
-        // T-48 #37: dùng `!== true` thay `=== false` — defensive khi agent
-        // runtime omit field hoặc detect heuristic miss (hasUI=undefined).
-        // Chỉ TUI thật (hasUI===true) mới skip append; mọi giá trị khác append.
+        // T-92 (#138): LUÔN append details summary vào content cho LLM — KHÔNG
+        // gate theo hasUI. Trước đây gate `hasUI !== true` khiến TUI mode drop
+        // details cho ~99 tool (chỉ 3 tool có renderResult hook: get_issue /
+        // list_issues / get_document), model thấy count-only → không drive được
+        // tool follow-up (list_issues không trả identifier, list_tags không _id,
+        // fulltext_search không identifier, add_comment/create_todo không id, …).
+        // Render hook (3 tool) vẫn consume details cho UI user; content (model)
+        // giờ cũng thấy → khác audience, KHÔNG xung đột. Append bị cap
+        // LLM_ARRAY_CAP + sanitize mỗi field. Error path KHÔNG append (content
+        // error message đã đủ, tránh noise).
         const finalContent =
-          ctx.hasUI !== true && result.isError !== true
-            ? appendDetailsForLLM(contentText, result.details)
-            : contentText;
+          result.isError !== true ? appendDetailsForLLM(contentText, result.details) : contentText;
         return {
           content: [{ type: "text", text: finalContent }],
           details: result.details ?? {},

@@ -301,6 +301,27 @@ export const tools: HulyToolDefinition[] = [
           "markdown",
         );
       }
+      // T-95 (#141): resolve assignee email/name → Person._id (mirror update_issue).
+      // Trước đây push raw email string vào Ref<Person> → garbage ref, get_issue
+      // render "Assignee: ?". Builder D15 fill params.assignee = currentUser.email
+      // khi absent → resolve ở đây.
+      // Resilient: default-assignee (== currentUser.email) KHÔNG resolve → fallback
+      // null (unassigned, KHÔNG garbage, KHÔNG fail create — tránh workspace user
+      // chưa có email Channel block toàn bộ create). Explicit assignee KHÔNG resolve
+      // → error rõ (user yêu cầu người cụ thể).
+      let assigneeRef: string | null = null;
+      if (params.assignee !== undefined && params.assignee !== null && params.assignee !== "") {
+        const personId = await findPersonByEmailOrName(tctx.client, params.assignee);
+        const isDefault = params.assignee === tctx.currentUser.email;
+        if (!personId && !isDefault) {
+          return {
+            content: `Assignee "${params.assignee}" not found (no Person matching email/name). Issue not created.`,
+            isError: true,
+            details: { assignee: params.assignee },
+          };
+        }
+        assigneeRef = personId ?? null; // default không resolve → null (unassigned)
+      }
       const id = await tctx.client.addCollection(
         ISSUE_CLASS,
         project._id as never, // space = project (issues live trong project space)
@@ -311,7 +332,7 @@ export const tools: HulyToolDefinition[] = [
           title: params.title,
           description: descriptionRef,
           priority: params.priority,
-          assignee: params.assignee,
+          assignee: assigneeRef,
           status: params.status,
           number: sequence,
           kind: ISSUE_KIND_REF,
@@ -359,7 +380,12 @@ export const tools: HulyToolDefinition[] = [
       description: Type.Optional(Type.String()),
       priority: prioritySchema,
       assignee: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-      status: Type.Optional(Type.String()),
+      status: Type.Optional(
+        Type.String({
+          description:
+            "Exact IssueStatus name (case-sensitive) or _id ref. Run huly_list_statuses for valid names.",
+        }),
+      ),
       dueDate: Type.Optional(Type.Integer()),
       estimation: Type.Optional(Type.Integer()),
     }),

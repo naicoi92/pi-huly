@@ -461,13 +461,13 @@ describe("defineHulyTool execute — result convert", () => {
       parameters: Type.Object({}),
       handler: async () => ({
         content: "Found 3 issues",
-        details: { count: 3, ids: ["PD-1", "PD-2", "PD-3"] },
+        // scalar-only details (no array/id) → append no-op → content shape sạch
+        details: { count: 3 },
       }),
     });
-    // TUI mode (hasUI=true) → content giữ nguyên, details nguyên vẹn cho render
     const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(true));
     expect(result.content).toEqual([{ type: "text", text: "Found 3 issues" }]);
-    expect(result.details).toEqual({ count: 3, ids: ["PD-1", "PD-2", "PD-3"] });
+    expect(result.details).toEqual({ count: 3 });
     expect(result.isError).toBeUndefined();
   });
 
@@ -545,7 +545,10 @@ describe("defineHulyTool execute — non-TUI surface details (T-40 #22 #26)", ()
     expect(result.content[0]?.text).toBe("Done.");
   });
 
-  it("hasUI=true (TUI mode) → content KHÔNG append details (render layer consume details)", async () => {
+  // T-92 (#138): TUI mode (hasUI=true) GIỜ cũng append details vào content —
+  // trước đây gate `hasUI !== true` drop details cho ~99 tool, model thấy
+  // count-only → không drive được tool follow-up. Fix: luôn append.
+  it("hasUI=true (TUI mode) → content append details (T-92 fix #138)", async () => {
     const tool = defineHulyTool({
       name: "list_issues",
       label: "List",
@@ -558,10 +561,31 @@ describe("defineHulyTool execute — non-TUI surface details (T-40 #22 #26)", ()
     });
     const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(true));
     const text = result.content[0]?.text ?? "";
-    expect(text).toBe("Found 1 issue(s)."); // KHÔNG append trong TUI mode
-    expect(text).not.toContain("PD-1"); // details không lọt vào content text
-    // details vẫn nguyên
+    expect(text).toContain("Found 1 issue(s).");
+    expect(text).toContain("PD-1"); // T-92: identifier giờ lọt vào content
+    expect(text).toContain("X");
+    // details vẫn nguyên vẹn cho render layer
     expect(result.details).toMatchObject({ count: 1 });
+  });
+
+  // T-92 (#138): mutation create result (scalar id, no array) trong TUI mode →
+  // created id phải surface cho LLM follow-up (add_comment/create_todo trước đây
+  // trả "Comment added." không id → không update/delete được).
+  it("hasUI=true + create result (scalar id) → content append id (T-92 #138)", async () => {
+    const tool = defineHulyTool({
+      name: "add_comment",
+      label: "Comment",
+      description: "add",
+      parameters: Type.Object({}),
+      handler: async () => ({
+        content: "Comment added to PD-1.",
+        details: { id: "comment-xyz", identifier: "PD-1" },
+      }),
+    });
+    const result = await tool.execute("tc1", {}, undefined, undefined, makeCtx(true));
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Comment added to PD-1.");
+    expect(text).toContain("comment-xyz"); // T-92: created id surface cho LLM
   });
 
   // T-48 #37: hasUI=undefined (agent runtime omit field hoặc detect heuristic miss)

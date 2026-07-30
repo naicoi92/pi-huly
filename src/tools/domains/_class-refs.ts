@@ -162,6 +162,10 @@ export const TODO_CLASS = classRef("time:class:ToDo"); // T-43: task:Todo → ti
 export const PROJECT_TODO_CLASS = classRef("time:class:ProjectToDo");
 // T-79 #102: shared space cho mọi todo (KHÔNG issue.space). Trusted planner.ts:141.
 export const TODOS_SPACE = spaceRef("time:space:ToDos");
+// T-93b #139: workspace ROOT space cho workspace-global docs (TagCategory).
+// Probe live: 25 tag-categories đều space="core:space:Workspace". Trước đây
+// create_tag_category dùng spaceRef(tctx.workspace) (handle string) → orphan.
+export const WORKSPACE_SPACE = spaceRef("core:space:Workspace");
 
 // T-59 (2026-07-28): TS_RELATION_CLASS XÓA — Issue relations KHÔNG phải class
 // riêng. Issue.relations?: RelatedDocument[] + Issue.blockedBy?: RelatedDocument[]

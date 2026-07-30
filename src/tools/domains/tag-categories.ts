@@ -7,7 +7,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { TAG_CATEGORY_CLASS, spaceRef } from "./_class-refs.js";
+import { TAG_CATEGORY_CLASS, WORKSPACE_SPACE } from "./_class-refs.js";
 import { workspaceParam, safeUpdateDoc, safeRemoveDoc } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -42,7 +42,7 @@ export const tools: HulyToolDefinition[] = [
       targetClass: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
-      const id = await tctx.client.createDoc(TAG_CATEGORY_CLASS, spaceRef(tctx.workspace), {
+      const id = await tctx.client.createDoc(TAG_CATEGORY_CLASS, WORKSPACE_SPACE, {
         label: params.label,
         targetClass: params.targetClass,
         // T-77: defaults (trusted createTagCategory).

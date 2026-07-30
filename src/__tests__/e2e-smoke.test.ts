@@ -295,8 +295,11 @@ describe("T-36 e2e smoke — 10 critical tools (integration, in-memory mock)", (
     // Side-effect: issue doc thật được insert
     const inserted = store.peek(result.details.id as string | undefined);
     expect(inserted).toBeDefined();
-    // D15 FR-18: assignee auto-resolved = currentUser email khi absent
-    expect(inserted?.assignee).toBe("user@example.com");
+    // T-95 (#141): assignee resolve email→Person._id (KHÔNG raw email). Mock
+    // MockHulyStore KHÔNG seed Person/Channel cho user@example.com → default
+    // fallback null (unassigned, KHÔNG garbage). Happy-path resolve→Person._id
+    // verify bởi e2e-live.test.ts (workspace thật có Person).
+    expect(inserted?.assignee).toBe(null);
   });
 
   // 2. huly_list_issues

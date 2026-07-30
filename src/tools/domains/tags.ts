@@ -5,7 +5,7 @@
 
 import { Type } from "typebox";
 import { defineHulyTool, type HulyToolDefinition } from "../builder.js";
-import { TAG_CLASS, TAG_REFERENCE_CLASS, ISSUE_CLASS, spaceRef, idRef } from "./_class-refs.js";
+import { TAG_CLASS, TAG_REFERENCE_CLASS, ISSUE_CLASS, idRef } from "./_class-refs.js";
 import {
   workspaceParam,
   projectParam,
@@ -13,6 +13,7 @@ import {
   resolveIdentifier,
   safeUpdateDoc,
   safeRemoveDoc,
+  getProjectSpace,
 } from "./_common.js";
 
 export const tools: HulyToolDefinition[] = [
@@ -30,8 +31,18 @@ export const tools: HulyToolDefinition[] = [
       ),
     }),
     async handler(params, tctx) {
-      const query: Record<string, unknown> =
-        params.targetClass !== undefined ? { targetClass: params.targetClass } : {};
+      // T-93 (#139): scope theo project space (tags là PROJECT-SCOPED). Trước đây
+      // findAll không filter → list không thấy tag vừa create (tag tạo sai space).
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const query: Record<string, unknown> = { space };
+      if (params.targetClass !== undefined) query.targetClass = params.targetClass;
       const tags = await tctx.client.findAll(TAG_CLASS, query as never, {});
       const list = tags.map((t) => ({
         _id: t._id,
@@ -58,7 +69,18 @@ export const tools: HulyToolDefinition[] = [
       color: Type.Optional(Type.String()),
     }),
     async handler(params, tctx) {
-      const id = await tctx.client.createDoc(TAG_CLASS, spaceRef(tctx.workspace), {
+      // T-93 (#139): tạo trong PROJECT space (project._id self-ref qua
+      // getProjectSpace), KHÔNG spaceRef(tctx.workspace) (workspace-handle string
+      // → tag orphan, list/attach không thấy). File header: tags PROJECT-SCOPED.
+      const space = await getProjectSpace(tctx.client, tctx.project!);
+      if (!space) {
+        return {
+          content: `Project "${tctx.project}" not found.`,
+          isError: true,
+          details: { project: tctx.project },
+        };
+      }
+      const id = await tctx.client.createDoc(TAG_CLASS, space as never, {
         title: params.title,
         color: params.color,
       });
@@ -187,13 +209,13 @@ export const tools: HulyToolDefinition[] = [
   defineHulyTool({
     name: "attach_tag",
     label: "Attach tag",
-    description: "Attach tag to issue.",
+    description: "Attach tag to issue. Accepts tag title or _id (resolved title-first).",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
       identifier: identifierParam,
-      tag: Type.String(),
+      tag: Type.String({ description: "Tag title or _id." }),
     }),
     async handler(params, tctx) {
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
@@ -206,8 +228,11 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      // Lookup tag (FK validate + fill attributes từ resolved doc).
-      const tag = await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.tag) });
+      // T-94 (#140): title-first, _id fallback (mirror add_issue_label). Trước đây
+      // _id-only → dead-end (create_tag/list_tags không surface _id cho LLM).
+      const tag =
+        (await tctx.client.findOne(TAG_CLASS, { title: params.tag })) ??
+        (await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.tag) }));
       if (!tag) {
         return {
           content: `Tag "${params.tag}" not found. Create via create_tag first.`,
@@ -264,13 +289,13 @@ export const tools: HulyToolDefinition[] = [
   defineHulyTool({
     name: "detach_tag",
     label: "Detach tag",
-    description: "Detach tag from issue.",
+    description: "Detach tag from issue. Accepts tag title or _id (resolved title-first).",
     needsProject: true,
     parameters: Type.Object({
       workspace: workspaceParam,
       project: projectParam,
       identifier: identifierParam,
-      tag: Type.String(),
+      tag: Type.String({ description: "Tag title or _id." }),
     }),
     async handler(params, tctx) {
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
@@ -283,7 +308,10 @@ export const tools: HulyToolDefinition[] = [
           details: { identifier: params.identifier },
         };
       }
-      const tag = await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.tag) });
+      // T-94 (#140): title-first, _id fallback (đồng bộ attach_tag).
+      const tag =
+        (await tctx.client.findOne(TAG_CLASS, { title: params.tag })) ??
+        (await tctx.client.findOne(TAG_CLASS, { _id: idRef(params.tag) }));
       if (!tag) {
         return {
           content: `Tag "${params.tag}" not found.`,
