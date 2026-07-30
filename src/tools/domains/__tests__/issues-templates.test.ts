@@ -396,3 +396,19 @@ describe("T-89: list/get_templates sort + output fields (#124)", () => {
     expect(Array.isArray(details.children)).toBe(true);
   });
 });
+
+describe("T-103 #160: create_template title guard (non-empty)", () => {
+  it("empty title → isError, createDoc KHÔNG gọi", async () => {
+    const client = makeClient();
+    vi.mocked(getClient).mockResolvedValue(client as never);
+    const r = await findTool("huly_create_template").execute(
+      "t1",
+      { title: "" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(r.isError).toBe(true);
+    expect(client.createDoc).not.toHaveBeenCalled();
+  });
+});

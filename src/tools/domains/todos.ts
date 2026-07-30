@@ -137,6 +137,14 @@ export const tools: HulyToolDefinition[] = [
       priority: todoPrioritySchema,
     }),
     async handler(params, tctx) {
+      // T-103 #160: guard title non-empty (empty = garbage todo).
+      if (params.title.trim() === "") {
+        return {
+          content: `create_todo title must be non-empty.`,
+          isError: true,
+          details: { title: params.title },
+        };
+      }
       const issue = await tctx.client.findOne(ISSUE_CLASS, {
         identifier: resolveIdentifier(tctx.project!, params.identifier),
       });
