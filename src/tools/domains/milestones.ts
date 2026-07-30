@@ -175,7 +175,8 @@ export const tools: HulyToolDefinition[] = [
           details: { project: tctx.project },
         };
       }
-      const id = await tctx.client.createDoc(MILESTONE_CLASS, project.space as never, {
+      // T-97 (#143): space = project._id (KHÔNG project.space — T-67 assumption sai).
+      const id = await tctx.client.createDoc(MILESTONE_CLASS, project._id as never, {
         label: params.label,
         description: params.description,
         targetDate: params.targetDate,
