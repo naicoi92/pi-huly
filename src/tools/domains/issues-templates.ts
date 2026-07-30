@@ -348,7 +348,15 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const ops: Record<string, unknown> = {};
-      if (params.title !== undefined) ops.title = params.title;
+      if (params.title !== undefined) {
+        if (params.title.trim() === "")
+          return {
+            content: "title must be non-empty.",
+            isError: true,
+            details: { title: params.title },
+          };
+        ops.title = params.title;
+      }
       if (params.description !== undefined)
         ops.description = JSON.stringify(mdToMarkup(params.description));
       if (Object.keys(ops).length === 0) {
