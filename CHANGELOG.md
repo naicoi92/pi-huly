@@ -3,6 +3,39 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.13] - 2026-07-30
+
+**beta.13 — QA e2e fix phase II.** Re-verify beta.12 + hunt bug mới qua live
+round-trip e2e (`HULY_E2E_PROJECT` gated) + static pattern audit (reality-checker
++ reviewer subagent). 5 bug (#143-#147) fix, mỗi task full task-implement cycle
+(reality-checker → branch → verify CI+live → reviewer → merge). **721 tests**
+(720 CI + 15 live gated... 721 CI + 15 skip), typecheck/lint/fmt green.
+
+### Fixed
+
+- **create_* sai space → orphan** (T-97 #143): `create_component`/
+  `create_milestone`/`create_template`/`create_issue_from_template` dùng
+  `project.space` (T-67 assumption sai) thay `project._id` → entity orphan,
+  invisible `list_*`/`set_*`. Đổi `project._id` (canonical = `create_issue` +
+  `getProjectSpace`).
+- **create_issue status raw push** (T-98 #144): push raw status name vào
+  `Ref<IssueStatus>` → server silent-reject (cousin #141). Resolve qua
+  `getProjectStatuses` (mirror `update_issue`); guard empty-workflow (leave
+  undefined, không fail create); invalid → error rõ.
+- **document-snapshots dead-end + body hidden** (T-99 #145): list field
+  `snapshotId` (KHÔNG `_id`) → `appendDetailsForLLM` drop → `get_document_snapshot`
+  unreachable; get body chỉ trong `details.content` → LLM mất body. Đổi `_id` +
+  body vào `content` (clone `get_document` T-88).
+- **add_template_child raw refs** (T-101 #147): push raw assignee email/component
+  label vào `IssueTemplateChild` Ref fields (KHÔNG resolve) → garbage Ref.
+  Resolve qua `findPersonByEmailOrName` + `findOne(label, space)`.
+- **milestone/template _id lookup thiếu space scope** (T-100 #146, defense-in-depth):
+  `findOne({_id})` không `space` filter → cross-project read/mutate possible
+  (`_id` globally unique nên KHÔNG functional break, nhưng components.ts T-81 đã
+  scope — bỏ sót). Add `space` (getProjectSpace) 8 site + `set_issue_milestone`
+  dùng `issue.space` + `create_issue_from_template` reorder project-first.
+
+
 ## [1.0.0-beta.12] - 2026-07-30
 
 **beta.12 — QA e2e fix phase.** Nguồn: agent runtime-test toàn bộ 102 tool
@@ -27,7 +60,7 @@ Enable phần T-36 deferred _"actual real-Huly round-trip"_. **725 tests**
 - **create_tag_category sai space** (T-93b #139): workspace-scoped → space
   `core:space:Workspace` (probe live confirm 25/25 category). Add `WORKSPACE_SPACE`
   constant. DEFERRED: generic `add_attachment` (no project) — cần entity space resolve.
-- **attach_tag/detach_tag _id-only dead-end** (T-94 #140): resolve tag chỉ theo
+- **attach_tag/detach_tag \_id-only dead-end** (T-94 #140): resolve tag chỉ theo
   `_id` → không path nào cho LLM lấy tag `_id` (create/list blind). Đổi sang
   title-first `_id` fallback (mirror `add_issue_label`) + param desc
   _"Tag title or _id."_
@@ -51,7 +84,6 @@ Enable phần T-36 deferred _"actual real-Huly round-trip"_. **725 tests**
   (T-92 live verify), tag create→list→attach(title)→detach(title) (T-93+T-94),
   `create_issue` assignee→`Person._id` (T-95), tag-category round-trip (T-93b).
   Run: `HULY_E2E_PROJECT=ETEST pnpm vitest run src/__tests__/e2e-live.test.ts`.
-
 
 ## [1.0.0-beta.9] - 2026-07-29
 
