@@ -364,6 +364,13 @@ function makeRestClient(
           "to save document content (MarkupBlobRef).",
       );
     },
+    // T-103 #156: updateMarkup cũng WS-only (collaborator) — throwing stub mirror.
+    updateMarkup: () => {
+      throw new Error(
+        "updateMarkup not supported on REST transport. Use WS transport (default) " +
+          "to edit document content.",
+      );
+    },
     // T-77: REST has searchFulltext (RestClient.searchFulltext exists).
     searchFulltext: (...args) => rest.searchFulltext(...args),
     // T-75: blob storage ops (lazy connectStorage).
