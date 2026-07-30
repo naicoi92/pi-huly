@@ -71,10 +71,10 @@ describe("T-66: document-snapshots ENABLED (DOCUMENT_SNAPSHOT_CLASS)", () => {
     expect(findCall?.[2]).toMatchObject({ sort: { createdOn: -1 } });
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("2 snapshot");
-    // T-85: output fields — snapshotId/documentId/title/parentDocumentId/createdOn/modifiedOn.
+    // T-99 (#145): output fields — _id (KHÔNG snapshotId) + documentId/title/...
     const snaps = (result as { details?: { snapshots?: unknown[] } }).details?.snapshots ?? [];
     expect(snaps[0]).toMatchObject({
-      snapshotId: "s-2",
+      _id: "s-2",
       documentId: "doc-1",
       title: "v2",
       parentDocumentId: "doc-1",
@@ -110,10 +110,10 @@ describe("T-66: document-snapshots ENABLED (DOCUMENT_SNAPSHOT_CLASS)", () => {
       { blob: "ref" },
       "markdown",
     );
-    // T-85: output fields — snapshotId/documentId(=attachedTo)/title/parentDocumentId/createdOn.
+    // T-99 (#145): output fields — _id (KHÔNG snapshotId)/documentId/title/...
     const details = (result as { details?: Record<string, unknown> }).details ?? {};
     expect(details).toMatchObject({
-      snapshotId: "s-1",
+      _id: "s-1",
       documentId: "doc-1",
       title: "v1",
       parentDocumentId: "doc-root",

@@ -17,6 +17,7 @@ import { tools as documents } from "../tools/domains/documents.js";
 import { tools as templates } from "../tools/domains/issues-templates.js";
 import { tools as search } from "../tools/domains/search.js";
 import { tools as projects } from "../tools/domains/projects.js";
+import { tools as snapshots } from "../tools/domains/document-snapshots.js";
 
 const E2E_PROJECT = process.env.HULY_E2E_PROJECT;
 const describeLive = E2E_PROJECT ? describe : describe.skip;
@@ -33,6 +34,7 @@ const ALL = [
   ...templates,
   ...search,
   ...projects,
+  ...snapshots,
 ];
 function findTool(name: string) {
   const t = ALL.find((x) => x.name === name);
@@ -204,6 +206,86 @@ describeLive("T-91 phase 2 — domain round-trip (hunt bug mới)", () => {
       expect(r.isError, `log_time: ${r.content[0]?.text}`).toBeUndefined();
     } finally {
       await delIssue(project, identifier);
+    }
+  });
+
+  // T-99 (#145): list_document_snapshots surface _id + get_document_snapshot
+  // body trong content. Snapshot tự tạo khi edit (không đảm bảo) → defensive:
+  // có snapshot thì verify, không thì skip (không false-fail).
+  it("document-snapshots: list surface _id + get body (T-99 #145)", async () => {
+    const tsName = `e2e-snap-ts-${Date.now()}`;
+    const tsCreate = await findTool("huly_create_teamspace").execute(
+      "d-snap-ts",
+      { name: tsName },
+      undefined,
+      undefined,
+      ctx(),
+    );
+    const teamspace = detail(tsCreate.details, "id") as string | undefined;
+    expect(teamspace).toBeTruthy();
+
+    let docId: string | undefined;
+    try {
+      const doc = await findTool("huly_create_document").execute(
+        "d-snap-doc",
+        { teamspace: teamspace as string, title: `e2e-snap-${Date.now()}`, content: "v1" },
+        undefined,
+        undefined,
+        ctx(),
+      );
+      docId = detail(doc.details, "id") as string | undefined;
+      expect(docId).toBeTruthy();
+
+      await findTool("huly_edit_document").execute(
+        "d-snap-edit",
+        { document: docId as string, old_text: "v1", new_text: "v2" },
+        undefined,
+        undefined,
+        ctx(),
+      );
+
+      const list = await findTool("huly_list_document_snapshots").execute(
+        "d-snap-list",
+        { document: docId as string },
+        undefined,
+        undefined,
+        ctx(),
+      );
+      expect(list.isError).toBeUndefined();
+      const snapCount = detail(list.details, "count") as number;
+      if (typeof snapCount === "number" && snapCount > 0) {
+        const firstId = ((detail(list.details, "snapshots") as Array<{ _id?: string }>) ?? [])[0]
+          ?._id;
+        expect(firstId, "list phải surface _id").toBeTruthy();
+        expect(list.content[0]?.text).toContain(firstId as string);
+
+        const got = await findTool("huly_get_document_snapshot").execute(
+          "d-snap-get",
+          { snapshot: firstId as string },
+          undefined,
+          undefined,
+          ctx(),
+        );
+        expect(got.isError).toBeUndefined();
+        // T-99: body trong content (trước đây chỉ details.content).
+        expect((got.content[0]?.text ?? "").length).toBeGreaterThan(`Snapshot `.length);
+      }
+    } finally {
+      if (docId)
+        await findTool("huly_delete_document").execute(
+          "d-snap-doc-del",
+          { document: docId },
+          undefined,
+          undefined,
+          ctx(),
+        );
+      await findTool("huly_delete_teamspace").execute(
+        "d-snap-ts-del",
+        { teamspace: teamspace as string },
+        undefined,
+        undefined,
+        ctx(),
+      );
     }
   });
 

@@ -34,10 +34,11 @@ export const tools: HulyToolDefinition[] = [
           ...(params.limit !== undefined ? { limit: params.limit } : {}),
         },
       );
-      // T-85 #120: output {snapshotId, documentId, title, parentDocumentId,
-      // createdOn, modifiedOn} — drop fake modifiedBy (không có trong trusted).
+      // T-99 (#145): field `_id` (KHÔNG `snapshotId`) — appendDetailsForLLM chỉ
+      // serialize identifier/_id/id → `snapshotId` bị drop → get_document_snapshot
+      // unreachable (dead-end).
       const list = snaps.map((snap) => ({
-        snapshotId: snap._id,
+        _id: snap._id,
         documentId: params.document,
         title: snap.title,
         parentDocumentId: snap.parent,
@@ -87,10 +88,13 @@ export const tools: HulyToolDefinition[] = [
           // Markup fetch fail — return metadata without content.
         }
       }
+      // T-99 (#145): body vào content (clone get_document T-88 #123). Trước đây
+      // body chỉ trong details.content → appendDetailsForLLM skip → LLM mất body.
+      const header = `Snapshot ${s.title ?? s._id}${s.createdOn ? ` · ${new Date(s.createdOn).toISOString()}` : ""}`;
       return {
-        content: `Snapshot ${params.snapshot}`,
+        content: content !== undefined ? `${header}\n\n---\n${content}` : header,
         details: {
-          snapshotId: s._id,
+          _id: s._id,
           documentId: s.attachedTo,
           title: s.title,
           parentDocumentId: s.parent,
