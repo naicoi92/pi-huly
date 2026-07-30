@@ -275,8 +275,14 @@ export const tools: HulyToolDefinition[] = [
         teamspace: tsName,
         modifiedOn: d.modifiedOn,
       }));
+      // T-88 #123 fix: surface titles+ids trong content (giống list_teamspaces).
+      // Trước đó chỉ count → LLM/consumer không thấy danh sách.
+      const lines = list.map((d) => `- ${d.title || "(untitled)"} (${d.id})`).join("\n");
       return {
-        content: `Found ${list.length} document(s) in teamspace "${ts.name ?? params.teamspace}".`,
+        content:
+          list.length === 0
+            ? `No documents found in teamspace "${tsName}".`
+            : `Found ${list.length} document(s) in teamspace "${tsName}":\n${lines}`,
         details: { count: list.length, documents: list },
       };
     },
@@ -322,14 +328,19 @@ export const tools: HulyToolDefinition[] = [
         const ts = await tctx.client.findOne<TeamspaceDoc>(TEAMSPACE_CLASS, { _id: d.space });
         teamspaceName = ts?.name;
       }
+      // T-88 #123 fix: body markdown phải đến content text (LLM đọc document).
+      // Trước đó content chỉ = "Document <title>" — body nằm trong details.content
+      // (string, KHÔNG array) → appendDetailsForLLM skip → LLM mất body hoàn toàn.
+      const titleDisplay = d.title?.trim() || "(untitled)";
+      const header = `Document "${titleDisplay}" (id ${d._id})`;
+      const body = content ?? "(no content)";
       return {
-        content: `Document ${d.title ?? ""}`,
+        content: `${header}\n\n---\n${body}`,
         details: {
           id: d._id,
           title: d.title,
           teamspace: teamspaceName ?? d.space,
           createdOn: d.createdOn,
-          content,
         },
       };
     },
