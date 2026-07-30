@@ -38,13 +38,12 @@ close. Reality-checker + reviewer subagent cho mỗi task. **727 CI tests** +
 6 domain deep-test (update_issue description+fields round-trip, projects/spaces/
 teamspaces lifecycle, contacts output) — tất cả clean. 2 initial failure = test
 artifact (teamspaces field `id` không phải `_id`; create_issue_status taskType
-  lineage — KHÔNG tool-testable sạch, source-review logic ĐÚNG).
+lineage — KHÔNG tool-testable sạch, source-review logic ĐÚNG).
 
 ### Tests
 
 - e2e-live-hunt3 (7 domain round-trip) + e2e-live-hunt4 (6 round-trip + output)
-  + zombie-verify block (#102-105). Live ETEST 27/27 (gated).
-
+  - zombie-verify block (#102-105). Live ETEST 27/27 (gated).
 
 ## [1.0.0-beta.13] - 2026-07-30
 
@@ -57,7 +56,7 @@ round-trip e2e (`HULY_E2E_PROJECT` gated) + static pattern audit (reality-checke
 
 ### Fixed
 
-- _*create_* sai space → orphan_* (T-97 #143): `create_component`/
+- _\*create_* sai space → orphan_* (T-97 #143): `create_component`/
   `create_milestone`/`create_template`/`create_issue_from_template` dùng
   `project.space` (T-67 assumption sai) thay `project._id` → entity orphan,
   invisible `list_*`/`set_*`. Đổi `project._id` (canonical = `create_issue` +
