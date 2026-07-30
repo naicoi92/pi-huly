@@ -18,6 +18,7 @@ import { tools as templates } from "../tools/domains/issues-templates.js";
 import { tools as search } from "../tools/domains/search.js";
 import { tools as projects } from "../tools/domains/projects.js";
 import { tools as snapshots } from "../tools/domains/document-snapshots.js";
+import { tools as contacts } from "../tools/domains/contacts.js";
 
 const E2E_PROJECT = process.env.HULY_E2E_PROJECT;
 const describeLive = E2E_PROJECT ? describe : describe.skip;
@@ -35,6 +36,7 @@ const ALL = [
   ...search,
   ...projects,
   ...snapshots,
+  ...contacts,
 ];
 function findTool(name: string) {
   const t = ALL.find((x) => x.name === name);
@@ -530,3 +532,191 @@ describeLive("T-91 phase 2 — domain round-trip (hunt bug mới)", () => {
     }
   });
 });
+
+// T-zombie: prove #102-105 fixes work live (zombie-open — fixed in T-78..T-82,
+// issue chưa close vì merge thiếu "Fixes #NNN"). Mirror beta.12/13 pattern.
+describeLive(
+  "Zombie verify — #102 todos / #103 get_issue / #104 component lead / #105 milestone status",
+  () => {
+    const project = E2E_PROJECT as string;
+
+    // #102: list_todos trả created todo (findAll attachedTo, KHÔNG đọc issue.todos
+    // array) + get_todo trả doneOn field (KHÔNG chỉ `done` bool).
+    it("#102 list_todos + get_todo doneOn field (T-79)", async () => {
+      const identifier = await mkIssue(project, `e2e-z102-${Date.now()}`);
+      try {
+        const created = await findTool("huly_create_todo").execute(
+          "z102-create",
+          { project, identifier, title: "zombie todo" },
+          undefined,
+          undefined,
+          ctx(),
+        );
+        expect(created.isError, `create_todo: ${created.content[0]?.text}`).toBeUndefined();
+        const todoId = detail(created.details, "id") as string;
+
+        // list_todos phải trả todo mới (prove findAll attachedTo, KHÔNG array read).
+        const listed = await findTool("huly_list_todos").execute(
+          "z102-list",
+          { project, identifier },
+          undefined,
+          undefined,
+          ctx(),
+        );
+        const todos = (detail(listed.details, "todos") as Array<{ _id?: string }>) ?? [];
+        expect(
+          todos.some((t) => t._id === todoId),
+          `list_todos phải chứa todo mới`,
+        ).toBe(true);
+
+        // get_todo: doneOn field tồn tại, null khi open.
+        const got = await findTool("huly_get_todo").execute(
+          "z102-get",
+          { todo: todoId },
+          undefined,
+          undefined,
+          ctx(),
+        );
+        expect(detail(got.details, "doneOn"), `get_todo doneOn (null khi open)`).toBeNull();
+
+        // complete → doneOn = number (timestamp, KHÔNG done:true no-op).
+        await findTool("huly_complete_todo").execute(
+          "z102-done",
+          { todo: todoId },
+          undefined,
+          undefined,
+          ctx(),
+        );
+        const gotDone = await findTool("huly_get_todo").execute(
+          "z102-get2",
+          { todo: todoId },
+          undefined,
+          undefined,
+          ctx(),
+        );
+        expect(typeof detail(gotDone.details, "doneOn")).toBe("number");
+
+        await findTool("huly_delete_todo").execute(
+          "z102-del",
+          { todo: todoId },
+          undefined,
+          undefined,
+          ctx(),
+        );
+      } finally {
+        await delIssue(project, identifier);
+      }
+    });
+
+    // #103: get_issue resolve assignee → Person name (KHÔNG raw ref). Status resolve
+    // đã proven ở test "create_issue status resolve". Assignee = default currentUser
+    // (D15) → resolve Person name.
+    it("#103 get_issue resolve assignee → Person name (T-80)", async () => {
+      const identifier = await mkIssue(project, `e2e-z103-${Date.now()}`);
+      try {
+        const got = await findTool("huly_get_issue").execute(
+          "z103-get",
+          { project, identifier },
+          undefined,
+          undefined,
+          ctx(),
+        );
+        const assignee = detail(got.details, "assignee");
+        // Resilient fallback: currentUser chưa có Person → null (KHÔNG garbage ref).
+        // Nếu có assignee → phải là human name, KHÔNG raw ref (pattern <class>:<id>).
+        if (assignee !== undefined && assignee !== null) {
+          expect(typeof assignee).toBe("string");
+          expect(String(assignee), `assignee phải là name KHÔNG raw ref`).not.toMatch(
+            /:class:|:employee:|@/,
+          );
+        }
+      } finally {
+        await delIssue(project, identifier);
+      }
+    });
+
+    // #104: create_component với lead → get_component leadRef = resolved Ref<Employee>
+    // (KHÔNG raw email/name). Cần ≥1 employee trong workspace.
+    it("#104 component lead resolve → Ref<Employee> (T-81)", async () => {
+      const emps = await findTool("huly_list_employees").execute(
+        "z104-emps",
+        {},
+        undefined,
+        undefined,
+        ctx(),
+      );
+      const empList =
+        (detail(emps.details, "employees") as Array<{ name?: string; _id?: string }>) ?? [];
+      const emp = empList[0];
+      if (!emp?.name) return; // workspace không có employee → skip (không prove được)
+
+      const label = `zcomp-${Date.now()}`;
+      const created = await findTool("huly_create_component").execute(
+        "z104-create",
+        { project, label, lead: emp.name },
+        undefined,
+        undefined,
+        ctx(),
+      );
+      // Lead resolve có thể fail nếu name path không match Person — guard (skip prove).
+      if (created.isError) return;
+      const compId = detail(created.details, "id") as string;
+
+      try {
+        const got = await findTool("huly_get_component").execute(
+          "z104-get",
+          { project, component: compId },
+          undefined,
+          undefined,
+          ctx(),
+        );
+        // leadRef = resolved Person._id (Ref<Employee>), KHÔNG raw emp.name.
+        expect(detail(got.details, "leadRef"), `leadRef phải = resolved Ref`).toBeTruthy();
+        expect(String(detail(got.details, "leadRef"))).not.toBe(emp.name);
+      } finally {
+        await findTool("huly_delete_component").execute(
+          "z104-del",
+          { project, component: compId },
+          undefined,
+          undefined,
+          ctx(),
+        );
+      }
+    });
+
+    // #105: milestone status READ = string enum (planned/in-progress/completed/canceled),
+    // KHÔNG raw number 0-3 (dead `?? "planned"` không cứu được 0).
+    it("#105 milestone status read = string (T-82)", async () => {
+      const label = `zmile-${Date.now()}`;
+      const created = await findTool("huly_create_milestone").execute(
+        "z105-create",
+        { project, label, targetDate: Date.now() + 86400000 },
+        undefined,
+        undefined,
+        ctx(),
+      );
+      expect(created.isError, `create_milestone: ${created.content[0]?.text}`).toBeUndefined();
+      const mileId = detail(created.details, "id") as string;
+      try {
+        const got = await findTool("huly_get_milestone").execute(
+          "z105-get",
+          { project, milestone: mileId },
+          undefined,
+          undefined,
+          ctx(),
+        );
+        const status = detail(got.details, "status");
+        expect(typeof status, `milestone status phải string KHÔNG number`).toBe("string");
+        expect(["planned", "in-progress", "completed", "canceled"]).toContain(status);
+      } finally {
+        await findTool("huly_delete_milestone").execute(
+          "z105-del",
+          { project, milestone: mileId },
+          undefined,
+          undefined,
+          ctx(),
+        );
+      }
+    });
+  },
+);

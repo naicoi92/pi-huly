@@ -7,13 +7,14 @@ versioning theo [Semantic Versioning](https://semver.org/).
 
 **beta.13 — QA e2e fix phase II.** Re-verify beta.12 + hunt bug mới qua live
 round-trip e2e (`HULY_E2E_PROJECT` gated) + static pattern audit (reality-checker
-+ reviewer subagent). 5 bug (#143-#147) fix, mỗi task full task-implement cycle
-(reality-checker → branch → verify CI+live → reviewer → merge). **721 tests**
-(720 CI + 15 live gated... 721 CI + 15 skip), typecheck/lint/fmt green.
+
+- reviewer subagent). 5 bug (#143-#147) fix, mỗi task full task-implement cycle
+  (reality-checker → branch → verify CI+live → reviewer → merge). **721 tests**
+  (720 CI + 15 live gated... 721 CI + 15 skip), typecheck/lint/fmt green.
 
 ### Fixed
 
-- **create_* sai space → orphan** (T-97 #143): `create_component`/
+- _*create_* sai space → orphan_* (T-97 #143): `create_component`/
   `create_milestone`/`create_template`/`create_issue_from_template` dùng
   `project.space` (T-67 assumption sai) thay `project._id` → entity orphan,
   invisible `list_*`/`set_*`. Đổi `project._id` (canonical = `create_issue` +
@@ -29,12 +30,11 @@ round-trip e2e (`HULY_E2E_PROJECT` gated) + static pattern audit (reality-checke
 - **add_template_child raw refs** (T-101 #147): push raw assignee email/component
   label vào `IssueTemplateChild` Ref fields (KHÔNG resolve) → garbage Ref.
   Resolve qua `findPersonByEmailOrName` + `findOne(label, space)`.
-- **milestone/template _id lookup thiếu space scope** (T-100 #146, defense-in-depth):
+- **milestone/template \_id lookup thiếu space scope** (T-100 #146, defense-in-depth):
   `findOne({_id})` không `space` filter → cross-project read/mutate possible
   (`_id` globally unique nên KHÔNG functional break, nhưng components.ts T-81 đã
   scope — bỏ sót). Add `space` (getProjectSpace) 8 site + `set_issue_milestone`
   dùng `issue.space` + `create_issue_from_template` reorder project-first.
-
 
 ## [1.0.0-beta.12] - 2026-07-30
 
