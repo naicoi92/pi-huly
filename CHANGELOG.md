@@ -6,10 +6,11 @@ versioning theo [Semantic Versioning](https://semver.org/).
 ## [1.0.0-beta.15] - 2026-07-30
 
 **beta.15 — QA e2e fix phase IV (4 bug fixes, reviewer LGTM).** Hunt rounds 5-7
-+ FINAL coverage scan. 3 HIGH/MED bug fix + 1 enhancement fix. Mọi tool domain
-đã cover e2e (7 rounds, 39 live tests). To-issues skill applied (issue bodies
-rewrite theo template, granularity quiz approved). **730 CI tests** + 53 skip,
-typecheck/lint/fmt green. Independent reviewer subagent LGTM.
+
+- FINAL coverage scan. 3 HIGH/MED bug fix + 1 enhancement fix. Mọi tool domain
+  đã cover e2e (7 rounds, 39 live tests). To-issues skill applied (issue bodies
+  rewrite theo template, granularity quiz approved). **730 CI tests** + 53 skip,
+  typecheck/lint/fmt green. Independent reviewer subagent LGTM.
 
 ### Fixed
 
@@ -53,7 +54,6 @@ typecheck/lint/fmt green. Independent reviewer subagent LGTM.
 - TDD unit: issues-templates (14), documents (21), workspace (10), todos (18).
 - Reviewer subagent LGTM (root-cause, no regressions); note #1 fixed (REST
   updateMarkup stub).
-
 
 ## [1.0.0-beta.14] - 2026-07-30
 
