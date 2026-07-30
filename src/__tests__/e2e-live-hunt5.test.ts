@@ -213,8 +213,8 @@ describeLive("T-91 phase 5 — bug-hunt round 5 (relations/templates/docs/todos/
 
   // 3. templates round-trip: create_template → add_child → create_issue_from_template →
   //    verify child issue exists.
-  // T-103 #155 BUG: create_issue_from_template createDoc crash (Issue=AttachedDoc).
-  it.fails("templates: create → add_child → create_issue_from_template round-trip (BUG #155)", async () => {
+  // T-103 #155 FIXED: create_issue_from_template giờ dùng addCollection (Issue=AttachedDoc).
+  it("templates: create → add_child → create_issue_from_template round-trip", async () => {
     const tpl = await findTool("create_template").execute(
       "h5-tpl-create",
       { project, title: `hunt5-tpl-${Date.now()}` },
