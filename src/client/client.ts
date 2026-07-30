@@ -36,6 +36,16 @@ import {
   type WithLookup,
   type WithMarkup,
 } from "@hcengineering/api-client";
+// T-103 #156: makeCollabId (core) + jsonToMarkup (text-core) exist runtime nhưng
+// KHÔNG trong .d.ts — namespace import + cast (updateMarkup conversion).
+import * as coreNs from "@hcengineering/core";
+import * as textCoreNs from "@hcengineering/text-core";
+import { markdownToMarkup } from "@hcengineering/text-markdown";
+const makeCollabId = (
+  coreNs as unknown as { makeCollabId: (c: string, i: string, a: string) => unknown }
+).makeCollabId;
+const jsonToMarkup = (textCoreNs as unknown as { jsonToMarkup: (j: unknown) => string })
+  .jsonToMarkup;
 import { mapError } from "./errors.js";
 import { DEFAULT_UPSTREAM_NOISE_PATTERNS, runWithConsoleFilter } from "./console-filter.js";
 import { loadConfig } from "../config/config.js";
@@ -133,6 +143,17 @@ export interface HulyClient {
     markup: string,
     format: "markdown" | "html" | "markup",
   ): Promise<unknown>;
+  // T-103 #156: updateMarkup = updateContent rpc (edit existing doc content).
+  // uploadMarkup/createMarkup (createContent rpc) chỉ tạo INITIAL version — KHÔNG
+  // update document đã tồn tại (content unchanged, 0 snapshot). updateMarkup update
+  // content in-place qua collaborator. Optional (chỉ WS transport có).
+  updateMarkup?(
+    objectClass: string,
+    objectId: string,
+    objectAttr: string,
+    markup: string,
+    format: "markdown" | "html" | "markup",
+  ): Promise<void>;
   // T-77: Fulltext search API (relevance-ranked, fulltext index).
   // Signature: searchFulltext({query, classes?, spaces?}, {limit?}) → {docs, total?}.
   // WS PlatformClient có thể KHÔNG expose — handler fallback $like nếu throw.
@@ -245,6 +266,33 @@ function makeWsClient(
     // Library KHÔNG có updateMarkup — edit = uploadMarkup + updateDoc.
     fetchMarkup: (...args) => client.fetchMarkup(...args),
     uploadMarkup: (...args) => client.uploadMarkup(...args),
+    // T-103 #156: updateMarkup qua collaborator.updateMarkup (updateContent rpc).
+    // client.markup = MarkupOperationsImpl (public field) — hold collaborator +
+    // refUrl/imageUrl (private TS, runtime-accessible). Convert markdown→markup
+    // mirror MarkupOperationsImpl.uploadMarkup, rồi updateMarkup thay createMarkup.
+    updateMarkup: async (objectClass, objectId, objectAttr, value, format) => {
+      const mo = (
+        client as unknown as {
+          markup: {
+            collaborator: {
+              updateMarkup: (doc: unknown, markup: string) => Promise<void>;
+            };
+            refUrl?: string;
+            imageUrl?: string;
+          };
+        }
+      ).markup;
+      let markup = "";
+      if (format === "markdown") {
+        markup = jsonToMarkup(
+          markdownToMarkup(value, { refUrl: mo.refUrl, imageUrl: mo.imageUrl }),
+        );
+      } else {
+        markup = value;
+      }
+      const collabId = makeCollabId(objectClass, objectId, objectAttr);
+      await mo.collaborator.updateMarkup(collabId, markup);
+    },
     // T-77: searchFulltext — optional trên PlatformClient. Guard runtime +
     // helpful error nếu undefined (handler fulltext_search fallback $like).
     searchFulltext: (...args) => {
