@@ -1,6 +1,6 @@
 {
   "name": "pi-huly",
-  "version": "1.0.0-beta.13",
+  "version": "1.0.0-beta.14",
   "description": "Native Huly support cho pi-coding-agent — tools + skills + subagent (KHÔNG MCP, gọi thẳng WebSocket API)",
   "keywords": [
     "huly",

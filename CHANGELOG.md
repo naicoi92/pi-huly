@@ -3,6 +3,49 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.14] - 2026-07-30
+
+**beta.14 — QA e2e fix phase III (bug-hunt rounds 3-4).** Hai vòng live e2e
+hunt sâu (13 domain) + reconcile zombie-open issues. 1 bug HIGH (#153) fix,
+4 zombie bug (#102-105, fixed từ batch T-78..T-82 nhưng chưa close) verify +
+close. Reality-checker + reviewer subagent cho mỗi task. **727 CI tests** +
+33 live-gated skip, typecheck/lint/fmt green.
+
+### Fixed
+
+- **list_issues status + component filter raw push → 0 match** (T-102 #153,
+  HIGH): filter raw-push human value (status name / component label) vào Ref field
+  → findAll trả 0 results (silent data loss — LLM tưởng không có issue). Cùng
+  root cause với #144 + #104 nhưng sót ở read-path. Fix: `status` resolve name→
+  IssueStatus._id qua `getProjectStatuses` (mirror `update_issue` T-98);
+  `component` resolve label/_id→Component._id (mirror `set_issue_component`
+  T-81G, _id-first). TDD 6 unit test RED→GREEN.
+
+### Verified + Closed (zombie-open — fixed in T-78..T-82, merge thiếu Fixes #NNN)
+
+- **#102 todos data model** (T-79): 7/7 todos tool sai model (doneOn /
+  ProjectToDo / CollectionSize). Live e2e prove (list_todos + get_todo doneOn).
+- **#103 issues read-path** (T-80): get_issue raw refs + list_issue_relations
+  broken blocks query + update assignee raw. Live e2e prove (assignee resolve).
+- **#104 projects/spaces/components** (T-81): lead raw ref + comments:0 +
+  IssueStatus class + component space-scope. Live e2e prove (component lead resolve).
+- **#105 milestones/workspace/contacts** (T-82): milestone status number leak +
+  list_persons dead email + update_user_profile wrong target. Live e2e prove
+  (milestone status string).
+
+### Bug-hunt round 4 (0 bug thực)
+
+6 domain deep-test (update_issue description+fields round-trip, projects/spaces/
+teamspaces lifecycle, contacts output) — tất cả clean. 2 initial failure = test
+artifact (teamspaces field `id` không phải `_id`; create_issue_status taskType
+  lineage — KHÔNG tool-testable sạch, source-review logic ĐÚNG).
+
+### Tests
+
+- e2e-live-hunt3 (7 domain round-trip) + e2e-live-hunt4 (6 round-trip + output)
+  + zombie-verify block (#102-105). Live ETEST 27/27 (gated).
+
+
 ## [1.0.0-beta.13] - 2026-07-30
 
 **beta.13 — QA e2e fix phase II.** Re-verify beta.12 + hunt bug mới qua live
