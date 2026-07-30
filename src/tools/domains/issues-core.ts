@@ -328,6 +328,15 @@ export const tools: HulyToolDefinition[] = [
       estimation: Type.Optional(Type.Integer()),
     }),
     async handler(params, tctx) {
+      // T-103 #159: guard title non-empty (trim). Empty/whitespace title = garbage
+      // issue (no subject). Schema lacks minLength; server accepts empty.
+      if (params.title.trim() === "") {
+        return {
+          content: `create_issue title must be non-empty (got "${params.title}"). An issue needs a subject.`,
+          isError: true,
+          details: { title: params.title },
+        };
+      }
       const project = await tctx.client.findOne(PROJECT_CLASS, {
         identifier: tctx.project,
       });
