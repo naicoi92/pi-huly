@@ -3,6 +3,56 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.12] - 2026-07-30
+
+**beta.12 — QA e2e fix phase.** Nguồn: agent runtime-test toàn bộ 102 tool
+trực tiếp trên live workspace ETEST (thay vì mock) phát hiện 5 bug (#138-#142)
+mà `MockHulyStore` T-36 không bắt được (bypass space semantics + hasUI path).
+Enable phần T-36 deferred _"actual real-Huly round-trip"_. **725 tests**
+(720 CI + 5 live gated), CI green. Live round-trip verify trên workspace thật.
+
+### Fixed
+
+- **TUI blindness — LLM mù tool results trong TUI mode** (T-92 #138, critical):
+  `builder.ts` `appendDetailsForLLM` gate `ctx.hasUI !== true` → TUI mode drop
+  `details` cho ~99 tool (chỉ 3 có `renderResult` hook), model thấy count-only
+  → không drive được follow-up (`list_issues` không trả identifier, `list_tags`
+  không `_id`, `fulltext_search` không identifier, `add_comment`/`create_todo`
+  không id). Bỏ gate → luôn append. Render hook (3 tool) vẫn consume details cho
+  UI user; content (model) giờ cũng thấy (khác audience, không xung đột).
+- **create_tag/list_tags sai space → orphan** (T-93 #139): `create_tag` dùng
+  `spaceRef(tctx.workspace)` (workspace-handle string) thay vì project space
+  (`project._id` via `getProjectSpace`) → tag tạo ra orphan (`list_tags` count
+  không đổi, `attach_tag` không thấy). `list_tags` giờ scope theo project space.
+- **create_tag_category sai space** (T-93b #139): workspace-scoped → space
+  `core:space:Workspace` (probe live confirm 25/25 category). Add `WORKSPACE_SPACE`
+  constant. DEFERRED: generic `add_attachment` (no project) — cần entity space resolve.
+- **attach_tag/detach_tag _id-only dead-end** (T-94 #140): resolve tag chỉ theo
+  `_id` → không path nào cho LLM lấy tag `_id` (create/list blind). Đổi sang
+  title-first `_id` fallback (mirror `add_issue_label`) + param desc
+  _"Tag title or _id."_
+- **create_issue assignee raw email** (T-95 #141): push raw email string vào
+  `Issue.assignee` (`Ref<Person>`) → garbage ref, `get_issue` render
+  _"Assignee: ?"_. Giờ resolve email→`Person._id` (mirror `update_issue`).
+  Resilient: default-assignee (currentUser) không resolve → `null` (unassigned,
+  không garbage, không fail create); explicit assignee không resolve → error rõ.
+
+### Changed
+
+- **Descriptions khớp handler** (T-96 #142): `list_tags`/`create_tag` project-scoped
+  thật (post T-93), `attach_tag`/`detach_tag` desc + param desc, `update_issue`
+  status param desc hint `huly_list_statuses`.
+
+### Added
+
+- **Live-Huly e2e harness** (T-91): `src/__tests__/e2e-live.test.ts` — enable T-36
+  deferred _"real-Huly round-trip"_. Gate `HULY_E2E_PROJECT` env (skip CI, no creds).
+  5 tests: issue create/get/delete round-trip, `list_issues` content chứa identifier
+  (T-92 live verify), tag create→list→attach(title)→detach(title) (T-93+T-94),
+  `create_issue` assignee→`Person._id` (T-95), tag-category round-trip (T-93b).
+  Run: `HULY_E2E_PROJECT=ETEST pnpm vitest run src/__tests__/e2e-live.test.ts`.
+
+
 ## [1.0.0-beta.9] - 2026-07-29
 
 Hotfix canary #8. **beta.9 follow-up** — slash goal: 7/7 task (5 bug + 2
