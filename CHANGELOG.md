@@ -3,6 +3,58 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.15] - 2026-07-30
+
+**beta.15 — QA e2e fix phase IV (4 bug fixes, reviewer LGTM).** Hunt rounds 5-7
++ FINAL coverage scan. 3 HIGH/MED bug fix + 1 enhancement fix. Mọi tool domain
+đã cover e2e (7 rounds, 39 live tests). To-issues skill applied (issue bodies
+rewrite theo template, granularity quiz approved). **730 CI tests** + 53 skip,
+typecheck/lint/fmt green. Independent reviewer subagent LGTM.
+
+### Fixed
+
+- **create_issue_from_template crash (AttachedDoc)** (T-103 #155, HIGH):
+  `createDoc(ISSUE_CLASS)` crash 'cannot be used for objects inherited from
+  AttachedDoc'. Mirror `create_issue`: `$inc` sequence → identifier →
+  `addCollection` (attached-to-project 'subIssues' collection) với full issue
+  field set. Copy priority/assignee/component từ template.
+
+- **edit_document silent no-persist** (T-103 #156, HIGH): `saveContent`
+  (uploadMarkup=createContent rpc) chỉ tạo INITIAL version, KHÔNG persist cho
+  document đã tồn tại (content unchanged + 0 snapshot). Thêm `HulyClient.updateMarkup`
+  → `collaborator.updateMarkup` (updateContent rpc) — đúng EDIT operation.
+  Conversion (makeCollabId/jsonToMarkup/markdownToMarkup) namespace imports +
+  cast (runtime-exported, missing từ .d.ts).
+
+- **update_user_profile Person lookup sai id** (T-103 #157, MED): lookup Person
+  by `currentUser.id` as `_id` fail (Person._id generated, KHÔNG uuid). Root:
+  Person có `personUuid` field = account.uuid = currentUser.id → resolve qua nó.
+  Fix thêm `accountToUser` (client.ts) extract email THẬT từ
+  `account.fullSocialIds[type=email]` (primarySocialId numeric cho Google/huly login).
+
+- **update_todo description no-persist** (T-103 #106, enhancement): cùng latent
+  bug #156 — `uploadMarkup`→`updateMarkup` cho description. Các field khác
+  (owner/priority/visibility/dueDate-clear) đã ready. `schedule/unschedule_todo`
+  DEFERRED (optional).
+
+### Enhancement (verified done, closed)
+
+- **#107 projects/spaces/components**: archived-filter + sort + widened output +
+  update_space 5 fields + null-clear + get_space name-fallback + get_component
+  lead resolve — verified in code (T-81G batch).
+- **#108 milestones/workspace/contacts**: get_milestone fields + findPersonByEmailOrName
+  email path + list_milestones sort + set_issue_milestone null-clear + list_persons
+  fields — verified (T-82G batch).
+
+### Tests
+
+- e2e-live-hunt5 (templates+documents round-trip, #155/#156 flipped it.fails→it) +
+  e2e-live-hunt7 (update_user_profile, #157 flipped it.fails→it). Live ETEST 39/39.
+- TDD unit: issues-templates (14), documents (21), workspace (10), todos (18).
+- Reviewer subagent LGTM (root-cause, no regressions); note #1 fixed (REST
+  updateMarkup stub).
+
+
 ## [1.0.0-beta.14] - 2026-07-30
 
 **beta.14 — QA e2e fix phase III (bug-hunt rounds 3-4).** Hai vòng live e2e
