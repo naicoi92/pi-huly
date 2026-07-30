@@ -3,6 +3,43 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.16] - 2026-07-30
+
+**beta.16 — input-validation hardening (error-path + empty-input hunt, 4 bug class).**
+Hunt rounds 9-10 sâu error-path + input-validation (CHIỀU MỚI — happy paths đã
+verify phase 8). Tìm 4 bug class (13 tool patched): log_time non-positive
+corruption + create/update tools empty-title/label garbage. Tất cả input-validation
+gap (schema declares constraint nhưng builder KHÔNG enforce TypeCompiler.Check —
+heuristic shape-aware only). Surgical handler guards. **739 CI tests** + 78 skip,
+typecheck/lint/fmt green. Live ETEST 76/76.
+
+### Fixed
+
+- **log_time non-positive (0 + negative)** (#158, MED): schema `minimum: 0.01`
+  unenforced → value 0 logged '0h' (noise), value -5 logged '-5h' (**time
+  corruption** — subtracts tracked time). Handler guard `value > 0`.
+
+- **create_issue empty/whitespace title** (#159, LOW-MED): no title guard →
+  garbage issue (no subject, e.g. title=''). Guard `title.trim() !== ''`.
+
+- **create tools empty title/label — SYSTEMIC** (#160, LOW-MED): create_todo /
+  create_milestone / create_component / create_tag / create_template cùng bug
+  class → garbage entities. Uniform empty-guard per tool.
+
+- **update tools empty title/label — SYSTEMIC** (#161, LOW-MED): update_issue /
+  update_component / update_milestone / update_todo / update_template /
+  update_tag renamed entity to '' (garbage). Uniform guard at assignment.
+
+### Tests
+
+- e2e-live-edge (10 error-path: bogus identifier/component/milestone/tag/relation/
+  status — all loud isError), e2e-live-edge3 (idempotency + special-chars + empty
+  create), e2e-live-edge4 (6 update-empty guards). TDD unit guards per tool.
+- Systemic note (deferred): builder not enforcing typebox constraints affects all
+  numeric params (limit min 1 etc.) — low-severity elsewhere (limit=0 → empty, not
+  corruption). TypeCompiler.Check = broader change, deferred.
+
+
 ## [1.0.0-beta.15] - 2026-07-30
 
 **beta.15 — QA e2e fix phase IV (4 bug fixes, reviewer LGTM).** Hunt rounds 5-7
