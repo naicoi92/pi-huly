@@ -965,3 +965,122 @@ describe("T-71: list_issues space scoping + assignee resolve", () => {
     expect(query.title).toEqual({ $like: "%bug%" });
   });
 });
+
+// T-102 #153: list_issues status + component filter resolve (raw push → 0 match bug).
+describe("T-102 #153: list_issues status + component filter resolve", () => {
+  it("status: name → resolved IssueStatus._id (KHÔNG raw name)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "sp1", identifier: "PD" }) // getProjectSpace
+      .mockResolvedValueOnce({ _id: "sp1", type: "pt1", defaultIssueStatus: "tracker:status:Done" }) // getProjectStatuses project
+      .mockResolvedValueOnce({ statuses: [{ _id: "tracker:status:Done" }] }); // projectType
+    client.findAll = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { _id: "tracker:status:Done", name: "Done", category: "tracker:status:Done" },
+      ]) // STATUS_CLASS $in (getProjectStatuses)
+      .mockResolvedValueOnce([]); // final ISSUE findAll
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issues");
+    await tool.execute("tc1", { status: "Done" }, undefined, undefined, ctx);
+
+    // final findAll (ISSUE_CLASS) = index 1.
+    const query = client.findAll.mock.calls[1]?.[1] as Record<string, unknown>;
+    expect(query.status, `status phải = resolved _id KHÔNG raw "Done"`).toBe("tracker:status:Done");
+  });
+
+  it("status: _id exact match ưu tiên trước name (giảm ambiguity)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "sp1", identifier: "PD" })
+      .mockResolvedValueOnce({ _id: "sp1", type: "pt1" })
+      .mockResolvedValueOnce({ statuses: [{ _id: "tracker:status:Done" }] });
+    client.findAll = vi
+      .fn()
+      .mockResolvedValueOnce([{ _id: "tracker:status:Done", name: "Done" }])
+      .mockResolvedValueOnce([]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issues");
+    // Truyền full _id → match exact.
+    await tool.execute("tc1", { status: "tracker:status:Done" }, undefined, undefined, ctx);
+
+    const query = client.findAll.mock.calls[1]?.[1] as Record<string, unknown>;
+    expect(query.status).toBe("tracker:status:Done");
+  });
+
+  it("status invalid → isError + list valid (mirror update_issue)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "sp1", identifier: "PD" })
+      .mockResolvedValueOnce({ _id: "sp1", type: "pt1" })
+      .mockResolvedValueOnce({ statuses: [{ _id: "tracker:status:Done" }] });
+    client.findAll = vi.fn().mockResolvedValueOnce([{ _id: "tracker:status:Done", name: "Done" }]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issues");
+    const result = await tool.execute("tc1", { status: "Nonexistent" }, undefined, undefined, ctx);
+
+    expect(result.isError).toBe(true);
+    expect(client.findAll.mock.calls).toHaveLength(1); // chỉ STATUS $in, KHÔNG ISSUE findAll
+  });
+
+  it("component: label → resolved Component._id (KHÔNG raw label)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "sp1", identifier: "PD" }) // getProjectSpace
+      .mockResolvedValueOnce(null) // COMPONENT findOne by _id (miss)
+      .mockResolvedValueOnce({ _id: "comp-1", label: "Backend" }); // COMPONENT findOne by label
+    client.findAll = vi.fn().mockResolvedValueOnce([]); // ISSUE findAll
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issues");
+    await tool.execute("tc1", { component: "Backend" }, undefined, undefined, ctx);
+
+    const query = client.findAll.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(query.component, `component phải = resolved _id KHÔNG raw "Backend"`).toBe("comp-1");
+  });
+
+  it("component: _id-first match (findOne by _id trước label)", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "sp1", identifier: "PD" }) // getProjectSpace
+      .mockResolvedValueOnce({ _id: "comp-1", label: "Backend" }); // COMPONENT findOne by _id (hit)
+    client.findAll = vi.fn().mockResolvedValueOnce([]);
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issues");
+    await tool.execute("tc1", { component: "comp-1" }, undefined, undefined, ctx);
+
+    const query = client.findAll.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(query.component).toBe("comp-1"); // _id-first match
+  });
+
+  it("component invalid (label không match) → isError", async () => {
+    const client = makeClient();
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "sp1", identifier: "PD" }) // getProjectSpace
+      .mockResolvedValueOnce(null) // COMPONENT _id miss
+      .mockResolvedValueOnce(null); // COMPONENT label miss
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_list_issues");
+    const result = await tool.execute(
+      "tc1",
+      { component: "Nonexistent" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(client.findAll).not.toHaveBeenCalled();
+  });
+});
