@@ -92,8 +92,11 @@ describe("T-51 #41: create_template project space resolve", () => {
 describe("T-51 #41: create_issue_from_template (2 lookup paths)", () => {
   it("template not found → isError (regression — KHÔNG regress existing behavior)", async () => {
     const client = makeClient();
-    // findOne lần 1 (template) trả undefined
-    client.findOne = vi.fn().mockResolvedValue(undefined);
+    // T-100: project-first → project OK, tpl undefined (template not found)
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "proj-1", identifier: "PD", space: "proj-1" })
+      .mockResolvedValueOnce(undefined); // tpl not found
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_create_issue_from_template");
@@ -107,10 +110,7 @@ describe("T-51 #41: create_issue_from_template (2 lookup paths)", () => {
 
   it("template exists + project null → isError MỚI + createDoc KHÔNG gọi", async () => {
     const client = makeClient();
-    client.findOne = vi
-      .fn()
-      .mockResolvedValueOnce({ _id: "tpl-123", title: "Bug" }) // template OK
-      .mockResolvedValueOnce(undefined); // project not found
+    client.findOne = vi.fn().mockResolvedValueOnce(undefined); // T-100: project-first, project null
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_create_issue_from_template");
@@ -127,8 +127,8 @@ describe("T-51 #41: create_issue_from_template (2 lookup paths)", () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
-      .mockResolvedValueOnce({ _id: "tpl-123", title: "Bug", description: "{}" }) // template
-      .mockResolvedValueOnce({ _id: "proj-1", space: "happy-space" }); // project
+      .mockResolvedValueOnce({ _id: "proj-1", identifier: "PD", space: "happy-space" }) // project (T-100 project-first)
+      .mockResolvedValueOnce({ _id: "tpl-123", title: "Bug", description: "{}" }); // template
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = findTool("huly_create_issue_from_template");
@@ -146,7 +146,10 @@ describe("T-51 #41: create_issue_from_template (2 lookup paths)", () => {
 describe("T-76: add_template_child builds IssueTemplateChild object + replaces array", () => {
   it("add → updateDoc với children = [...existing, {id,title,...}] (KHÔNG $push raw string)", async () => {
     const client = makeClient();
-    client.findOne = vi.fn().mockResolvedValueOnce({ _id: "tpl-1", space: "sp1", children: [] });
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "proj-1", identifier: "PD", space: "proj-1" }) // project (T-100 getProjectSpace)
+      .mockResolvedValueOnce({ _id: "tpl-1", space: "sp1", children: [] });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = tools.find((t) => t.name === "huly_add_template_child")!;
@@ -175,6 +178,7 @@ describe("T-76: add_template_child builds IssueTemplateChild object + replaces a
     const client = makeClient();
     client.findOne = vi
       .fn()
+      .mockResolvedValueOnce({ _id: "proj-1", identifier: "PD", space: "proj-1" }) // project (T-100 getProjectSpace)
       .mockResolvedValueOnce({ _id: "tpl-1", space: "sp1", children: [] }) // template
       .mockResolvedValueOnce({ _id: "person-1", name: "Alice" }) // Person (assignee name)
       .mockResolvedValueOnce({ _id: "comp-1", label: "Backend" }); // Component
@@ -216,14 +220,17 @@ describe("T-76: add_template_child builds IssueTemplateChild object + replaces a
 describe("T-76: remove_template_child find by id + replace array", () => {
   it("remove → find by childId, filter out, replace children array", async () => {
     const client = makeClient();
-    client.findOne = vi.fn().mockResolvedValueOnce({
-      _id: "tpl-1",
-      space: "sp1",
-      children: [
-        { id: "c-1", title: "A" },
-        { id: "c-2", title: "B" },
-      ],
-    });
+    client.findOne = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "proj-1", identifier: "PD", space: "proj-1" }) // project (T-100 getProjectSpace)
+      .mockResolvedValueOnce({
+        _id: "tpl-1",
+        space: "sp1",
+        children: [
+          { id: "c-1", title: "A" },
+          { id: "c-2", title: "B" },
+        ],
+      });
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = tools.find((t) => t.name === "huly_remove_template_child")!;
@@ -285,6 +292,7 @@ describe("T-76: create_issue_from_template copies priority/assignee/component", 
     const client = makeClient();
     client.findOne = vi
       .fn()
+      .mockResolvedValueOnce({ _id: "p-1", identifier: "PD", space: "sp1" }) // project (T-100 project-first)
       .mockResolvedValueOnce({
         _id: "tpl-1",
         title: "Tpl",
@@ -292,8 +300,7 @@ describe("T-76: create_issue_from_template copies priority/assignee/component", 
         priority: "high",
         assignee: "person-1",
         component: "comp-1",
-      }) // template
-      .mockResolvedValueOnce({ _id: "p-1", identifier: "PD", space: "sp1" }); // project
+      }); // template
     vi.mocked(getClient).mockResolvedValue(client as never);
 
     const tool = tools.find((t) => t.name === "huly_create_issue_from_template")!;
@@ -341,6 +348,7 @@ describe("T-89: list/get_templates sort + output fields (#124)", () => {
     const client = makeClient();
     client.findOne = vi
       .fn()
+      .mockResolvedValueOnce({ _id: "proj-1", identifier: "PD", space: "proj-1" }) // project (T-100 getProjectSpace)
       .mockResolvedValueOnce({
         // template
         _id: "t1",
