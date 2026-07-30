@@ -122,7 +122,15 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const ops: Record<string, unknown> = {};
-      if (params.title !== undefined) ops.title = params.title;
+      if (params.title !== undefined) {
+        if (params.title.trim() === "")
+          return {
+            content: "title must be non-empty.",
+            isError: true,
+            details: { title: params.title },
+          };
+        ops.title = params.title;
+      }
       if (params.color !== undefined) ops.color = params.color;
       if (Object.keys(ops).length === 0) {
         return { content: "No fields to update.", details: { updated: false } };

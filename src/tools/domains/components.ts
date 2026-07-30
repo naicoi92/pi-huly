@@ -213,7 +213,15 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const ops: Record<string, unknown> = {};
-      if (params.label !== undefined) ops.label = params.label;
+      if (params.label !== undefined) {
+        if (params.label.trim() === "")
+          return {
+            content: "label must be non-empty.",
+            isError: true,
+            details: { label: params.label },
+          };
+        ops.label = params.label;
+      }
       if (params.description !== undefined) ops.description = params.description;
       // T-81 #104: lead = Ref<Employee> (resolve Person, KHÔNG raw string).
       if (params.lead !== undefined) {

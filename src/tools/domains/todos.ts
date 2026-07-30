@@ -246,7 +246,15 @@ export const tools: HulyToolDefinition[] = [
         };
       }
       const ops: Record<string, unknown> = {};
-      if (params.title !== undefined) ops.title = params.title;
+      if (params.title !== undefined) {
+        if (params.title.trim() === "")
+          return {
+            content: "title must be non-empty.",
+            isError: true,
+            details: { title: params.title },
+          };
+        ops.title = params.title;
+      }
       // T-103 #106: description = MarkupBlobRef. updateMarkup (updateContent rpc) —
       // uploadMarkup/createMarkup (createContent) chỉ tạo INITIAL version, KHÔNG
       // persist cho todo đã tồn tại (mirror #156 edit_document fix).
