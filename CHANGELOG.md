@@ -3,6 +3,46 @@
 All notable changes to pi-huly sẽ document ở đây. Format theo [Keep a Changelog](https://keepachangelog.com/),
 versioning theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-beta.19] - 2026-07-31
+
+**beta.19 — live bug-hunt trên workspace thật (global/ETEST, `https://huly.ltt.onl`).
+4 fix, 1 critical (document tạo qua API KHÔNG hiện web sidebar). Review độc lập:
+reality-checker 4/4 CONFIRMED + reviewer no-blocker. Verify: tsc clean, 742 unit
++ 10 live (e2e-live-hunt9/hunt10, gated `HULY_E2E_PROJECT`) GREEN.**
+
+### Fixed
+
+- **documents invisible in web sidebar (CRITICAL)**: `src/tools/domains/documents.ts`
+  `createDocument` thiếu `parent` + dùng id class-prefix `${DOCUMENT_CLASS}.<rand>`.
+  Web Documents tree query top-level = `{parent: "document:ids:NoParent"}` → doc
+  pi-huly bị loại khỏi sidebar (chỉ search thấy). Fix: `DOCUMENT_NO_PARENT`
+  constant (`_class-refs.ts`) + `generateId()` hex (createRequire, match doc thật +
+  huly-mcp) + set `parent` field. + optional `parent` param (nested docs — resolve
+  by `_id`/title scoped trong teamspace, error nếu not found). Verified live: doc
+  giờ hiện sidebar; nested child + edit + delete round-trip sạch.
+
+- **assign-by-email self gãy**: `src/tools/domains/contacts.ts`
+  `findPersonByEmailOrName` — self-host Person records KHÔNG có email Channel →
+  Channel branch không match, kể cả email chính user (từ `get_user_profile`).
+  Fix: +optional `currentUser` param; `input===currentUser.email` (case-insensitive)
+  → `findOne(Person {personUuid: currentUser.id})`. 7 call sites (issues-core ×3,
+  issues-templates, components ×2, todos) truyền `tctx.currentUser`. Limit
+  documented: arbitrary teammate email vẫn cần Channel data.
+
+- **makeCollabId CJS interop under vitest**: `src/client/client.ts`. Beta.18 fix
+  default import (`core.makeCollabId`) hoạt động prod/dist nhưng `undefined` dưới
+  vitest (CJS default-import interop). `createRequire(import.meta.url)` đúng cả
+  vitest lẫn prod/dist → test giờ validate được `edit_document`.
+
+- **edit_document live test (không phải prod bug)**: `e2e-live-hunt10.test.ts`.
+  Test cũ đọc sai field (`get_document` đặt body ở `content[0].text` sau `---`,
+  KHÔNG trong `details.content`) + timeout 5s chặt. Helper `bodyText()` + timeout 30s.
+
+### Changed
+
+- `createDocument` +tham số `parent` (nested document). +3 unit test cho parent path
+  (undefined→NoParent, title→resolve, not-found→error).
+
 ## [1.0.0-beta.18] - 2026-07-31
 
 **beta.18 — fix ESM/CJS build runtime crash. Bundle ESM `import { connect }` từ
