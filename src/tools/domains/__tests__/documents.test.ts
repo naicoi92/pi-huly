@@ -26,7 +26,7 @@ vi.mock("../../../client/errors.js", () => ({
 
 import { getClient } from "../../../client/pool.js";
 import { tools } from "../documents.js";
-import { TEAMSPACE_CLASS, DOCUMENT_CLASS } from "../_class-refs.js";
+import { TEAMSPACE_CLASS, DOCUMENT_CLASS, DOCUMENT_NO_PARENT } from "../_class-refs.js";
 
 const ctx = {
   hasUI: false,
@@ -309,6 +309,84 @@ describe("T-66: document CRUD ENABLED (DOCUMENT_CLASS + space scoping)", () => {
       expect.objectContaining({ title: "Empty", content: null }),
       expect.any(String),
     );
+  });
+
+  it("create_document WITHOUT parent → createDoc parent=document:ids:NoParent (top-level, hiện sidebar)", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockResolvedValue({ _id: "ts-1", name: "Docs" });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_create_document");
+    const result = await tool.execute(
+      "tc1",
+      { teamspace: "ts-1", title: "Top" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(client.createDoc).toHaveBeenCalledWith(
+      DOCUMENT_CLASS,
+      "ts-1",
+      expect.objectContaining({ title: "Top", parent: DOCUMENT_NO_PARENT }),
+      expect.any(String),
+    );
+  });
+
+  it("create_document WITH parent (title) → resolve byTitle scoped trong teamspace → parent=parentDoc._id", async () => {
+    const client = makeClient();
+    // findOne phân biệt: teamspace vs parent byId vs parent byTitle (theo query)
+    client.findOne = vi.fn().mockImplementation((_cls: unknown, query: any) => {
+      if (query._id === "ts-1") return Promise.resolve({ _id: "ts-1", name: "Docs" });
+      if (query.title === "Parent Doc")
+        return Promise.resolve({ _id: "parent-9", title: "Parent Doc" });
+      return Promise.resolve(undefined); // byId miss (parent truyền title, KHÔNG _id)
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_create_document");
+    const result = await tool.execute(
+      "tc1",
+      { teamspace: "ts-1", title: "Child", parent: "Parent Doc" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(client.createDoc).toHaveBeenCalledWith(
+      DOCUMENT_CLASS,
+      "ts-1",
+      expect.objectContaining({ title: "Child", parent: "parent-9" }),
+      expect.any(String),
+    );
+    // byId phải scope theo teamspace (KHÔNG cross-teamspace leak)
+    const byIdCall = (client.findOne as any).mock.calls.find(
+      (c: any[]) => c[1]?._id === "Parent Doc" && c[1]?.space === "ts-1",
+    );
+    expect(byIdCall).toBeTruthy();
+  });
+
+  it("create_document parent không tồn tại → isError (KHÔNG tạo doc mồ côi)", async () => {
+    const client = makeClient();
+    client.findOne = vi.fn().mockImplementation((_cls: unknown, query: any) => {
+      if (query._id === "ts-1") return Promise.resolve({ _id: "ts-1", name: "Docs" });
+      return Promise.resolve(undefined); // parent byId + byTitle đều miss
+    });
+    vi.mocked(getClient).mockResolvedValue(client as never);
+
+    const tool = findTool("huly_create_document");
+    const result = await tool.execute(
+      "tc1",
+      { teamspace: "ts-1", title: "Child", parent: "Ghost" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(client.createDoc).not.toHaveBeenCalled();
   });
 
   it("edit_document content mode → updateMarkup (T-103 #156: KHÔNG uploadMarkup+updateDoc)", async () => {

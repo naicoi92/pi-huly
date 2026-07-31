@@ -124,7 +124,7 @@ export const tools: HulyToolDefinition[] = [
       if (params.statusCategory !== undefined) query.statusCategory = params.statusCategory;
       // T-71: assignee resolve email/name → Person._id (Issue.assignee = Ref<Person>).
       if (params.assignee !== undefined) {
-        const personId = await findPersonByEmailOrName(tctx.client, params.assignee);
+        const personId = await findPersonByEmailOrName(tctx.client, params.assignee, tctx.currentUser);
         if (!personId) {
           return {
             content: `Assignee "${params.assignee}" not found (no Person matching email/name).`,
@@ -387,7 +387,7 @@ export const tools: HulyToolDefinition[] = [
       // → error rõ (user yêu cầu người cụ thể).
       let assigneeRef: string | null = null;
       if (params.assignee !== undefined && params.assignee !== null && params.assignee !== "") {
-        const personId = await findPersonByEmailOrName(tctx.client, params.assignee);
+        const personId = await findPersonByEmailOrName(tctx.client, params.assignee, tctx.currentUser);
         const isDefault = params.assignee === tctx.currentUser.email;
         if (!personId && !isDefault) {
           return {
@@ -536,7 +536,7 @@ export const tools: HulyToolDefinition[] = [
         if (params.assignee === null) {
           ops.assignee = null;
         } else {
-          const personId = await findPersonByEmailOrName(tctx.client, params.assignee);
+          const personId = await findPersonByEmailOrName(tctx.client, params.assignee, tctx.currentUser);
           if (!personId) {
             return {
               content:
